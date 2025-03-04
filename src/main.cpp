@@ -30,6 +30,10 @@
 #include "detect/ScanI2C.h"
 #include "error.h"
 
+#ifdef SENSECAP_INDICATOR // on the indicator run the additional serial port for the RP2040
+#include "IndicatorSerial.h"
+#endif
+
 #if !MESHTASTIC_EXCLUDE_I2C
 #include "detect/ScanI2CConsumer.h"
 #include "detect/ScanI2CTwoWire.h"
@@ -826,6 +830,11 @@ void setup()
 #endif
 
     router = new ReliableRouter();
+
+// If we have an indicator, start process to service secondary port
+#ifdef SENSECAP_INDICATOR
+    sensecapIndicator.begin(Serial2);
+#endif
 
     // only play start melody when role is not tracker or sensor
     if (config.power.is_power_saving == true &&

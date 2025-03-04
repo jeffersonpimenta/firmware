@@ -2,18 +2,20 @@
 
 #if !MESHTASTIC_EXCLUDE_ENVIRONMENTAL_SENSOR
 
+#include "../mesh/generated/meshtastic/interdevice.pb.h"
 #include "../mesh/generated/meshtastic/telemetry.pb.h"
 #include "TelemetrySensor.h"
+#include <RingBuf.h>
 
 class IndicatorSensor : public TelemetrySensor
 {
   public:
     IndicatorSensor();
     virtual bool getMetrics(meshtastic_Telemetry *measurement) override;
-    virtual bool initDevice(TwoWire *bus, ScanI2C::FoundDevice *dev) override;
+    size_t stuff_buffer(meshtastic_SensorData message);
 
   private:
-    void setup();
+    RingBuf<meshtastic_SensorData, 16> ringBuf;
 };
 
 #endif
