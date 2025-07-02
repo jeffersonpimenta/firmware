@@ -32,6 +32,7 @@
 
 #ifdef SENSECAP_INDICATOR // on the indicator run the additional serial port for the RP2040
 #include "IndicatorSerial.h"
+#include "mesh/comms/FakeI2C.h"
 #endif
 
 #if !MESHTASTIC_EXCLUDE_I2C
@@ -557,7 +558,11 @@ void setup()
 #endif
 
 #if !MESHTASTIC_EXCLUDE_I2C
-#if defined(I2C_SDA1) && defined(ARCH_RP2040)
+// The Sensecap Indicator hast I2C on the secondary MCU. Tunnel this as wire1
+#if defined(SENSECAP_INDICATOR)
+    FakeI2C Wire1 = *FakeWire;
+    Wire1.begin();
+#elif defined(I2C_SDA1) && defined(ARCH_RP2040)
     Wire1.setSDA(I2C_SDA1);
     Wire1.setSCL(I2C_SCL1);
     Wire1.begin();
@@ -628,7 +633,7 @@ void setup()
     LOG_INFO("Scan for i2c devices");
 #endif
 
-#if defined(I2C_SDA1) || (defined(NRF52840_XXAA) && (WIRE_INTERFACES_COUNT == 2))
+#if defined(SENSECAP_INDICATOR) || defined(I2C_SDA1) || (defined(NRF52840_XXAA) && (WIRE_INTERFACES_COUNT == 2))
     i2cScanner->scanPort(ScanI2C::I2CPort::WIRE1);
 #endif
 
@@ -833,7 +838,11 @@ void setup()
 
 // If we have an indicator, start process to service secondary port
 #ifdef SENSECAP_INDICATOR
-    sensecapIndicator.begin(Serial2);
+#if SENSOR_PORT_NUM == 2
+    sensecapIndicator = new SensecapIndicator(Serial2);
+#elif SENSOR_PORT_NUM == 1
+    sensecapIndicator = new SensecapIndicator(Serial1);
+#endif
 #endif
 
     // only play start melody when role is not tracker or sensor

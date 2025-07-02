@@ -47,7 +47,7 @@ template <typename T, std::size_t N> std::size_t array_count(const T (&)[N])
 #endif
 
 #if defined(SENSECAP_INDICATOR)
-FakeUART *GPS::_serial_gps = nullptr;
+FakeUART *GPS::_serial_gps = FakeSerial;
 #elif defined(ARCH_NRF52)
 Uart *GPS::_serial_gps = &GPS_SERIAL_PORT;
 #elif defined(ARCH_ESP32) || defined(ARCH_PORTDUINO) || defined(ARCH_STM32)
