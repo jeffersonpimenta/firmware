@@ -1430,6 +1430,7 @@ void GPS::publishUpdate()
 
 int32_t GPS::runOnce()
 {
+#if !defined(SENSECAP_INDICATOR)
     if (!GPSInitFinished) {
         if (!_serial_gps || config.position.gps_mode == meshtastic_Config_PositionConfig_GpsMode_NOT_PRESENT) {
             LOG_INFO("GPS set to not-present. Skip probe");
@@ -1450,6 +1451,7 @@ int32_t GPS::runOnce()
         GPSInitFinished = true;
         publishUpdate();
     }
+#endif
 
     // ======================== GPS_ACTIVE state ========================
     // In GPS_ACTIVE state, GPS is powered on and we're receiving NMEA messages.
@@ -1912,8 +1914,10 @@ std::unique_ptr<GPS> GPS::createGps()
     } else
         return nullptr;
 #endif
+#if !defined(SENSECAP_INDICATOR)
     if (!_rx_gpio || !_serial_gps) // Configured to have no GPS at all
         return nullptr;
+#endif
 
     auto new_gps = std::unique_ptr<GPS>(new GPS());
     new_gps->rx_gpio = _rx_gpio;
