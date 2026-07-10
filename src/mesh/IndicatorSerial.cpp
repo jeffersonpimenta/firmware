@@ -1,7 +1,6 @@
 #ifdef SENSECAP_INDICATOR
 
 #include "IndicatorSerial.h"
-#include "mesh/comms/FakeI2C.h"
 #include "mesh/comms/FakeUART.h"
 #include <HardwareSerial.h>
 #include <pb_decode.h>
@@ -121,16 +120,6 @@ bool SensecapIndicator::handle_packet(size_t payload_len)
         return false;
     }
     switch (message.which_data) {
-    case meshtastic_InterdeviceMessage_i2c_response_tag:
-        LOG_DEBUG("Got I2C response");
-        if (message.data.i2c_response.status != meshtastic_I2CResponse_Status_OK) {
-            LOG_DEBUG("I2C response error: %d", message.data.i2c_response.status);
-            return false;
-        }
-        // send I2C response to FakeI2C
-        FakeWire->ingest(message.data.i2c_response);
-        return true;
-        break;
     case meshtastic_InterdeviceMessage_nmea_tag:
         // send String to NMEA processing
         FakeSerial->stuff_buffer(message.data.nmea, strlen(message.data.nmea));
