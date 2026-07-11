@@ -1,3 +1,4 @@
+#include "Arduino.h"
 #include "TestUtil.h"
 #include "modules/irrigation/IrrigationProtocol.h"
 #include <string.h>
