@@ -193,7 +193,8 @@ int32_t IrrigationModule::runOnce()
         return 60 * 1000; // gateway/repetidor/serviço: nada periódico nesta fase
 
     valves.tick(millis());
-    valves.setBatteryLockout(batteryCentiV() != 0 && batteryCentiV() < settings.vbatMinAbrirCentiV);
+    uint16_t vbat = batteryCentiV();
+    valves.setBatteryLockout(vbat != 0 && vbat < settings.vbatMinAbrirCentiV);
 
     if (!Throttle::isWithinTimespanMs(lastHeartbeatMs, (uint32_t)settings.hbMinutes * 60 * 1000)) {
         lastHeartbeatMs = millis();
