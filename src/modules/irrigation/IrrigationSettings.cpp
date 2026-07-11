@@ -41,6 +41,7 @@ bool saveIrrigationSettings(const IrrigationSettings &s)
     FSCom.remove(SETTINGS_PATH);
     if (!renameFile(SETTINGS_TMP, SETTINGS_PATH)) {
         LOG_ERROR("Irrigation settings rename failed");
+        FSCom.remove(SETTINGS_TMP);
         return false;
     }
     return true;
