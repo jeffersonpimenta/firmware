@@ -23,6 +23,12 @@ struct IrrigationSettings {
     int8_t pinsHbridgeB[MAX_VALVES] = {-1, -1, -1, -1, -1, -1, -1, -1};
 };
 
+// ABI lock: bump version field AND update this assert on any layout change.
+// Layout: magic(4)+version(2)+role(1)+numValves(1)+boundGateway(4)+hbMinutes(2)+
+//         vbatMinAbrirCentiV(2)+maxOpenConfigS(2)+cmdRatePerMin(1)+[pad1]+pulseMs(2)+
+//         pinsHbridgeA[8]+pinsHbridgeB[8]+[pad2] = 40 bytes
+static_assert(sizeof(IrrigationSettings) == 40, "on-disk settings format is ABI-dependent; bump version on layout change");
+
 // false = arquivo ausente/corrompido; `s` fica com os defaults acima.
 bool loadIrrigationSettings(IrrigationSettings &s);
 bool saveIrrigationSettings(const IrrigationSettings &s);
