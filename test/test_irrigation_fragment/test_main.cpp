@@ -97,6 +97,8 @@ static void test_limitsRejected()
     TEST_ASSERT_EQUAL(Add::TOO_BIG, r.add(1, 5, blobCrc, 300, 0, 17, blob, 20, 1000));
     TEST_ASSERT_EQUAL(Add::INVALID, r.add(1, 5, blobCrc, 300, 2, 2, blob, 100, 1000)); // idx >= count
     TEST_ASSERT_EQUAL(Add::INVALID, r.add(1, 5, blobCrc, 300, 0, 2, blob, 0, 1000));   // fragLen 0
+    // frag 1 de 2 com totalLen=200: off=160, 160+100=260 > 200 → INVALID (geometria)
+    TEST_ASSERT_EQUAL(Add::INVALID, r.add(1, 5, blobCrc, 200, 1, 2, blob, 100, 1000));
 }
 
 void setup()

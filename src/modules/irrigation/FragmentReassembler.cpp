@@ -6,6 +6,8 @@ void FragmentReassembler::reset()
 {
     active = false;
     receivedMask = 0;
+    curTotalLen = 0;
+    curEpoch = 0;
 }
 
 bool FragmentReassembler::sameTransfer(uint32_t sender, uint32_t epoch, uint32_t crc, uint16_t totalLen,
@@ -42,7 +44,7 @@ FragmentReassembler::Add FragmentReassembler::add(uint32_t sender, uint32_t epoc
     memcpy(buf + off, data, fragLen);
     receivedMask |= (uint16_t)(1u << fragIndex);
 
-    uint16_t full = (uint16_t)((1u << curFragCount) - 1);
+    uint16_t full = (uint16_t)(((uint32_t)1u << curFragCount) - 1);
     if (receivedMask != full)
         return Add::ACCEPTED;
 
