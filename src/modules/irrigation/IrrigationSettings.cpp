@@ -1,9 +1,39 @@
 #include "IrrigationSettings.h"
 #include "DebugConfiguration.h"
 #include "FSCommon.h"
+#include <string.h>
 
 static const char *SETTINGS_PATH = "/prefs/irrigation.dat";
 static const char *SETTINGS_TMP = "/prefs/irrigation.tmp";
+
+bool migrateIrrigationSettings(const uint8_t *raw, size_t n, IrrigationSettings &out)
+{
+    uint32_t magic;
+    uint16_t version;
+    if (n < 6)
+        return false;
+    memcpy(&magic, raw, 4);
+    memcpy(&version, raw + 4, 2);
+    if (magic != IrrigationSettings::MAGIC)
+        return false;
+
+    if (version == 2) {
+        if (n != sizeof(IrrigationSettings))
+            return false;
+        memcpy(&out, raw, sizeof(out));
+        return true;
+    }
+    if (version == 1) {
+        if (n != IRRIGATION_SETTINGS_V1_SIZE)
+            return false;
+        IrrigationSettings s; // defaults v2 para os campos novos
+        memcpy(&s, raw, IRRIGATION_SETTINGS_V1_SIZE); // layout v1 é prefixo do v2
+        s.version = 2;
+        out = s;
+        return true;
+    }
+    return false;
+}
 
 bool loadIrrigationSettings(IrrigationSettings &s)
 {
@@ -11,14 +41,18 @@ bool loadIrrigationSettings(IrrigationSettings &s)
     auto f = FSCom.open(SETTINGS_PATH, FILE_O_READ);
     if (!f)
         return false;
-    IrrigationSettings tmp;
-    size_t n = f.read((uint8_t *)&tmp, sizeof(tmp));
+    uint8_t raw[sizeof(IrrigationSettings)];
+    size_t n = f.read(raw, sizeof(raw));
     f.close();
-    if (n != sizeof(tmp) || tmp.magic != IrrigationSettings::MAGIC || tmp.version != 1) {
-        LOG_WARN("Irrigation settings invalid, using defaults");
+    IrrigationSettings tmp;
+    if (!migrateIrrigationSettings(raw, n, tmp)) {
+        LOG_WARN("Irrigation settings invalid (len=%u), using defaults", (unsigned)n);
         return false;
     }
+    bool migrated = (n == IRRIGATION_SETTINGS_V1_SIZE);
     s = tmp;
+    if (migrated)
+        saveIrrigationSettings(s); // regrava já em v2
     return true;
 #else
     return false;
