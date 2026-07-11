@@ -35,6 +35,9 @@ class ValveController
     bool isOpen(uint8_t id) const { return id < numValves && slots[id].open; }
     uint8_t stateBitmap() const;
     void setBatteryLockout(bool locked) { batteryLockout = locked; }
+    // Reconfiguração em runtime (SET_CONFIG): encolher fecha fisicamente as
+    // removidas; crescer pulsa fechar nas novas (estado físico desconhecido).
+    void setNumValves(uint8_t n);
 
   private:
     struct Slot {

@@ -57,6 +57,21 @@ void ValveController::tick(uint32_t nowMs)
     }
 }
 
+void ValveController::setNumValves(uint8_t n)
+{
+    if (n > MAX_VALVES)
+        n = MAX_VALVES;
+    for (uint8_t i = n; i < numValves; i++) { // encolheu: fecha removidas
+        driver.pulse(i, false);
+        slots[i].open = false;
+    }
+    for (uint8_t i = numValves; i < n; i++) { // cresceu: novas em estado desconhecido
+        driver.pulse(i, false);
+        slots[i].open = false;
+    }
+    numValves = n;
+}
+
 uint8_t ValveController::stateBitmap() const
 {
     uint8_t bm = 0;

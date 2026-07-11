@@ -134,6 +134,28 @@ static void test_forceCloseAll_pulsesEveryValveOnFreshController()
     TEST_ASSERT_EQUAL_UINT8(0, vc.stateBitmap());
 }
 
+static void test_setNumValves_shrinkForceClosesRemoved()
+{
+    MockDriver d;
+    ValveController vc(d, 4);
+    vc.open(3, 60, 0, 0);
+    vc.setNumValves(2);
+    TEST_ASSERT_FALSE(vc.isOpen(3));
+    TEST_ASSERT_EQUAL_INT(1, d.closes[3]); // removida foi fechada fisicamente
+    TEST_ASSERT_EQUAL(ValveController::Result::INVALID_ID, vc.open(3, 60, 0, 0));
+}
+
+static void test_setNumValves_growPulsesNewClosed()
+{
+    MockDriver d;
+    ValveController vc(d, 1);
+    vc.setNumValves(3);
+    // índices novos têm estado físico desconhecido: pulso de fechar em cada um
+    TEST_ASSERT_EQUAL_INT(1, d.closes[1]);
+    TEST_ASSERT_EQUAL_INT(1, d.closes[2]);
+    TEST_ASSERT_EQUAL(ValveController::Result::OK, vc.open(2, 60, 0, 0));
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -148,6 +170,8 @@ void setup()
     RUN_TEST(test_tickHandlesMillisRollover);
     RUN_TEST(test_closeAll);
     RUN_TEST(test_forceCloseAll_pulsesEveryValveOnFreshController);
+    RUN_TEST(test_setNumValves_shrinkForceClosesRemoved);
+    RUN_TEST(test_setNumValves_growPulsesNewClosed);
     exit(UNITY_END());
 }
 
