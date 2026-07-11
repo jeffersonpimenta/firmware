@@ -1,6 +1,7 @@
 #pragma once
 #include "SinglePortModule.h"
 #include "concurrency/OSThread.h"
+#include "modules/irrigation/FragmentReassembler.h"
 #include "modules/irrigation/IrrigationProtocol.h"
 #include "modules/irrigation/IrrigationSettings.h"
 #include "modules/irrigation/RateLimiter.h"
@@ -32,6 +33,9 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
 
   private:
     void handleCmdValvula(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
+    void handleSetConfig(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
+    void handleGetConfig(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
+    void applySettings(const IrrigationSettings &fresh);
     void sendAck(uint32_t to, uint32_t ackedSeq, uint8_t status, uint8_t reason);
     void sendHeartbeat();
     bool senderAuthorized(uint32_t from) const;
@@ -44,8 +48,11 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     ValveController valves;
     SeqTable seqTable;
     RateLimiter rateLimiter;
+    FragmentReassembler reasm;
     uint32_t txSeq = 0;
     uint32_t lastHeartbeatMs = 0;
+    bool safeMode = false;
+    bool bootHeartbeatPending = true;
 };
 
 extern IrrigationModule *irrigationModule;
