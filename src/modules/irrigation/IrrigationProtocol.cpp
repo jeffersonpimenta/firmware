@@ -186,4 +186,54 @@ bool decodeHeartbeat(const uint8_t *buf, size_t len, Heartbeat &out)
     return r.ok;
 }
 
+uint32_t crc32(const uint8_t *data, size_t len)
+{
+    uint32_t c = 0xFFFFFFFFu;
+    for (size_t i = 0; i < len; i++) {
+        c ^= data[i];
+        for (int b = 0; b < 8; b++)
+            c = (c >> 1) ^ (0xEDB88320u & (0u - (c & 1u)));
+    }
+    return c ^ 0xFFFFFFFFu;
+}
+
+size_t encodeSetConfig(uint8_t *buf, size_t len, uint32_t seq, const SetConfig &m)
+{
+    if (m.fragLen > FRAG_DATA_MAX)
+        return 0;
+    Writer w{buf, len};
+    writeHeader(w, MSG_SET_CONFIG, seq);
+    w.u32(m.epoch);
+    w.u32(m.crc);
+    w.u16(m.totalLen);
+    w.u8(m.fragIndex);
+    w.u8(m.fragCount);
+    w.u8(m.fragLen);
+    for (uint8_t i = 0; w.ok && i < m.fragLen; i++)
+        w.u8(m.frag[i]);
+    return w.ok ? w.pos : 0;
+}
+
+bool decodeSetConfig(const uint8_t *buf, size_t len, SetConfig &out)
+{
+    Reader r = bodyReader(buf, len);
+    out.epoch = r.u32();
+    out.crc = r.u32();
+    out.totalLen = r.u16();
+    out.fragIndex = r.u8();
+    out.fragCount = r.u8();
+    out.fragLen = r.u8();
+    if (!r.ok || out.fragLen > FRAG_DATA_MAX || r.pos + out.fragLen > len)
+        return false;
+    out.frag = buf + r.pos;
+    return true;
+}
+
+size_t encodeGetConfig(uint8_t *buf, size_t len, uint32_t seq)
+{
+    Writer w{buf, len};
+    writeHeader(w, MSG_GET_CONFIG, seq);
+    return w.ok ? w.pos : 0;
+}
+
 } // namespace IrrigationProto
