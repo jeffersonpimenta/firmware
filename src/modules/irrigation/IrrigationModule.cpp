@@ -1,18 +1,22 @@
 #include "modules/irrigation/IrrigationModule.h"
 #include "MeshService.h"
+#include "MeshTypes.h"
 #include "PowerStatus.h"
 #include "Throttle.h"
 #include "configuration.h"
 #include "main.h"
+#include <string.h>
 
 IrrigationModule *irrigationModule;
 
 using namespace IrrigationProto;
 
-IrrigationSettings loadIrrigationSettingsOrDefault()
+static IrrigationSettings loadIrrigationSettingsOrDefault()
 {
     IrrigationSettings s;
     loadIrrigationSettings(s);
+    if (s.pulseMs > 1000)
+        s.pulseMs = 1000;
     return s;
 }
 
@@ -58,8 +62,10 @@ IrrigationModule::IrrigationModule()
     // settings already loaded by loadIrrigationSettingsOrDefault() in member init list.
     driver.configure(settings);
     // Boot sempre em estado fechado (spec §5.5): solenoides latching podem ter
-    // ficado abertos num reset com válvula acionada.
-    valves.closeAll();
+    // ficado abertos num reset com válvula acionada. forceCloseAll() pulsa
+    // incondicionalmente, sem depender do bit open interno (que está falso
+    // em todos os slots recém-criados).
+    valves.forceCloseAll();
     LOG_INFO("IrrigationModule role=%d valves=%d gateway=0x%08x", settings.role, settings.numValves, settings.boundGateway);
 }
 
@@ -87,7 +93,10 @@ ProcessMessage IrrigationModule::handleReceived(const meshtastic_MeshPacket &mp)
     }
     if (h.version != VERSION) {
         LOG_WARN("Irrigation: protocol version %d != %d from 0x%08x", h.version, VERSION, mp.from);
-        sendAck(mp.from, h.seq, ACK_NACK, REASON_BAD_VERSION);
+        // NACK somente para pacotes diretos (não broadcast) e dentro do rate-limit
+        // para evitar amplificação de NACKs em versões incompatíveis na rede.
+        if (isToUs(&mp) && rateLimiter.allow(millis()))
+            sendAck(mp.from, h.seq, ACK_NACK, REASON_BAD_VERSION);
         return ProcessMessage::STOP;
     }
 
@@ -114,6 +123,8 @@ void IrrigationModule::handleCmdValvula(const meshtastic_MeshPacket &mp, const H
         sendAck(mp.from, h.seq, ACK_NACK, REASON_UNAUTHORIZED);
         return;
     }
+    // Retransmissões legítimas devem usar seq novo; seq repetido = replay ou bug
+    // no gateway. Comandos limitados por rate-limit consomem o seq intencionalmente.
     if (!seqTable.checkAndUpdate(mp.from, h.seq)) {
         LOG_WARN("Irrigation: replayed seq %u from 0x%08x", h.seq, mp.from);
         return; // replay: descarta em silêncio, não ACKa
@@ -163,6 +174,10 @@ void IrrigationModule::sendAck(uint32_t to, uint32_t ackedSeq, uint8_t status, u
     meshtastic_MeshPacket *p = allocDataPacket();
     p->to = to;
     p->decoded.payload.size = encodeAck(p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), ++txSeq, ack);
+    if (!p->decoded.payload.size) {
+        packetPool.release(p);
+        return;
+    }
     service->sendToMesh(p, RX_SRC_LOCAL, false);
 }
 
@@ -176,6 +191,10 @@ void IrrigationModule::sendHeartbeat()
     meshtastic_MeshPacket *p = allocDataPacket();
     p->to = settings.boundGateway ? settings.boundGateway : NODENUM_BROADCAST;
     p->decoded.payload.size = encodeHeartbeat(p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), ++txSeq, hb);
+    if (!p->decoded.payload.size) {
+        packetPool.release(p);
+        return;
+    }
     service->sendToMesh(p, RX_SRC_LOCAL, false);
     LOG_DEBUG("Irrigation heartbeat sent, valves=0x%x vbat=%u cV", hb.valveStates, hb.vbatCentiV);
 }
@@ -189,10 +208,12 @@ uint16_t IrrigationModule::batteryCentiV() const
 
 int32_t IrrigationModule::runOnce()
 {
+    // Fail-safe tick roda em TODOS os papéis: num nó mal-configurado nunca deve
+    // sobrar válvula aberta sem timer sendo decrementado.
+    valves.tick(millis());
+
     if ((IrrigationRole)settings.role != IrrigationRole::ESTACAO)
         return 60 * 1000; // gateway/repetidor/serviço: nada periódico nesta fase
-
-    valves.tick(millis());
     uint16_t vbat = batteryCentiV();
     valves.setBatteryLockout(vbat != 0 && vbat < settings.vbatMinAbrirCentiV);
 

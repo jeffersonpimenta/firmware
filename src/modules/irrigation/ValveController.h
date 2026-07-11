@@ -30,6 +30,7 @@ class ValveController
     Result open(uint8_t id, uint32_t durationS, uint32_t configMaxS, uint32_t nowMs);
     Result close(uint8_t id); // sempre aceito, mesmo em lockout de bateria
     void closeAll();
+    void forceCloseAll(); // pulsa TODOS incondicionalmente (uso: boot após reset com solenóide latching aberto)
     void tick(uint32_t nowMs); // fecha válvulas com timer expirado
     bool isOpen(uint8_t id) const { return id < numValves && slots[id].open; }
     uint8_t stateBitmap() const;

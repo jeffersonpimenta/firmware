@@ -81,10 +81,12 @@ static void test_batteryLockout_blocksOpenAllowsClose()
     MockDriver d;
     ValveController vc(d, 1);
     vc.open(0, 60, 0, 0);
+    TEST_ASSERT_EQUAL_INT(1, d.opens[0]); // exatamente um pulso de abertura
     vc.setBatteryLockout(true);
     TEST_ASSERT_EQUAL(ValveController::Result::BATTERY_LOW, vc.open(0, 60, 0, 1000));
     TEST_ASSERT_EQUAL(ValveController::Result::OK, vc.close(0)); // fechar sempre aceito
     TEST_ASSERT_FALSE(vc.isOpen(0));
+    TEST_ASSERT_EQUAL_INT(1, d.opens[0]); // nenhum segundo pulso de abertura disparado
 }
 
 static void test_invalidIdAndZeroDuration_rejected()
@@ -115,6 +117,21 @@ static void test_closeAll()
     vc.open(2, 60, 0, 0);
     vc.closeAll();
     TEST_ASSERT_EQUAL_UINT8(0, vc.stateBitmap());
+    TEST_ASSERT_EQUAL_INT(1, d.closes[0]); // válvula 0 recebeu pulso de fechamento
+    TEST_ASSERT_EQUAL_INT(1, d.closes[2]); // válvula 2 recebeu pulso de fechamento
+}
+
+static void test_forceCloseAll_pulsesEveryValveOnFreshController()
+{
+    MockDriver d;
+    ValveController vc(d, 3);
+    // Controlador recém-criado: slots internos são open=false, mas
+    // forceCloseAll() deve pulsar TODOS incondicionalmente (reset após solenóide aberto).
+    vc.forceCloseAll();
+    TEST_ASSERT_EQUAL_INT(1, d.closes[0]);
+    TEST_ASSERT_EQUAL_INT(1, d.closes[1]);
+    TEST_ASSERT_EQUAL_INT(1, d.closes[2]);
+    TEST_ASSERT_EQUAL_UINT8(0, vc.stateBitmap());
 }
 
 void setup()
@@ -130,6 +147,7 @@ void setup()
     RUN_TEST(test_invalidIdAndZeroDuration_rejected);
     RUN_TEST(test_tickHandlesMillisRollover);
     RUN_TEST(test_closeAll);
+    RUN_TEST(test_forceCloseAll_pulsesEveryValveOnFreshController);
     exit(UNITY_END());
 }
 

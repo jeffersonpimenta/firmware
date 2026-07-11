@@ -40,6 +40,14 @@ void ValveController::closeAll()
         close(i);
 }
 
+void ValveController::forceCloseAll()
+{
+    for (uint8_t i = 0; i < numValves; i++) {
+        driver.pulse(i, false);
+        slots[i].open = false;
+    }
+}
+
 void ValveController::tick(uint32_t nowMs)
 {
     for (uint8_t i = 0; i < numValves; i++) {
