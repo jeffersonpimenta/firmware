@@ -282,9 +282,11 @@ void IrrigationModule::handleSetConfig(const meshtastic_MeshPacket &mp, const He
     uint32_t newEpoch = reasm.epoch();
     reasm.reset();
 
+    uint32_t oldEpoch = settings.configEpoch;
     applySettings(fresh);
     settings.configEpoch = newEpoch;
     if (!saveIrrigationSettings(settings)) {
+        settings.configEpoch = oldEpoch; // não anunciar epoch que não persistiu
         sendAck(mp.from, h.seq, ACK_NACK, REASON_COMMIT_FAIL);
         return;
     }
