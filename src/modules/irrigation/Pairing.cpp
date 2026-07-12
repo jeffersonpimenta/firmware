@@ -41,6 +41,8 @@ void GatewayPairing::openWindow(uint32_t nowMs)
 {
     open = true;
     windowStartMs = nowMs;
+    for (auto &r : recent)
+        r = Recent{};
 }
 
 void GatewayPairing::tick(uint32_t nowMs)
@@ -51,6 +53,8 @@ void GatewayPairing::tick(uint32_t nowMs)
 
 bool GatewayPairing::approveAnnounce(uint32_t nodeId, uint32_t nowMs)
 {
+    if (nodeId == 0)
+        return false; // 0 = endereço inválido/broadcast; e colide com slot vazio
     tick(nowMs);
     if (!open)
         return false;

@@ -41,5 +41,5 @@ class GatewayPairing
         uint32_t node = 0;
         uint32_t atMs = 0;
     };
-    Recent recent[4];
+    Recent recent[8];
 };
