@@ -52,13 +52,14 @@ MirrorMode::Action MirrorMode::update(uint8_t inputsBitmap, uint32_t nowMs)
     // Step 2: Process debounce and edges
     for (uint8_t i = 0; i < INPUTS; i++) {
         bool currentRaw = (inputsBitmap >> i) & 1;
-        uint32_t timeSinceChange = nowMs - _inputs[i].rawSinceMs;
 
-        // If raw value changed, reset the timer
+        // If raw value changed, reset the timer FIRST (before computing elapsed time)
         if (currentRaw != _inputs[i].rawLast) {
             _inputs[i].rawLast = currentRaw;
             _inputs[i].rawSinceMs = nowMs;
         }
+
+        uint32_t timeSinceChange = nowMs - _inputs[i].rawSinceMs;
 
         // If enough time has passed, transition to stable state
         if (timeSinceChange >= DEBOUNCE_MS) {
