@@ -93,7 +93,7 @@ static void test_migrate_v3_passthroughKeepsPins()
     TEST_ASSERT_EQUAL_INT8(2, out.pinLed);
 }
 
-static void test_migrate_v2_passthrough()
+static void test_migrate_v3_passthrough()
 {
     IrrigationSettings in;
     in.configEpoch = 17;
@@ -107,6 +107,27 @@ static void test_migrate_v2_passthrough()
     TEST_ASSERT_EQUAL_INT8(36, out.pinsDigitalIn[1]);
     TEST_ASSERT_EQUAL_UINT8(0b0010, out.digitalInActiveLow);
     TEST_ASSERT_EQUAL_UINT8(3, out.numValves);
+}
+
+static void test_migrate_v2_preservesFieldsResetsPins()
+{
+    IrrigationSettings v2like;
+    v2like.version = 2; // blob v2 genuíno: mesmos 52 bytes
+    v2like.configEpoch = 17;
+    v2like.numValves = 5;
+    v2like.pinsDigitalIn[2] = 36;
+    v2like.digitalInActiveLow = 0b0100;
+    v2like.pinBtn = 13; // bytes que eram padding no v2: NÃO podem sobreviver
+    v2like.pinLed = 14;
+    IrrigationSettings out;
+    TEST_ASSERT_TRUE(migrateIrrigationSettings((const uint8_t *)&v2like, sizeof(v2like), out));
+    TEST_ASSERT_EQUAL_UINT16(3, out.version);
+    TEST_ASSERT_EQUAL_UINT32(17, out.configEpoch);
+    TEST_ASSERT_EQUAL_UINT8(5, out.numValves);
+    TEST_ASSERT_EQUAL_INT8(36, out.pinsDigitalIn[2]);
+    TEST_ASSERT_EQUAL_UINT8(0b0100, out.digitalInActiveLow);
+    TEST_ASSERT_EQUAL_INT8(-1, out.pinBtn);
+    TEST_ASSERT_EQUAL_INT8(-1, out.pinLed);
 }
 
 static void test_migrate_rejectsBadInput()
@@ -154,7 +175,8 @@ void setup()
     RUN_TEST(test_migrate_v1_preservesFieldsAndDefaultsNew);
     RUN_TEST(test_migrate_v1_getsDefaultButtonLedPins);
     RUN_TEST(test_migrate_v2_getsDefaultButtonLedPins);
-    RUN_TEST(test_migrate_v2_passthrough);
+    RUN_TEST(test_migrate_v2_preservesFieldsResetsPins);
+    RUN_TEST(test_migrate_v3_passthrough);
     RUN_TEST(test_migrate_v3_passthroughKeepsPins);
     RUN_TEST(test_migrate_rejectsBadInput);
     RUN_TEST(test_migrate_v2_wrongSize_rejected);
