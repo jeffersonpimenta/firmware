@@ -282,6 +282,8 @@ bool decodePairGrant(const uint8_t *buf, size_t len, PairGrant &out)
     Reader r = bodyReader(buf, len);
     for (int i = 0; i < 32; i++)
         out.psk[i] = r.u8();
+    if (!r.ok) // buffer curto: não continuar preenchendo material de chave
+        return false;
     out.nameLen = r.u8();
     if (!r.ok || out.nameLen > 11 || r.pos + out.nameLen + 4 > len)
         return false;
