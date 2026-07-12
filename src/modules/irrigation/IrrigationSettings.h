@@ -4,8 +4,13 @@
 
 enum class IrrigationRole : uint8_t { ESTACAO = 0, GATEWAY = 1, REPETIDOR = 2, SERVICO = 3 };
 
-// Camada 1 mínima (pin map + parâmetros) da spec §5.1/§5.3. Formato completo
-// (sensores, staging atômico em NVS, epoch) chega na Fase 2.
+// Layout do blob on-disk/radio (52 bytes, ABI-locked v2):
+//   0  magic(4) | 4  version(2) | 6  role(1) | 7  numValves(1)
+//   8  boundGateway(4) | 12 hbMinutes(2) | 14 vbatMinAbrirCentiV(2) | 16 maxOpenConfigS(2)
+//  18  cmdRatePerMin(1) | 19 pad0(1) | 20 pulseMs(2)
+//  22  pinsHbridgeA[8] | 30 pinsHbridgeB[8] | 38 pad1[2]
+//  40  configEpoch(4) | 44 pinsDigitalIn[4] | 48 digitalInActiveLow(1) | 49 pad2[3]
+// Total = 52.
 struct IrrigationSettings {
     static constexpr uint32_t MAGIC = 0x49525231; // "IRR1"
     static constexpr uint8_t MAX_VALVES = 8;
@@ -20,18 +25,24 @@ struct IrrigationSettings {
     uint16_t vbatMinAbrirCentiV = 1180; // 11,8 V (spec §8.1)
     uint16_t maxOpenConfigS = 0;        // 0 = só o teto compilado limita
     uint8_t cmdRatePerMin = 10;
+    uint8_t pad0 = 0;   // explicit padding at offset 19 (between cmdRatePerMin and pulseMs)
     uint16_t pulseMs = 60;
     int8_t pinsHbridgeA[MAX_VALVES] = {-1, -1, -1, -1, -1, -1, -1, -1};
     int8_t pinsHbridgeB[MAX_VALVES] = {-1, -1, -1, -1, -1, -1, -1, -1};
+    uint8_t pad1[2] = {0, 0}; // explicit padding at offsets 38-39 (after pinsHbridgeB)
     // v2:
     uint32_t configEpoch = 0;                        // spec §5.4
     int8_t pinsDigitalIn[MAX_DIGITAL_IN] = {-1, -1, -1, -1};
     uint8_t digitalInActiveLow = 0; // bitmask: bit i = entrada i ativo-baixo (polaridade configurável)
+    uint8_t pad2[3] = {0, 0, 0}; // explicit padding at offsets 49-51 (end of struct)
 };
 
 static constexpr size_t IRRIGATION_SETTINGS_V1_SIZE = 40;
 
-// ABI lock v2: v1(40) + configEpoch(4) + pinsDigitalIn(4) + digitalInActiveLow(1) + pad(3) = 52.
+// ABI lock v2: magic(4)+version(2)+role(1)+numValves(1)+boundGateway(4)+hbMinutes(2)+
+// vbatMinAbrirCentiV(2)+maxOpenConfigS(2)+cmdRatePerMin(1)+pad0(1)+pulseMs(2)+
+// pinsHbridgeA(8)+pinsHbridgeB(8)+pad1(2)+configEpoch(4)+pinsDigitalIn(4)+
+// digitalInActiveLow(1)+pad2(3) = 52. All padding explicit and zero-initialized.
 // Bump version AND this assert on any layout change.
 static_assert(sizeof(IrrigationSettings) == 52, "on-disk settings format is ABI-dependent; bump version on layout change");
 

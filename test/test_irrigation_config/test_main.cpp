@@ -1,6 +1,7 @@
 #include "Arduino.h"
 #include "TestUtil.h"
 #include "modules/irrigation/IrrigationSettings.h"
+#include <new>
 #include <string.h>
 #include <unity.h>
 
@@ -94,6 +95,21 @@ static void test_migrate_v2_wrongSize_rejected()
     TEST_ASSERT_FALSE(migrateIrrigationSettings((const uint8_t *)&in, sizeof(in) - 1, out));
 }
 
+static void test_defaultStruct_bytesDeterministic()
+{
+    // Constrói duas instâncias sobre lixo de memória diferente: todos os 52 bytes
+    // (incluindo padding explícito) devem ser idênticos — CRC estável p/ o gateway.
+    alignas(IrrigationSettings) uint8_t rawA[sizeof(IrrigationSettings)];
+    alignas(IrrigationSettings) uint8_t rawB[sizeof(IrrigationSettings)];
+    memset(rawA, 0xAA, sizeof(rawA));
+    memset(rawB, 0x55, sizeof(rawB));
+    IrrigationSettings *a = new (rawA) IrrigationSettings();
+    IrrigationSettings *b = new (rawB) IrrigationSettings();
+    TEST_ASSERT_EQUAL_MEMORY(a, b, sizeof(IrrigationSettings));
+    a->~IrrigationSettings();
+    b->~IrrigationSettings();
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -102,6 +118,7 @@ void setup()
     RUN_TEST(test_migrate_v2_passthrough);
     RUN_TEST(test_migrate_rejectsBadInput);
     RUN_TEST(test_migrate_v2_wrongSize_rejected);
+    RUN_TEST(test_defaultStruct_bytesDeterministic);
     exit(UNITY_END());
 }
 

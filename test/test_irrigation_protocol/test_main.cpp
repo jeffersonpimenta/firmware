@@ -111,6 +111,7 @@ static void test_crc32_referenceVector()
 {
     const uint8_t v[] = "123456789";
     TEST_ASSERT_EQUAL_HEX32(0xCBF43926, crc32(v, 9));
+    TEST_ASSERT_EQUAL_HEX32(0x00000000, crc32(v, 0));
 }
 
 static void test_setConfig_roundTrip()
@@ -134,6 +135,7 @@ static void test_setConfig_roundTrip()
     Header h;
     TEST_ASSERT_TRUE(decodeHeader(buf, n, h));
     TEST_ASSERT_EQUAL_UINT8(MSG_SET_CONFIG, h.type);
+    TEST_ASSERT_EQUAL_UINT32(9, h.seq);
 
     SetConfig out;
     TEST_ASSERT_TRUE(decodeSetConfig(buf, n, out));
