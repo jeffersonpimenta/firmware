@@ -13,12 +13,11 @@ ButtonGestureDetector::Event ButtonGestureDetector::update(bool pressed, uint32_
     Event ev = Event::NONE;
 
     if (debounced && !stable) { // borda de pressão
+        doubleDetected = false;
         if (shortArmed && (nowMs - shortArmedMs) <= DOUBLE_GAP_MS) {
             shortArmed = false;
             doubleDetected = true;
             ev = Event::DOUBLE;
-        } else {
-            doubleDetected = false;
         }
         pressStartMs = nowMs;
         longFired = holdFired = false;
@@ -30,6 +29,8 @@ ButtonGestureDetector::Event ButtonGestureDetector::update(bool pressed, uint32_
         }
     } else if (debounced) { // segurando
         uint32_t held = nowMs - pressStartMs;
+        // A ordem if/else-if é intencional: aos 10 s, longFired já é true, então o
+        // primeiro ramo é falso e o else-if do HOLD dispara. Não "consertar".
         if (!longFired && held >= LONG_MS) {
             longFired = true;
             ev = Event::LONG_3S;
