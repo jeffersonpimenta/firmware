@@ -100,6 +100,32 @@ struct SetConfig {
     const uint8_t *frag; // decode: aponta dentro do buffer de entrada
 };
 
+struct PairAnnounce {
+    uint8_t protoVersion;
+    uint8_t nameLen;
+    char name[16];
+};
+
+struct PairGrant {
+    uint8_t psk[32];
+    uint8_t nameLen;
+    char channelName[12];
+    uint32_t gatewayId;
+};
+
+enum EventCode : uint8_t {
+    EV_MANUAL_OPEN = 1,
+    EV_MANUAL_CLOSE = 2,
+    EV_TEST_PULSE = 3,
+    EV_PAIRED = 4,
+    EV_FACTORY_RESET = 5
+};
+
+struct Evento {
+    uint8_t code;
+    uint32_t arg;
+};
+
 // Encoders devolvem bytes totais gravados (header + corpo), 0 se buffer pequeno.
 size_t encodeCmdValvula(uint8_t *buf, size_t len, uint32_t seq, const CmdValvula &m);
 size_t encodeCmdGpo(uint8_t *buf, size_t len, uint32_t seq, const CmdGpo &m);
@@ -107,6 +133,9 @@ size_t encodeAck(uint8_t *buf, size_t len, uint32_t seq, const Ack &m);
 size_t encodeHeartbeat(uint8_t *buf, size_t len, uint32_t seq, const Heartbeat &m);
 size_t encodeSetConfig(uint8_t *buf, size_t len, uint32_t seq, const SetConfig &m);
 size_t encodeGetConfig(uint8_t *buf, size_t len, uint32_t seq);
+size_t encodePairAnnounce(uint8_t *buf, size_t len, uint32_t seq, const PairAnnounce &m);
+size_t encodePairGrant(uint8_t *buf, size_t len, uint32_t seq, const PairGrant &m);
+size_t encodeEvento(uint8_t *buf, size_t len, uint32_t seq, const Evento &m);
 
 // decodeHeader primeiro; depois o decode do corpo conforme header.type.
 bool decodeHeader(const uint8_t *buf, size_t len, Header &out);
@@ -115,6 +144,9 @@ bool decodeCmdGpo(const uint8_t *buf, size_t len, CmdGpo &out);
 bool decodeAck(const uint8_t *buf, size_t len, Ack &out);
 bool decodeHeartbeat(const uint8_t *buf, size_t len, Heartbeat &out);
 bool decodeSetConfig(const uint8_t *buf, size_t len, SetConfig &out);
+bool decodePairAnnounce(const uint8_t *buf, size_t len, PairAnnounce &out);
+bool decodePairGrant(const uint8_t *buf, size_t len, PairGrant &out);
+bool decodeEvento(const uint8_t *buf, size_t len, Evento &out);
 
 uint32_t crc32(const uint8_t *data, size_t len);
 

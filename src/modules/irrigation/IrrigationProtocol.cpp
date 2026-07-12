@@ -1,4 +1,5 @@
 #include "IrrigationProtocol.h"
+#include <string.h>
 
 namespace IrrigationProto
 {
@@ -234,6 +235,78 @@ size_t encodeGetConfig(uint8_t *buf, size_t len, uint32_t seq)
     Writer w{buf, len};
     writeHeader(w, MSG_GET_CONFIG, seq);
     return w.ok ? w.pos : 0;
+}
+
+size_t encodePairAnnounce(uint8_t *buf, size_t len, uint32_t seq, const PairAnnounce &m)
+{
+    if (m.nameLen > 15)
+        return 0;
+    Writer w{buf, len};
+    writeHeader(w, MSG_PAIR_ANNOUNCE, seq);
+    w.u8(m.protoVersion);
+    w.u8(m.nameLen);
+    for (uint8_t i = 0; w.ok && i < m.nameLen; i++)
+        w.u8((uint8_t)m.name[i]);
+    return w.ok ? w.pos : 0;
+}
+
+bool decodePairAnnounce(const uint8_t *buf, size_t len, PairAnnounce &out)
+{
+    Reader r = bodyReader(buf, len);
+    out.protoVersion = r.u8();
+    out.nameLen = r.u8();
+    if (!r.ok || out.nameLen > 15 || r.pos + out.nameLen > len)
+        return false;
+    memcpy(out.name, buf + r.pos, out.nameLen);
+    out.name[out.nameLen] = '\0';
+    return true;
+}
+
+size_t encodePairGrant(uint8_t *buf, size_t len, uint32_t seq, const PairGrant &m)
+{
+    if (m.nameLen > 11)
+        return 0;
+    Writer w{buf, len};
+    writeHeader(w, MSG_PAIR_GRANT, seq);
+    for (int i = 0; w.ok && i < 32; i++)
+        w.u8(m.psk[i]);
+    w.u8(m.nameLen);
+    for (uint8_t i = 0; w.ok && i < m.nameLen; i++)
+        w.u8((uint8_t)m.channelName[i]);
+    w.u32(m.gatewayId);
+    return w.ok ? w.pos : 0;
+}
+
+bool decodePairGrant(const uint8_t *buf, size_t len, PairGrant &out)
+{
+    Reader r = bodyReader(buf, len);
+    for (int i = 0; i < 32; i++)
+        out.psk[i] = r.u8();
+    out.nameLen = r.u8();
+    if (!r.ok || out.nameLen > 11 || r.pos + out.nameLen + 4 > len)
+        return false;
+    memcpy(out.channelName, buf + r.pos, out.nameLen);
+    out.channelName[out.nameLen] = '\0';
+    r.pos += out.nameLen;
+    out.gatewayId = r.u32();
+    return r.ok;
+}
+
+size_t encodeEvento(uint8_t *buf, size_t len, uint32_t seq, const Evento &m)
+{
+    Writer w{buf, len};
+    writeHeader(w, MSG_EVENTO, seq);
+    w.u8(m.code);
+    w.u32(m.arg);
+    return w.ok ? w.pos : 0;
+}
+
+bool decodeEvento(const uint8_t *buf, size_t len, Evento &out)
+{
+    Reader r = bodyReader(buf, len);
+    out.code = r.u8();
+    out.arg = r.u32();
+    return r.ok;
 }
 
 } // namespace IrrigationProto

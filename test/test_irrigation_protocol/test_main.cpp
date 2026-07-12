@@ -185,6 +185,75 @@ static void test_getConfig_headerOnly()
     TEST_ASSERT_EQUAL_UINT32(3, h.seq);
 }
 
+static void test_pairAnnounce_roundTrip()
+{
+    uint8_t buf[MAX_PAYLOAD];
+    PairAnnounce in = {};
+    in.protoVersion = VERSION;
+    in.nameLen = 5;
+    memcpy(in.name, "Pasto", 5);
+    size_t n = encodePairAnnounce(buf, sizeof(buf), 2, in);
+    TEST_ASSERT_GREATER_THAN(HEADER_LEN, n);
+    Header h;
+    TEST_ASSERT_TRUE(decodeHeader(buf, n, h));
+    TEST_ASSERT_EQUAL_UINT8(MSG_PAIR_ANNOUNCE, h.type);
+    PairAnnounce out;
+    TEST_ASSERT_TRUE(decodePairAnnounce(buf, n, out));
+    TEST_ASSERT_EQUAL_UINT8(VERSION, out.protoVersion);
+    TEST_ASSERT_EQUAL_UINT8(5, out.nameLen);
+    TEST_ASSERT_EQUAL_STRING("Pasto", out.name);
+}
+
+static void test_pairGrant_roundTrip()
+{
+    uint8_t buf[MAX_PAYLOAD];
+    PairGrant in = {};
+    for (int i = 0; i < 32; i++)
+        in.psk[i] = (uint8_t)(i * 3);
+    in.nameLen = 7;
+    memcpy(in.channelName, "bvirrig", 7);
+    in.gatewayId = 0xa1b2c3d4;
+    size_t n = encodePairGrant(buf, sizeof(buf), 3, in);
+    TEST_ASSERT_GREATER_THAN(HEADER_LEN, n);
+    PairGrant out;
+    TEST_ASSERT_TRUE(decodePairGrant(buf, n, out));
+    TEST_ASSERT_EQUAL_MEMORY(in.psk, out.psk, 32);
+    TEST_ASSERT_EQUAL_STRING("bvirrig", out.channelName);
+    TEST_ASSERT_EQUAL_HEX32(0xa1b2c3d4, out.gatewayId);
+}
+
+static void test_pairGrant_nameTooLong_rejected()
+{
+    uint8_t buf[MAX_PAYLOAD];
+    PairGrant in = {};
+    in.nameLen = 12; // máx 11
+    TEST_ASSERT_EQUAL_UINT(0, encodePairGrant(buf, sizeof(buf), 1, in));
+}
+
+static void test_evento_roundTrip()
+{
+    uint8_t buf[MAX_PAYLOAD];
+    Evento in = {EV_MANUAL_OPEN, 1200};
+    size_t n = encodeEvento(buf, sizeof(buf), 4, in);
+    TEST_ASSERT_GREATER_THAN(HEADER_LEN, n);
+    Evento out;
+    TEST_ASSERT_TRUE(decodeEvento(buf, n, out));
+    TEST_ASSERT_EQUAL_UINT8(EV_MANUAL_OPEN, out.code);
+    TEST_ASSERT_EQUAL_UINT32(1200, out.arg);
+}
+
+static void test_pairGrant_truncated_rejected()
+{
+    uint8_t buf[MAX_PAYLOAD];
+    PairGrant in = {};
+    in.nameLen = 4;
+    memcpy(in.channelName, "abcd", 4);
+    in.gatewayId = 1;
+    size_t n = encodePairGrant(buf, sizeof(buf), 1, in);
+    PairGrant out;
+    TEST_ASSERT_FALSE(decodePairGrant(buf, n - 1, out));
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -200,6 +269,11 @@ void setup()
     RUN_TEST(test_setConfig_fragTooBig_rejected);
     RUN_TEST(test_setConfig_truncated_rejected);
     RUN_TEST(test_getConfig_headerOnly);
+    RUN_TEST(test_pairAnnounce_roundTrip);
+    RUN_TEST(test_pairGrant_roundTrip);
+    RUN_TEST(test_pairGrant_nameTooLong_rejected);
+    RUN_TEST(test_evento_roundTrip);
+    RUN_TEST(test_pairGrant_truncated_rejected);
     exit(UNITY_END());
 }
 
