@@ -35,7 +35,8 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     void handleCmdValvula(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
     void handleSetConfig(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
     void handleGetConfig(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
-    void applySettings(const IrrigationSettings &fresh);
+    IrrigationSettings mergeRemoteConfig(const IrrigationSettings &fresh, uint32_t newEpoch) const;
+    void activateSettings(const IrrigationSettings &merged);
     void sendAck(uint32_t to, uint32_t ackedSeq, uint8_t status, uint8_t reason);
     void sendHeartbeat();
     bool senderAuthorized(uint32_t from) const;

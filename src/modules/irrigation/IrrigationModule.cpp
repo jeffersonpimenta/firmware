@@ -220,16 +220,32 @@ uint16_t IrrigationModule::batteryCentiV() const
     return 0;
 }
 
-void IrrigationModule::applySettings(const IrrigationSettings &fresh)
+// Monta a config remota mesclada: identidade preservada, limites saneados.
+IrrigationSettings IrrigationModule::mergeRemoteConfig(const IrrigationSettings &fresh, uint32_t newEpoch) const
 {
+    IrrigationSettings m = fresh;
     // role e boundGateway são identidade/credencial: config remota não toca (§5.5/§6)
-    uint8_t keepRole = settings.role;
-    uint32_t keepGw = settings.boundGateway;
-    settings = fresh;
-    settings.role = keepRole;
-    settings.boundGateway = keepGw;
-    if (settings.pulseMs > 1000)
-        settings.pulseMs = 1000;
+    m.role = settings.role;
+    m.boundGateway = settings.boundGateway;
+    m.configEpoch = newEpoch;
+    if (m.pulseMs > 1000)
+        m.pulseMs = 1000;
+    if (m.cmdRatePerMin == 0)
+        m.cmdRatePerMin = 1; // 0 trancaria até o próprio SET_CONFIG de recuperação
+    if (m.hbMinutes == 0)
+        m.hbMinutes = 1;
+    if (m.numValves > IrrigationSettings::MAX_VALVES)
+        m.numValves = IrrigationSettings::MAX_VALVES;
+    return m;
+}
+
+void IrrigationModule::activateSettings(const IrrigationSettings &merged)
+{
+    // Fecha tudo ANTES de trocar o pin map: os pulsos de fechar saem nos pinos antigos.
+    valves.forceCloseAll();
+    settings = merged;
+    if (settings.numValves == 0)
+        LOG_WARN("Irrigation: config sets zero valves");
     driver.configure(settings);
     valves.setNumValves(settings.numValves);
     rateLimiter = RateLimiter(settings.cmdRatePerMin);
@@ -282,17 +298,15 @@ void IrrigationModule::handleSetConfig(const meshtastic_MeshPacket &mp, const He
     uint32_t newEpoch = reasm.epoch();
     reasm.reset();
 
-    uint32_t oldEpoch = settings.configEpoch;
-    applySettings(fresh);
-    settings.configEpoch = newEpoch;
-    if (!saveIrrigationSettings(settings)) {
-        settings.configEpoch = oldEpoch; // não anunciar epoch que não persistiu
+    IrrigationSettings merged = mergeRemoteConfig(fresh, newEpoch);
+    if (!saveIrrigationSettings(merged)) {
         sendAck(mp.from, h.seq, ACK_NACK, REASON_COMMIT_FAIL);
         return;
     }
-    safeMode = false; // config persistida = saímos do modo seguro
+    activateSettings(merged);
+    safeMode = false;
     LOG_INFO("Irrigation: config applied epoch=%u from 0x%08x", newEpoch, mp.from);
-    sendAck(mp.from, h.seq, ACK_OK, REASON_NONE); // ACK só após commit (§5.5)
+    sendAck(mp.from, h.seq, ACK_OK, REASON_NONE);
 }
 
 void IrrigationModule::handleGetConfig(const meshtastic_MeshPacket &mp, const Header &h)
