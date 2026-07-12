@@ -37,6 +37,12 @@ bool StationPairing::onGrant(const IrrigationProto::PairGrant &g, uint32_t nowMs
     return true;
 }
 
+void StationPairing::reset()
+{
+    st = State::IDLE;
+    announced = false;
+}
+
 void GatewayPairing::openWindow(uint32_t nowMs)
 {
     open = true;

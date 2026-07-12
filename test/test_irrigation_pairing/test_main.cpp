@@ -85,6 +85,19 @@ static void test_allowlist_fullRejects()
     TEST_ASSERT_EQUAL_UINT(Allowlist::MAX, al.count());
 }
 
+static void test_station_resetAllowsRepairAfterCommit()
+{
+    StationPairing sp;
+    sp.openWindow(1000);
+    TEST_ASSERT_TRUE(sp.onGrant(makeGrant(), 2000));
+    TEST_ASSERT_EQUAL(State::COMMITTED, sp.state());
+    sp.reset();
+    TEST_ASSERT_EQUAL(State::IDLE, sp.state());
+    sp.openWindow(3000);
+    TEST_ASSERT_EQUAL(State::WINDOW, sp.state());
+    TEST_ASSERT_TRUE(sp.announceDue(3000));
+}
+
 static void test_allowlist_serializeRoundTripAndRejectsGarbage()
 {
     Allowlist al;
@@ -111,6 +124,7 @@ void setup()
     UNITY_BEGIN();
     RUN_TEST(test_station_windowLifecycleAndAnnounceCadence);
     RUN_TEST(test_station_grantOnlyInsideWindow);
+    RUN_TEST(test_station_resetAllowsRepairAfterCommit);
     RUN_TEST(test_gateway_windowAndCooldown);
     RUN_TEST(test_allowlist_addRemoveContainsIdempotent);
     RUN_TEST(test_allowlist_fullRejects);

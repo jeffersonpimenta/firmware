@@ -13,6 +13,7 @@ class StationPairing
     void tick(uint32_t nowMs);
     bool announceDue(uint32_t nowMs);
     bool onGrant(const IrrigationProto::PairGrant &g, uint32_t nowMs);
+    void reset(); // retorna ao IDLE sem power-cycle (ex: commit falhou, reabre janela)
     State state() const { return st; }
     const IrrigationProto::PairGrant &grant() const { return granted; }
 

@@ -446,8 +446,9 @@ int32_t IrrigationModule::runOnce()
     }
 
     if ((IrrigationRole)settings.role != IrrigationRole::ESTACAO) {
+        gatewayPairing.tick(millis());
         refreshLedMode();
-        return 60 * 1000; // gateway/repetidor/serviço: nada periódico nesta fase
+        return gatewayPairing.windowOpen() ? 1000 : 60 * 1000; // janela aberta: pisca em 1 s; idle: 60 s
     }
     uint16_t vbat = batteryCentiV();
     valves.setBatteryLockout(vbat != 0 && vbat < settings.vbatMinAbrirCentiV);
@@ -470,6 +471,11 @@ int32_t IrrigationModule::runOnce()
 // Pairing handlers (spec §6). No senderAuthorized check — physical window +
 // button press is the authorization. Both handlers apply anti-replay and rate
 // limit at entry to prevent amplification attacks.
+//
+// adoção exige que o gateway mantenha um canal secundário com PSK default para
+// escutar anúncios; o grant volta por esse canal (exposição aceita, spec §6).
+// o modelo é UM botão por lado, não dois — qualquer anunciante durante a janela
+// do gateway recebe a PSK; exposição aceita pela spec §6, não sobrestimar a garantia.
 // ---------------------------------------------------------------------------
 
 void IrrigationModule::handlePairAnnounce(const meshtastic_MeshPacket &mp, const Header &h)
@@ -503,16 +509,21 @@ void IrrigationModule::handlePairAnnounce(const meshtastic_MeshPacket &mp, const
     memcpy(g.channelName, chName, g.nameLen);
     g.gatewayId = nodeDB->getNodeNum();
 
+    if (!allowlist.add(mp.from)) {
+        LOG_ERROR("Irrigation: allowlist full, refusing grant to 0x%08x", mp.from);
+        return;
+    }
     meshtastic_MeshPacket *p = allocDataPacket();
     p->to = mp.from;
+    p->channel = mp.channel; // responde no canal do anúncio: o nó de fábrica não tem a PSK primária
     p->decoded.payload.size =
         (uint16_t)encodePairGrant(p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), ++txSeq, g);
     if (!p->decoded.payload.size) {
         packetPool.release(p);
+        allowlist.remove(mp.from); // rollback: grant não foi enviado
         return;
     }
     service->sendToMesh(p, RX_SRC_LOCAL, false);
-    allowlist.add(mp.from);
     saveAllowlist();
     LOG_INFO("Irrigation: granted pairing to 0x%08x (%.*s)", mp.from, (int)pa.nameLen, pa.name);
 }
@@ -554,10 +565,13 @@ void IrrigationModule::commitPairing()
     service->reloadConfig(SEGMENT_CHANNELS); // persiste o canal: sem isso, queda de
     // energia antes do reboot deixaria vínculo gravado com PSK antiga em flash
 
+    uint32_t oldGw = settings.boundGateway;
     settings.boundGateway = g.gatewayId;
     if (!saveIrrigationSettings(settings)) {
-        LOG_ERROR("Irrigation: pairing commit failed to persist settings");
-        return; // without persisted binding we must not reboot; next window retries
+        settings.boundGateway = oldGw;
+        stationPairing.reset(); // permite reabrir a janela e re-parear sem power-cycle
+        LOG_ERROR("Irrigation: pairing commit failed to persist");
+        return;
     }
     safeMode = false;
     sendEvento(EV_PAIRED, g.gatewayId);
@@ -569,11 +583,22 @@ void IrrigationModule::commitPairing()
 // (full credential removal requires the Phase-5 portal — documented limitation).
 void IrrigationModule::factoryReset()
 {
+    // pulsos saem no pin map atual; depois do wipe os pinos viram -1 e nada mais fecha fisicamente.
+    valves.forceCloseAll();
     LOG_WARN("Irrigation: factory reset by button");
     led.setMode(LedPatternController::Mode::PAIRING); // visual confirmation for 2 s before reboot
-    sendEvento(EV_FACTORY_RESET);
+    sendEvento(EV_FACTORY_RESET); // entrega best-effort — reboot em 2 s pode cortar o TX
+    IrrigationSettings def; // defaults: credenciais e parâmetros zerados
+    def.role = settings.role; // papel e pinos são realidade física, não credencial
+    def.numValves = settings.numValves;
+    memcpy(def.pinsHbridgeA, settings.pinsHbridgeA, sizeof(def.pinsHbridgeA));
+    memcpy(def.pinsHbridgeB, settings.pinsHbridgeB, sizeof(def.pinsHbridgeB));
+    memcpy(def.pinsDigitalIn, settings.pinsDigitalIn, sizeof(def.pinsDigitalIn));
+    def.digitalInActiveLow = settings.digitalInActiveLow;
+    def.pinBtn = settings.pinBtn;
+    def.pinLed = settings.pinLed;
+    saveIrrigationSettings(def); // boundGateway=0, epoch=0: nó volta ao modo fábrica
 #ifdef FSCom
-    FSCom.remove("/prefs/irrigation.dat");
     FSCom.remove(ALLOWLIST_PATH);
 #endif
     rebootAtMsec = millis() + 2000;
@@ -695,7 +720,8 @@ void IrrigationModule::refreshLedMode()
 
 // ---------------------------------------------------------------------------
 // Allowlist persistence — same staged-write pattern as IrrigationSettings.
-// Buffer: MAGIC(4) + count(2) + ids[MAX](4*16) = 70 bytes max.
+// formato = magic(4)+versão(1)+count(1)+ids LE (host little-endian).
+// Buffer: MAGIC(4) + versão(1) + count(1) + ids[MAX](4*16) = 70 bytes max.
 // ---------------------------------------------------------------------------
 
 bool IrrigationModule::loadAllowlist()
