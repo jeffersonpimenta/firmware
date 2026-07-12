@@ -87,9 +87,12 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     LedPatternController led;
     // Gateway aggregate — only meaningful when role == GATEWAY (Task 6, decisão §1).
     IrrigationGateway gateway;
-    // Mapa de cooldowns para reconciliação de epoch por nó (30 s) — indexed by registry slot.
-    // Usamos array paralelo ao StationRegistry::MAX slots (16 entradas).
-    uint32_t epochCooldownMs[StationRegistry::MAX] = {};
+    // Cooldowns de reconciliação de epoch indexados por nó (Fix 3: node-keyed, não por posição na allowlist).
+    struct EpochCooldown {
+        uint32_t node = 0;
+        uint32_t lastMs = 0;
+    };
+    EpochCooldown epochCooldowns[StationRegistry::MAX];
     uint32_t txSeq = 0;
     uint32_t lastHeartbeatMs = 0;
     uint32_t lastGatewayRxMs = 0; // last millis() we received a packet from boundGateway

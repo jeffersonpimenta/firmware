@@ -1074,6 +1074,7 @@ void IrrigationModule::gwTick()
             }
             if (!p->decoded.payload.size) {
                 packetPool.release(p);
+                gateway.alerts.push({AlertType::CMD_FAIL, r.node, 0xFF, millis()}); // 0xFF = falha interna de encode
             } else {
                 service->sendToMesh(p, RX_SRC_LOCAL, false);
                 gateway.tracker.retrack(txSeq, r, millis());
@@ -1120,24 +1121,40 @@ void IrrigationModule::gwReconcileEpoch(uint32_t node, uint32_t remoteEpoch)
     if (!entry)
         return;
 
-    // Encontra índice no cooldown array (paralelo ao allowlist).
+    // Fix 1 (guard §5.4): blob só é válido após adoptConfig; nunca empurrar zeros.
+    if (entry->desiredEpoch == 0)
+        return; // blob só é válido após adoptConfig; nunca empurrar zeros (§5.4)
+
+    // Fix 3: cooldown indexado por nó (não por posição na allowlist).
+    // Localiza slot existente ou toma o mais antigo (find-or-create).
     uint8_t slot = 0xFF;
-    for (size_t i = 0; i < allowlist.count() && i < StationRegistry::MAX; i++) {
-        if (allowlist.nodeAt(i) == node) {
-            slot = (uint8_t)i;
+    uint8_t oldestSlot = 0;
+    uint32_t oldestMs = epochCooldowns[0].lastMs;
+    for (uint8_t i = 0; i < StationRegistry::MAX; i++) {
+        if (epochCooldowns[i].node == node) {
+            slot = i;
             break;
+        }
+        if (epochCooldowns[i].node == 0 && slot == 0xFF) {
+            slot = i; // preferência por slot vazio
+            break;
+        }
+        if (epochCooldowns[i].lastMs < oldestMs) {
+            oldestMs = epochCooldowns[i].lastMs;
+            oldestSlot = i;
         }
     }
     if (slot == 0xFF)
-        return;
+        slot = oldestSlot; // todos ocupados: recicla o mais antigo
+    epochCooldowns[slot].node = node;
 
     uint32_t now = millis();
-    if (now - epochCooldownMs[slot] < EPOCH_COOLDOWN_MS)
+    if (now - epochCooldowns[slot].lastMs < EPOCH_COOLDOWN_MS)
         return; // cooldown ainda ativo
 
     if (remoteEpoch < entry->desiredEpoch) {
         // Estação está atrás: envia SET_CONFIG com o blob desejado.
-        epochCooldownMs[slot] = now;
+        epochCooldowns[slot].lastMs = now;
         const uint8_t *blob = entry->blob;
         uint16_t totalLen = sizeof(entry->blob);
         uint32_t crc = crc32(blob, totalLen);
@@ -1165,7 +1182,7 @@ void IrrigationModule::gwReconcileEpoch(uint32_t node, uint32_t remoteEpoch)
         LOG_INFO("Irrigation GW: pushed config epoch=%u to node=0x%08x", entry->desiredEpoch, node);
     } else if (remoteEpoch > entry->desiredEpoch) {
         // Estação está à frente do desejado: solicita GET_CONFIG para adotar.
-        epochCooldownMs[slot] = now;
+        epochCooldowns[slot].lastMs = now;
         meshtastic_MeshPacket *p = allocDataPacket();
         p->to = node;
         p->decoded.payload.size = (uint16_t)encodeGetConfig(p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), ++txSeq);
