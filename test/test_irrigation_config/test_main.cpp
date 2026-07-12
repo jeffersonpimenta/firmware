@@ -39,7 +39,7 @@ static void test_migrate_v1_preservesFieldsAndDefaultsNew()
     buildV1Image(img);
     IrrigationSettings s;
     TEST_ASSERT_TRUE(migrateIrrigationSettings(img, sizeof(img), s));
-    TEST_ASSERT_EQUAL_UINT16(2, s.version);
+    TEST_ASSERT_EQUAL_UINT16(3, s.version);
     TEST_ASSERT_EQUAL_UINT8(1, s.role);
     TEST_ASSERT_EQUAL_UINT8(4, s.numValves);
     TEST_ASSERT_EQUAL_HEX32(0xa1b2c3d4, s.boundGateway);
@@ -57,6 +57,42 @@ static void test_migrate_v1_preservesFieldsAndDefaultsNew()
     TEST_ASSERT_EQUAL_UINT8(0, s.digitalInActiveLow);
 }
 
+static void test_migrate_v1_getsDefaultButtonLedPins()
+{
+    uint8_t img[IRRIGATION_SETTINGS_V1_SIZE];
+    buildV1Image(img);
+    IrrigationSettings out;
+    TEST_ASSERT_TRUE(migrateIrrigationSettings(img, sizeof(img), out));
+    TEST_ASSERT_EQUAL_UINT16(3, out.version);
+    TEST_ASSERT_EQUAL_INT8(-1, out.pinBtn);
+    TEST_ASSERT_EQUAL_INT8(-1, out.pinLed);
+}
+
+static void test_migrate_v2_getsDefaultButtonLedPins()
+{
+    IrrigationSettings v2like;
+    v2like.version = 2; // simula blob v2: mesmos 52 bytes, pinos ainda não existiam
+    v2like.pinBtn = 0;  // lixo nos bytes que eram pad no v2
+    v2like.pinLed = 0;
+    IrrigationSettings out;
+    TEST_ASSERT_TRUE(migrateIrrigationSettings((const uint8_t *)&v2like, sizeof(v2like), out));
+    TEST_ASSERT_EQUAL_UINT16(3, out.version);
+    TEST_ASSERT_EQUAL_INT8(-1, out.pinBtn); // v2 não tinha o campo: default
+    TEST_ASSERT_EQUAL_INT8(-1, out.pinLed);
+}
+
+static void test_migrate_v3_passthroughKeepsPins()
+{
+    IrrigationSettings in;
+    in.pinBtn = 0;
+    in.pinLed = 2;
+    IrrigationSettings out;
+    TEST_ASSERT_TRUE(migrateIrrigationSettings((const uint8_t *)&in, sizeof(in), out));
+    TEST_ASSERT_EQUAL_UINT16(3, out.version);
+    TEST_ASSERT_EQUAL_INT8(0, out.pinBtn);
+    TEST_ASSERT_EQUAL_INT8(2, out.pinLed);
+}
+
 static void test_migrate_v2_passthrough()
 {
     IrrigationSettings in;
@@ -66,6 +102,7 @@ static void test_migrate_v2_passthrough()
     in.numValves = 3;
     IrrigationSettings out;
     TEST_ASSERT_TRUE(migrateIrrigationSettings((const uint8_t *)&in, sizeof(in), out));
+    TEST_ASSERT_EQUAL_UINT16(3, out.version);
     TEST_ASSERT_EQUAL_UINT32(17, out.configEpoch);
     TEST_ASSERT_EQUAL_INT8(36, out.pinsDigitalIn[1]);
     TEST_ASSERT_EQUAL_UINT8(0b0010, out.digitalInActiveLow);
@@ -115,7 +152,10 @@ void setup()
     initializeTestEnvironment();
     UNITY_BEGIN();
     RUN_TEST(test_migrate_v1_preservesFieldsAndDefaultsNew);
+    RUN_TEST(test_migrate_v1_getsDefaultButtonLedPins);
+    RUN_TEST(test_migrate_v2_getsDefaultButtonLedPins);
     RUN_TEST(test_migrate_v2_passthrough);
+    RUN_TEST(test_migrate_v3_passthroughKeepsPins);
     RUN_TEST(test_migrate_rejectsBadInput);
     RUN_TEST(test_migrate_v2_wrongSize_rejected);
     RUN_TEST(test_defaultStruct_bytesDeterministic);

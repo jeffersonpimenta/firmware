@@ -4,12 +4,12 @@
 
 enum class IrrigationRole : uint8_t { ESTACAO = 0, GATEWAY = 1, REPETIDOR = 2, SERVICO = 3 };
 
-// Layout do blob on-disk/radio (52 bytes, ABI-locked v2):
+// Layout do blob on-disk/radio (52 bytes, ABI-locked v3):
 //   0  magic(4) | 4  version(2) | 6  role(1) | 7  numValves(1)
 //   8  boundGateway(4) | 12 hbMinutes(2) | 14 vbatMinAbrirCentiV(2) | 16 maxOpenConfigS(2)
 //  18  cmdRatePerMin(1) | 19 pad0(1) | 20 pulseMs(2)
 //  22  pinsHbridgeA[8] | 30 pinsHbridgeB[8] | 38 pad1[2]
-//  40  configEpoch(4) | 44 pinsDigitalIn[4] | 48 digitalInActiveLow(1) | 49 pad2[3]
+//  40  configEpoch(4) | 44 pinsDigitalIn[4] | 48 digitalInActiveLow(1) | 49 pinBtn(1) | 50 pinLed(1) | 51 pad2(1)
 // Total = 52.
 struct IrrigationSettings {
     static constexpr uint32_t MAGIC = 0x49525231; // "IRR1"
@@ -17,7 +17,7 @@ struct IrrigationSettings {
     static constexpr uint8_t MAX_DIGITAL_IN = 4;
 
     uint32_t magic = MAGIC;
-    uint16_t version = 2;
+    uint16_t version = 3;
     uint8_t role = (uint8_t)IrrigationRole::ESTACAO;
     uint8_t numValves = 2;
     uint32_t boundGateway = 0; // 0 = não pareado
@@ -34,19 +34,22 @@ struct IrrigationSettings {
     uint32_t configEpoch = 0;                        // spec §5.4
     int8_t pinsDigitalIn[MAX_DIGITAL_IN] = {-1, -1, -1, -1};
     uint8_t digitalInActiveLow = 0; // bitmask: bit i = entrada i ativo-baixo (polaridade configurável)
-    uint8_t pad2[3] = {0, 0, 0}; // explicit padding at offsets 49-51 (end of struct)
+    // v3:
+    int8_t pinBtn = -1;   // botão multifunção (§8.6); -1 = ausente
+    int8_t pinLed = -1;   // LED de status (§8.7); -1 = ausente
+    uint8_t pad2 = 0;    // explicit padding at offset 51 (end of struct)
 };
 
 static constexpr size_t IRRIGATION_SETTINGS_V1_SIZE = 40;
 
-// ABI lock v2: magic(4)+version(2)+role(1)+numValves(1)+boundGateway(4)+hbMinutes(2)+
+// ABI lock v3: magic(4)+version(2)+role(1)+numValves(1)+boundGateway(4)+hbMinutes(2)+
 // vbatMinAbrirCentiV(2)+maxOpenConfigS(2)+cmdRatePerMin(1)+pad0(1)+pulseMs(2)+
 // pinsHbridgeA(8)+pinsHbridgeB(8)+pad1(2)+configEpoch(4)+pinsDigitalIn(4)+
-// digitalInActiveLow(1)+pad2(3) = 52. All padding explicit and zero-initialized.
+// digitalInActiveLow(1)+pinBtn(1)+pinLed(1)+pad2(1) = 52. All padding explicit and zero-initialized.
 // Bump version AND this assert on any layout change.
 static_assert(sizeof(IrrigationSettings) == 52, "on-disk settings format is ABI-dependent; bump version on layout change");
 
-// Blob v1 ou v2 → struct v2. false = magic/versão/tamanho inválido (out fica intacto).
+// Blob v1, v2 ou v3 → struct v3. false = magic/versão/tamanho inválido (out fica intacto).
 bool migrateIrrigationSettings(const uint8_t *raw, size_t n, IrrigationSettings &out);
 
 // false = arquivo ausente/corrompido; `s` fica com os defaults acima.

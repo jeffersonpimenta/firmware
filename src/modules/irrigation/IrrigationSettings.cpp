@@ -17,18 +17,30 @@ bool migrateIrrigationSettings(const uint8_t *raw, size_t n, IrrigationSettings 
     if (magic != IrrigationSettings::MAGIC)
         return false;
 
-    if (version == 2) {
+    if (version == 3) {
         if (n != sizeof(IrrigationSettings))
             return false;
         memcpy(&out, raw, sizeof(out));
         return true;
     }
+    if (version == 2) {
+        if (n != sizeof(IrrigationSettings))
+            return false;
+        IrrigationSettings s;
+        memcpy(&s, raw, sizeof(s));
+        s.version = 3;
+        s.pinBtn = -1; // bytes eram padding no v2
+        s.pinLed = -1;
+        s.pad2 = 0;
+        out = s;
+        return true;
+    }
     if (version == 1) {
         if (n != IRRIGATION_SETTINGS_V1_SIZE)
             return false;
-        IrrigationSettings s; // defaults v2 para os campos novos
-        memcpy(&s, raw, IRRIGATION_SETTINGS_V1_SIZE); // layout v1 é prefixo do v2
-        s.version = 2;
+        IrrigationSettings s; // defaults v3 para os campos novos
+        memcpy(&s, raw, IRRIGATION_SETTINGS_V1_SIZE); // layout v1 é prefixo do v2/v3
+        s.version = 3;
         out = s;
         return true;
     }
@@ -49,10 +61,15 @@ bool loadIrrigationSettings(IrrigationSettings &s)
         LOG_WARN("Irrigation settings invalid (len=%u), using defaults", (unsigned)n);
         return false;
     }
-    bool migrated = (n == IRRIGATION_SETTINGS_V1_SIZE);
+    // Detect upgrade: v1 (40 bytes) or stored version != 3
+    uint16_t rawVersion = 0;
+    if (n >= 6) {
+        memcpy(&rawVersion, raw + 4, 2);
+    }
+    bool migrated = (n == IRRIGATION_SETTINGS_V1_SIZE) || (rawVersion < 3);
     s = tmp;
     if (migrated)
-        saveIrrigationSettings(s); // regrava já em v2
+        saveIrrigationSettings(s); // regrava já em v3
     return true;
 #else
     return false;
