@@ -9,7 +9,7 @@ void tearDown(void) {}
 static void test_batteryLevelsWithHysteresis()
 {
     StationMonitor m;
-    Alert out[2];
+    Alert out[3];
     TEST_ASSERT_EQUAL_INT(0, m.onHeartbeat(0x11, 1250, 0, 1000, out)); // normal
     TEST_ASSERT_EQUAL_INT(1, m.onHeartbeat(0x11, 1210, 0, 2000, out)); // < 12,2
     TEST_ASSERT_EQUAL(AlertType::BATT_AVISO, out[0].type);
@@ -26,7 +26,7 @@ static void test_batteryLevelsWithHysteresis()
 static void test_silenceFiresOnceAndBackOnline()
 {
     StationMonitor m;
-    Alert out[2], a;
+    Alert out[3], a;
     m.onHeartbeat(0x11, 1250, 0, 1000, out);
     TEST_ASSERT_FALSE(m.checkSilence(0x11, 60000, 50000, a));
     TEST_ASSERT_TRUE(m.checkSilence(0x11, 60000, 62000, a));
@@ -47,7 +47,7 @@ static void test_silenceNeverHeardDoesNotFire()
 static void test_rebootAnomaly()
 {
     StationMonitor m;
-    Alert out[2];
+    Alert out[3];
     m.onHeartbeat(0x11, 1250, 10, 1000, out);                          // baseline 10
     TEST_ASSERT_EQUAL_INT(0, m.onHeartbeat(0x11, 1250, 14, 2000, out)); // +4
     TEST_ASSERT_EQUAL_INT(1, m.onHeartbeat(0x11, 1250, 16, 3000, out)); // +6 > 5
@@ -65,6 +65,37 @@ static void test_alertRing()
     TEST_ASSERT_EQUAL_UINT32(8, c.at(AlertCenter::MAX - 1).node);  // mais antigo restante
 }
 
+static void test_tripleAlertSameHeartbeat()
+{
+    StationMonitor m;
+    Alert out[3];
+    Alert a;
+    m.onHeartbeat(0x11, 1250, 10, 1000, out);              // baseline
+    TEST_ASSERT_TRUE(m.checkSilence(0x11, 60000, 70000, a)); // SILENT armado
+    // volta com bateria em aviso E anomalia de reboot: 3 alertas de uma vez
+    int n = m.onHeartbeat(0x11, 1210, 17, 80000, out);
+    TEST_ASSERT_EQUAL_INT(3, n);
+    bool hasBack = false, hasBatt = false, hasReboot = false;
+    for (int i = 0; i < n; i++) {
+        if (out[i].type == AlertType::BACK_ONLINE) hasBack = true;
+        if (out[i].type == AlertType::BATT_AVISO) hasBatt = true;
+        if (out[i].type == AlertType::REBOOT_ANOMALY) hasReboot = true;
+    }
+    TEST_ASSERT_TRUE(hasBack);
+    TEST_ASSERT_TRUE(hasBatt);
+    TEST_ASSERT_TRUE(hasReboot);
+}
+
+static void test_rebootAnomalyFromZeroBaseline()
+{
+    StationMonitor m;
+    Alert out[3];
+    m.onHeartbeat(0x22, 1250, 0, 1000, out);                            // baseline 0 (placa recém-flashada)
+    TEST_ASSERT_EQUAL_INT(0, m.onHeartbeat(0x22, 1250, 4, 2000, out));  // +4
+    TEST_ASSERT_EQUAL_INT(1, m.onHeartbeat(0x22, 1250, 6, 3000, out));  // +6 > 5
+    TEST_ASSERT_EQUAL(AlertType::REBOOT_ANOMALY, out[0].type);
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -74,6 +105,8 @@ void setup()
     RUN_TEST(test_silenceNeverHeardDoesNotFire);
     RUN_TEST(test_rebootAnomaly);
     RUN_TEST(test_alertRing);
+    RUN_TEST(test_tripleAlertSameHeartbeat);
+    RUN_TEST(test_rebootAnomalyFromZeroBaseline);
     exit(UNITY_END());
 }
 

@@ -55,11 +55,21 @@ StationMonitor::StationState *StationMonitor::findOrCreate(uint32_t node, uint32
     return nullptr;
 }
 
-StationMonitor::StationState *StationMonitor::find(uint32_t node) const
+const StationMonitor::StationState *StationMonitor::find(uint32_t node) const
 {
     for (size_t i = 0; i < MAX; i++) {
         if (stations[i].node == node) {
-            return const_cast<StationState *>(&stations[i]);
+            return &stations[i];
+        }
+    }
+    return nullptr;
+}
+
+StationMonitor::StationState *StationMonitor::findMutable(uint32_t node)
+{
+    for (size_t i = 0; i < MAX; i++) {
+        if (stations[i].node == node) {
+            return &stations[i];
         }
     }
     return nullptr;
@@ -78,8 +88,9 @@ uint8_t StationMonitor::calculateLevel(uint16_t vbatCentiV) const
     return 0; // normal
 }
 
-int StationMonitor::onHeartbeat(uint32_t node, uint16_t vbatCentiV, uint16_t rebootCount, uint32_t nowMs, Alert out[2])
+int StationMonitor::onHeartbeat(uint32_t node, uint16_t vbatCentiV, uint16_t rebootCount, uint32_t nowMs, Alert out[3])
 {
+    if (node == 0) return 0;
     StationState *state = findOrCreate(node, nowMs);
     if (!state) {
         return 0; // Cannot create more stations
@@ -97,11 +108,13 @@ int StationMonitor::onHeartbeat(uint32_t node, uint16_t vbatCentiV, uint16_t reb
         // Clear silent fired on heartbeat (back online)
         if (state->silentFired) {
             state->silentFired = false;
-            out[alertCount].type = AlertType::BACK_ONLINE;
-            out[alertCount].node = node;
-            out[alertCount].arg = 0;
-            out[alertCount].atMs = nowMs;
-            alertCount++;
+            if (alertCount < 3) {
+                out[alertCount].type = AlertType::BACK_ONLINE;
+                out[alertCount].node = node;
+                out[alertCount].arg = 0;
+                out[alertCount].atMs = nowMs;
+                alertCount++;
+            }
         }
     }
 
@@ -130,7 +143,7 @@ int StationMonitor::onHeartbeat(uint32_t node, uint16_t vbatCentiV, uint16_t reb
             default:
                 levelAlert = AlertType::NONE;
         }
-        if (levelAlert != AlertType::NONE) {
+        if (levelAlert != AlertType::NONE && alertCount < 3) {
             out[alertCount].type = levelAlert;
             out[alertCount].node = node;
             out[alertCount].arg = vbatCentiV;
@@ -145,22 +158,26 @@ int StationMonitor::onHeartbeat(uint32_t node, uint16_t vbatCentiV, uint16_t reb
             // Currently aviso, go normal if >= AVISO+HYST
             if (vbatCentiV >= AVISO_CV + HYST_CV) {
                 state->level = 0;
-                out[alertCount].type = AlertType::BATT_RECUPEROU;
-                out[alertCount].node = node;
-                out[alertCount].arg = vbatCentiV;
-                out[alertCount].atMs = nowMs;
-                alertCount++;
+                if (alertCount < 3) {
+                    out[alertCount].type = AlertType::BATT_RECUPEROU;
+                    out[alertCount].node = node;
+                    out[alertCount].arg = vbatCentiV;
+                    out[alertCount].atMs = nowMs;
+                    alertCount++;
+                }
             }
         } else if (state->level == 2) {
             // Currently critico, check recovery paths
             if (vbatCentiV >= AVISO_CV + HYST_CV) {
                 // Full recovery to normal
                 state->level = 0;
-                out[alertCount].type = AlertType::BATT_RECUPEROU;
-                out[alertCount].node = node;
-                out[alertCount].arg = vbatCentiV;
-                out[alertCount].atMs = nowMs;
-                alertCount++;
+                if (alertCount < 3) {
+                    out[alertCount].type = AlertType::BATT_RECUPEROU;
+                    out[alertCount].node = node;
+                    out[alertCount].arg = vbatCentiV;
+                    out[alertCount].atMs = nowMs;
+                    alertCount++;
+                }
             } else if (vbatCentiV >= CRITICO_CV + HYST_CV) {
                 // Recover to aviso (no alert on intermediate recovery)
                 state->level = 1;
@@ -170,11 +187,13 @@ int StationMonitor::onHeartbeat(uint32_t node, uint16_t vbatCentiV, uint16_t reb
             if (vbatCentiV >= AVISO_CV + HYST_CV) {
                 // Full recovery to normal
                 state->level = 0;
-                out[alertCount].type = AlertType::BATT_RECUPEROU;
-                out[alertCount].node = node;
-                out[alertCount].arg = vbatCentiV;
-                out[alertCount].atMs = nowMs;
-                alertCount++;
+                if (alertCount < 3) {
+                    out[alertCount].type = AlertType::BATT_RECUPEROU;
+                    out[alertCount].node = node;
+                    out[alertCount].arg = vbatCentiV;
+                    out[alertCount].atMs = nowMs;
+                    alertCount++;
+                }
             } else if (vbatCentiV >= CRITICO_CV + HYST_CV) {
                 // Recover to critico (no alert on intermediate recovery)
                 state->level = 2;
@@ -185,21 +204,24 @@ int StationMonitor::onHeartbeat(uint32_t node, uint16_t vbatCentiV, uint16_t reb
 
     // ========== Reboot monitoring ==========
     uint32_t windowAgeMs = nowMs - state->rebootWindowStartMs;
-    if (windowAgeMs > 24 * 60 * 60 * 1000u || state->rebootBase == 0) {
-        // Start new window
+    if (!state->rebootInitialized || windowAgeMs > 24 * 60 * 60 * 1000u) {
+        // Start new window (first ever, or 24-h renewal)
         state->rebootWindowStartMs = nowMs;
         state->rebootBase = rebootCount;
+        state->rebootInitialized = true;
         state->anomalyFired = false;
     } else {
         // Check if anomaly
         uint16_t rebootDelta = rebootCount - state->rebootBase;
         if (rebootDelta > REBOOT_LIMIT_24H && !state->anomalyFired) {
             state->anomalyFired = true;
-            out[alertCount].type = AlertType::REBOOT_ANOMALY;
-            out[alertCount].node = node;
-            out[alertCount].arg = rebootCount;
-            out[alertCount].atMs = nowMs;
-            alertCount++;
+            if (alertCount < 3) {
+                out[alertCount].type = AlertType::REBOOT_ANOMALY;
+                out[alertCount].node = node;
+                out[alertCount].arg = rebootCount;
+                out[alertCount].atMs = nowMs;
+                alertCount++;
+            }
         }
     }
 
@@ -208,7 +230,8 @@ int StationMonitor::onHeartbeat(uint32_t node, uint16_t vbatCentiV, uint16_t reb
 
 bool StationMonitor::checkSilence(uint32_t node, uint32_t silencioMs, uint32_t nowMs, Alert &out)
 {
-    StationState *state = find(node);
+    if (node == 0) return false;
+    StationState *state = findMutable(node);
     if (!state || !state->everHeard) {
         return false; // Never heard or not found
     }

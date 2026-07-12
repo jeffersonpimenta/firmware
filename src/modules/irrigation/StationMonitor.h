@@ -38,8 +38,9 @@ class StationMonitor {
     static constexpr uint16_t HIBER_CV = 1150;
     static constexpr uint16_t REBOOT_LIMIT_24H = 5;
 
-    // Returns number of alerts written to out (0-2)
-    int onHeartbeat(uint32_t node, uint16_t vbatCentiV, uint16_t rebootCount, uint32_t nowMs, Alert out[2]);
+    // Returns number of alerts written to out (0-3)
+    // até 3 alertas: volta de silêncio + nível de bateria + reboot
+    int onHeartbeat(uint32_t node, uint16_t vbatCentiV, uint16_t rebootCount, uint32_t nowMs, Alert out[3]);
 
     // Checks for silence; returns true if SILENT alert was generated
     bool checkSilence(uint32_t node, uint32_t silencioMs, uint32_t nowMs, Alert &out);
@@ -55,6 +56,7 @@ class StationMonitor {
         bool silentFired = false;
         uint16_t rebootBase = 0;
         uint32_t rebootWindowStartMs = 0;
+        bool rebootInitialized = false;
         bool anomalyFired = false;
         bool everHeard = false;
     };
@@ -62,6 +64,7 @@ class StationMonitor {
     StationState stations[MAX] = {};
 
     StationState *findOrCreate(uint32_t node, uint32_t nowMs);
-    StationState *find(uint32_t node) const;
+    const StationState *find(uint32_t node) const;
+    StationState *findMutable(uint32_t node);
     uint8_t calculateLevel(uint16_t vbatCentiV) const;
 };
