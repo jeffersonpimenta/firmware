@@ -91,6 +91,8 @@ int StationMonitor::onHeartbeat(uint32_t node, uint16_t vbatCentiV, uint16_t reb
     if (!state->everHeard) {
         state->everHeard = true;
         state->silentFired = false;
+        // Initialize level from current reading without firing an alert
+        state->level = calculateLevel(vbatCentiV);
     } else {
         // Clear silent fired on heartbeat (back online)
         if (state->silentFired) {
@@ -111,8 +113,8 @@ int StationMonitor::onHeartbeat(uint32_t node, uint16_t vbatCentiV, uint16_t reb
     // Check if level should go DOWN (immediate) using simple level calculation
     uint8_t simpleLevel = calculateLevel(vbatCentiV);
 
-    if (simpleLevel < state->level) {
-        // Battery voltage went below threshold - transition DOWN immediately
+    if (simpleLevel > state->level) {
+        // Battery voltage went below threshold - transition DOWN immediately (level number increases)
         state->level = simpleLevel;
         AlertType levelAlert;
         switch (simpleLevel) {
