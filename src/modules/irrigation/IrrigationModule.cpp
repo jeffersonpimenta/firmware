@@ -6,6 +6,7 @@
 #include "PowerStatus.h"
 #include "Throttle.h"
 #include "configuration.h"
+#include "gps/RTC.h"
 #include "main.h"
 #include "mesh/Channels.h"
 #include <string.h>
@@ -15,6 +16,19 @@ static constexpr uint32_t DEFAULT_MANUAL_OPEN_S = 20 * 60; // 20 min
 
 static const char *ALLOWLIST_PATH = "/prefs/irrigation-allow.dat";
 static const char *ALLOWLIST_TMP = "/prefs/irrigation-allow.tmp";
+
+// Persistência do estado gateway (Task 6, decisão §5) — staged-write em 4 arquivos.
+static const char *GW_STATIONS_PATH = "/prefs/irrigation-stations.dat";
+static const char *GW_STATIONS_TMP = "/prefs/irrigation-stations.tmp";
+static const char *GW_ZONES_PATH = "/prefs/irrigation-zones.dat";
+static const char *GW_ZONES_TMP = "/prefs/irrigation-zones.tmp";
+static const char *GW_PROGRAMS_PATH = "/prefs/irrigation-programs.dat";
+static const char *GW_PROGRAMS_TMP = "/prefs/irrigation-programs.tmp";
+static const char *GW_MIRROR_PATH = "/prefs/irrigation-mirror.dat";
+static const char *GW_MIRROR_TMP = "/prefs/irrigation-mirror.tmp";
+
+// Cooldown de reconciliação de epoch por nó (30 s)
+static constexpr uint32_t EPOCH_COOLDOWN_MS = 30000;
 
 IrrigationModule *irrigationModule;
 
@@ -122,8 +136,11 @@ IrrigationModule::IrrigationModule()
     // em todos os slots recém-criados).
     valves.forceCloseAll();
     // Gateway carrega sua allowlist de estações adotadas na memória (spec §6).
-    if ((IrrigationRole)settings.role == IrrigationRole::GATEWAY)
+    // Task 6, decisão §5: carrega state do gateway (zones, stations, programs, mirror).
+    if ((IrrigationRole)settings.role == IrrigationRole::GATEWAY) {
         loadAllowlist();
+        loadGatewayState();
+    }
     LOG_INFO("IrrigationModule role=%d valves=%d gateway=0x%08x epoch=%u safe=%d", settings.role, settings.numValves,
              settings.boundGateway, settings.configEpoch, (int)safeMode);
     // Spin up the GPIO button/LED thread only when at least one pin is wired (spec §8.6/§8.7).
@@ -172,7 +189,11 @@ ProcessMessage IrrigationModule::handleReceived(const meshtastic_MeshPacket &mp)
         handleCmdValvula(mp, h);
         break;
     case MSG_SET_CONFIG:
-        handleSetConfig(mp, h);
+        // Task 6, decisão §3: role split — GATEWAY recebe SET_CONFIG como resposta de GET_CONFIG.
+        if ((IrrigationRole)settings.role == IrrigationRole::GATEWAY)
+            handleGwSetConfig(mp, h);
+        else
+            handleSetConfig(mp, h);
         break;
     case MSG_GET_CONFIG:
         handleGetConfig(mp, h);
@@ -184,9 +205,24 @@ ProcessMessage IrrigationModule::handleReceived(const meshtastic_MeshPacket &mp)
         handlePairGrant(mp, h);
         break;
     case MSG_ACK:
+        // Task 6, decisão §3: gateway trata ACKs das estações.
+        if ((IrrigationRole)settings.role == IrrigationRole::GATEWAY)
+            handleGwAck(mp, h);
+        else
+            LOG_DEBUG("Irrigation: ACK from 0x%08x ignored (role=%d)", mp.from, settings.role);
+        break;
     case MSG_HEARTBEAT:
-        // Lado gateway chega na Fase 4; por ora só loga
-        LOG_DEBUG("Irrigation: type %d from 0x%08x (ignored, role=%d)", h.type, mp.from, settings.role);
+        // Task 6, decisão §3: gateway trata HBs das estações.
+        if ((IrrigationRole)settings.role == IrrigationRole::GATEWAY)
+            handleGwHeartbeat(mp, h);
+        else
+            LOG_DEBUG("Irrigation: HB from 0x%08x ignored (role=%d)", mp.from, settings.role);
+        break;
+    case MSG_EVENTO:
+        if ((IrrigationRole)settings.role == IrrigationRole::GATEWAY)
+            handleGwEvento(mp, h);
+        else
+            LOG_DEBUG("Irrigation: EVENTO from 0x%08x ignored (role=%d)", mp.from, settings.role);
         break;
     default:
         LOG_DEBUG("Irrigation: unhandled type %d from 0x%08x", h.type, mp.from);
@@ -446,9 +482,10 @@ int32_t IrrigationModule::runOnce()
     }
 
     if ((IrrigationRole)settings.role != IrrigationRole::ESTACAO) {
-        gatewayPairing.tick(millis());
+        if ((IrrigationRole)settings.role == IrrigationRole::GATEWAY)
+            gwTick(); // Task 6, decisão §2: loop principal do gateway 1×/s
         refreshLedMode();
-        return gatewayPairing.windowOpen() ? 1000 : 60 * 1000; // janela aberta: pisca em 1 s; idle: 60 s
+        return 1000; // Task 6: cadência de 1 s (substitui 60 s/1 s condicional anterior)
     }
     uint16_t vbat = batteryCentiV();
     valves.setBatteryLockout(vbat != 0 && vbat < settings.vbatMinAbrirCentiV);
@@ -525,6 +562,21 @@ void IrrigationModule::handlePairAnnounce(const meshtastic_MeshPacket &mp, const
     }
     service->sendToMesh(p, RX_SRC_LOCAL, false);
     saveAllowlist();
+
+    // Task 6, decisão §4: registrar a estação no StationRegistry no momento do pareamento.
+    {
+        StationEntry entry;
+        entry.node = mp.from;
+        entry.desiredEpoch = 0; // epoch 0 = defaults; será atualizado na primeira reconciliação
+        uint8_t cpyLen = pa.nameLen < (uint8_t)(sizeof(entry.name) - 1) ? pa.nameLen : (uint8_t)(sizeof(entry.name) - 1);
+        memcpy(entry.name, pa.name, cpyLen);
+        entry.name[cpyLen] = '\0';
+        if (gateway.stations.upsert(entry)) {
+            saveGatewayState(); // persiste após mutação (decisão §5)
+            LOG_INFO("Irrigation: station 0x%08x registered in gateway registry", mp.from);
+        }
+    }
+
     LOG_INFO("Irrigation: granted pairing to 0x%08x (%.*s)", mp.from, (int)pa.nameLen, pa.name);
 }
 
@@ -767,5 +819,457 @@ bool IrrigationModule::saveAllowlist()
 #else
     return false;
 #endif
+}
+
+// ---------------------------------------------------------------------------
+// Gateway state persistence (Task 6, decisão §5) — staged-write, 4 arquivos.
+// Helper macro para não repetir o padrão 4×.
+// ---------------------------------------------------------------------------
+
+// Staged-write genérico: serializa com fn, grava em tmp, rename.
+// Tamanho máximo dos buffers:
+//   stations: MAGIC(4)+ver(1)+count(1)+16*87 = 1398 bytes → 1400
+//   zones:    MAGIC(4)+ver(1)+count(1)+24*32 = 774  bytes → 800
+//   programs: MAGIC(4)+ver(1)+count(1)+8*... = ~600 bytes → 700
+//   mirror:   MAGIC(4)+ver(1)+1             = 6    bytes → 16
+
+static bool stagedWrite(const char *tmp, const char *path, const uint8_t *buf, size_t n)
+{
+#ifdef FSCom
+    if (n == 0)
+        return false;
+    auto f = FSCom.open(tmp, FILE_O_WRITE);
+    if (!f)
+        return false;
+    size_t w = f.write(buf, n);
+    f.close();
+    if (w != n) {
+        FSCom.remove(tmp);
+        return false;
+    }
+    FSCom.remove(path);
+    if (!renameFile(tmp, path)) {
+        LOG_ERROR("Irrigation rename failed: %s", path);
+        FSCom.remove(tmp);
+        return false;
+    }
+    return true;
+#else
+    (void)tmp; (void)path; (void)buf; (void)n;
+    return false;
+#endif
+}
+
+static bool stagedRead(const char *path, uint8_t *buf, size_t cap, size_t &outN)
+{
+#ifdef FSCom
+    auto f = FSCom.open(path, FILE_O_READ);
+    if (!f)
+        return false;
+    outN = f.read(buf, cap);
+    f.close();
+    return outN > 0;
+#else
+    (void)path; (void)buf; (void)cap;
+    outN = 0;
+    return false;
+#endif
+}
+
+bool IrrigationModule::loadGatewayState()
+{
+    size_t n = 0;
+    bool ok = true;
+
+    // Stations
+    {
+        uint8_t buf[6 + StationRegistry::MAX * 87];
+        if (stagedRead(GW_STATIONS_PATH, buf, sizeof(buf), n))
+            ok &= gateway.stations.deserialize(buf, n);
+    }
+    // Zones
+    {
+        uint8_t buf[6 + ZoneTable::MAX * 32];
+        if (stagedRead(GW_ZONES_PATH, buf, sizeof(buf), n))
+            ok &= gateway.zones.deserialize(buf, n);
+    }
+    // Programs
+    {
+        uint8_t buf[700];
+        if (stagedRead(GW_PROGRAMS_PATH, buf, sizeof(buf), n))
+            ok &= gateway.scheduler.deserialize(buf, n);
+    }
+    // Mirror (only flag)
+    {
+        uint8_t buf[16];
+        if (stagedRead(GW_MIRROR_PATH, buf, sizeof(buf), n))
+            ok &= gateway.mirror.deserialize(buf, n);
+    }
+    return ok;
+}
+
+bool IrrigationModule::saveGatewayState()
+{
+    bool ok = true;
+    // Stations
+    {
+        uint8_t buf[6 + StationRegistry::MAX * 87];
+        size_t n = gateway.stations.serialize(buf, sizeof(buf));
+        ok &= stagedWrite(GW_STATIONS_TMP, GW_STATIONS_PATH, buf, n);
+    }
+    // Zones
+    {
+        uint8_t buf[6 + ZoneTable::MAX * 32];
+        size_t n = gateway.zones.serialize(buf, sizeof(buf));
+        ok &= stagedWrite(GW_ZONES_TMP, GW_ZONES_PATH, buf, n);
+    }
+    // Programs
+    {
+        uint8_t buf[700];
+        size_t n = gateway.scheduler.serialize(buf, sizeof(buf));
+        ok &= stagedWrite(GW_PROGRAMS_TMP, GW_PROGRAMS_PATH, buf, n);
+    }
+    // Mirror
+    {
+        uint8_t buf[16];
+        size_t n = gateway.mirror.serialize(buf, sizeof(buf));
+        ok &= stagedWrite(GW_MIRROR_TMP, GW_MIRROR_PATH, buf, n);
+    }
+    return ok;
+}
+
+// ---------------------------------------------------------------------------
+// Gateway engine — handlers e tick (Task 6, decisões 1–6)
+// ---------------------------------------------------------------------------
+
+// Decisão §1: envia CmdValvula ou CmdGpo e registra no tracker.
+void IrrigationModule::gwSendValveCmd(uint32_t node, uint8_t index, uint8_t tipo, uint8_t action, uint16_t durationS,
+                                      uint8_t zoneId, uint8_t attempts)
+{
+    meshtastic_MeshPacket *p = allocDataPacket();
+    p->to = node;
+    if (tipo == 1) {
+        CmdGpo cmd = {};
+        cmd.gpoId = index;
+        cmd.action = action;
+        cmd.durationS = durationS;
+        p->decoded.payload.size = (uint16_t)encodeCmdGpo(p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), ++txSeq, cmd);
+    } else {
+        CmdValvula cmd = {};
+        cmd.valveId = index;
+        cmd.action = action;
+        cmd.durationS = durationS;
+        p->decoded.payload.size = (uint16_t)encodeCmdValvula(p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), ++txSeq, cmd);
+    }
+    if (!p->decoded.payload.size) {
+        packetPool.release(p);
+        return;
+    }
+    service->sendToMesh(p, RX_SRC_LOCAL, false);
+    gateway.tracker.track(txSeq, node, zoneId, action, durationS, attempts, millis());
+    LOG_DEBUG("Irrigation GW: sent cmd zone=%u node=0x%08x action=%u dur=%u", zoneId, node, action, durationS);
+}
+
+// Decisão §2: loop principal do gateway — scheduler, espelho, retries, silêncio.
+void IrrigationModule::gwTick()
+{
+    // --- Scheduler (programa/cronograma) ---
+    // RTC-OPTIONAL: se não há RTC válido, idle com LOG_WARN 1×/h.
+    uint32_t epochLocal = getValidTime(RTCQualityDevice, true);
+    if (epochLocal == 0) {
+        if (millis() - lastRtcWarnMs > 3600000U) {
+            LOG_WARN("Irrigation GW: no valid RTC — scheduler idle");
+            lastRtcWarnMs = millis();
+        }
+    } else {
+        // Drena ações do scheduler até NONE.
+        for (;;) {
+            SchedAction a = gateway.scheduler.tick(epochLocal);
+            if (a.type == SchedAction::Type::NONE)
+                break;
+            const Zone *z = gateway.zones.byId(a.zoneId);
+            if (!z) {
+                LOG_WARN("Irrigation GW: scheduler zone %u not found", a.zoneId);
+                continue;
+            }
+            if (a.type == SchedAction::Type::OPEN) {
+                // Bypass: se mirror está ativo e esta zona tem fonte, suprime (mirror manda).
+                if (gateway.mirror.enabled() && z->fonteInput >= 0 && gateway.mirror.inputActive((uint8_t)z->fonteInput)) {
+                    LOG_DEBUG("Irrigation GW: scheduler OPEN zone=%u suppressed (mirror active on input %d)", a.zoneId, z->fonteInput);
+                    continue;
+                }
+                // Clamp pela maxMin da zona (scheduler já conhece durationS).
+                uint16_t dur = a.durationS;
+                if (z->maxMin > 0 && dur > (uint16_t)(z->maxMin * 60))
+                    dur = (uint16_t)(z->maxMin * 60);
+                // Retries: obtém da entrada de registro da estação (default 3).
+                const StationEntry *stEntry = gateway.stations.byNode(z->node);
+                uint8_t attempts = (stEntry && stEntry->retries > 0) ? stEntry->retries : 3;
+                gwSendValveCmd(z->node, z->index, z->tipo, 1, dur, a.zoneId, attempts);
+            } else { // CLOSE
+                gwSendValveCmd(z->node, z->index, z->tipo, 0, 0, a.zoneId, 1);
+            }
+        }
+    }
+
+    // --- Espelho (mirror) ---
+    // Lê GPIO das entradas digitais com polaridade e monta bitmap.
+    uint8_t rawBitmap = 0;
+    for (uint8_t i = 0; i < IrrigationSettings::MAX_DIGITAL_IN; i++) {
+        if (settings.pinsDigitalIn[i] < 0)
+            continue;
+#ifndef ARCH_PORTDUINO
+        bool raw = (digitalRead(settings.pinsDigitalIn[i]) == HIGH);
+#else
+        bool raw = false; // nativo: sem GPIO real
+#endif
+        bool activeLow = (settings.digitalInActiveLow >> i) & 1;
+        if (activeLow ? !raw : raw)
+            rawBitmap |= (1u << i);
+    }
+    // Drena ações do mirror até NONE.
+    for (;;) {
+        MirrorMode::Action ma = gateway.mirror.update(rawBitmap, millis());
+        if (ma.t == MirrorMode::Action::T::NONE)
+            break;
+        const Zone *z = gateway.zones.byFonte(ma.input);
+        if (!z) {
+            LOG_DEBUG("Irrigation GW: mirror input %u has no zone mapped — ignored", ma.input);
+            continue;
+        }
+        if (ma.t == MirrorMode::Action::T::OPEN) {
+            // bypass total: sem clamp de maxMin (estação clampa no teto compilado)
+            const StationEntry *stEntry = gateway.stations.byNode(z->node);
+            uint8_t attempts = (stEntry && stEntry->retries > 0) ? stEntry->retries : 3;
+            gwSendValveCmd(z->node, z->index, z->tipo, 1, MirrorMode::OPEN_S, z->id, attempts);
+        } else {
+            gwSendValveCmd(z->node, z->index, z->tipo, 0, 0, z->id, 1);
+        }
+    }
+
+    // --- Retries (tracker) ---
+    for (;;) {
+        CommandTracker::Retry r = gateway.tracker.poll(millis());
+        if (r.what == CommandTracker::Retry::What::NONE)
+            break;
+        if (r.what == CommandTracker::Retry::What::RESEND) {
+            LOG_DEBUG("Irrigation GW: RESEND node=0x%08x zone=%u attempts_left=%u", r.node, r.zoneId, r.attemptsLeft);
+            const Zone *z = gateway.zones.byId(r.zoneId);
+            uint8_t idx = z ? z->index : 0;
+            uint8_t tp = z ? z->tipo : 0;
+            meshtastic_MeshPacket *p = allocDataPacket();
+            p->to = r.node;
+            if (tp == 1) {
+                CmdGpo cmd = {};
+                cmd.gpoId = idx;
+                cmd.action = r.action;
+                cmd.durationS = r.durationS;
+                p->decoded.payload.size = (uint16_t)encodeCmdGpo(p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), ++txSeq, cmd);
+            } else {
+                CmdValvula cmd = {};
+                cmd.valveId = idx;
+                cmd.action = r.action;
+                cmd.durationS = r.durationS;
+                p->decoded.payload.size = (uint16_t)encodeCmdValvula(p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), ++txSeq, cmd);
+            }
+            if (!p->decoded.payload.size) {
+                packetPool.release(p);
+            } else {
+                service->sendToMesh(p, RX_SRC_LOCAL, false);
+                gateway.tracker.retrack(txSeq, r, millis());
+            }
+        } else { // FAILED
+            LOG_WARN("Irrigation GW: CMD_FAIL node=0x%08x zone=%u — alerting", r.node, r.zoneId);
+            Alert a;
+            a.type = AlertType::CMD_FAIL;
+            a.node = r.node;
+            a.arg = r.zoneId;
+            a.atMs = millis();
+            gateway.alerts.push(a);
+        }
+    }
+
+    // --- Silêncio por estação ---
+    for (size_t i = 0; i < StationRegistry::MAX; i++) {
+        // Acesso interno ao registry: itera slots via byNode usando o registry count.
+        // Como não há iterador público, acedemos indiretamente via index do slot.
+        // Adaptação: usa mutableByNode passando pelos nodes da allowlist.
+        // Para iterar todas as entradas: aproveita que allowlist e registry são paralelas.
+        // Decisão de implementação: itera allowlist para obter nós e consulta registry.
+        if (i >= allowlist.count())
+            break;
+        uint32_t node = allowlist.nodeAt(i);
+        if (node == 0)
+            continue;
+        const StationEntry *entry = gateway.stations.byNode(node);
+        if (!entry)
+            continue;
+        uint32_t silMs = (uint32_t)entry->silencioAlertaMin * 60000UL;
+        Alert a;
+        if (gateway.monitor.checkSilence(node, silMs, millis(), a)) {
+            gateway.alerts.push(a);
+            LOG_WARN("Irrigation GW: SILENT node=0x%08x", node);
+        }
+    }
+}
+
+// Decisão §3: reconciliação de epoch com cooldown de 30 s.
+void IrrigationModule::gwReconcileEpoch(uint32_t node, uint32_t remoteEpoch)
+{
+    const StationEntry *entry = gateway.stations.byNode(node);
+    if (!entry)
+        return;
+
+    // Encontra índice no cooldown array (paralelo ao allowlist).
+    uint8_t slot = 0xFF;
+    for (size_t i = 0; i < allowlist.count() && i < StationRegistry::MAX; i++) {
+        if (allowlist.nodeAt(i) == node) {
+            slot = (uint8_t)i;
+            break;
+        }
+    }
+    if (slot == 0xFF)
+        return;
+
+    uint32_t now = millis();
+    if (now - epochCooldownMs[slot] < EPOCH_COOLDOWN_MS)
+        return; // cooldown ainda ativo
+
+    if (remoteEpoch < entry->desiredEpoch) {
+        // Estação está atrás: envia SET_CONFIG com o blob desejado.
+        epochCooldownMs[slot] = now;
+        const uint8_t *blob = entry->blob;
+        uint16_t totalLen = sizeof(entry->blob);
+        uint32_t crc = crc32(blob, totalLen);
+        uint8_t fragCount = (uint8_t)((totalLen + FRAG_DATA_MAX - 1) / FRAG_DATA_MAX);
+        for (uint8_t i = 0; i < fragCount; i++) {
+            SetConfig sc = {};
+            sc.epoch = entry->desiredEpoch;
+            sc.crc = crc;
+            sc.totalLen = totalLen;
+            sc.fragIndex = i;
+            sc.fragCount = fragCount;
+            uint16_t off = (uint16_t)i * FRAG_DATA_MAX;
+            sc.fragLen = (uint8_t)((totalLen - off > FRAG_DATA_MAX) ? FRAG_DATA_MAX : (uint8_t)(totalLen - off));
+            sc.frag = blob + off;
+            meshtastic_MeshPacket *p = allocDataPacket();
+            p->to = node;
+            p->decoded.payload.size =
+                (uint16_t)encodeSetConfig(p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), ++txSeq, sc);
+            if (!p->decoded.payload.size) {
+                packetPool.release(p);
+                return;
+            }
+            service->sendToMesh(p, RX_SRC_LOCAL, false);
+        }
+        LOG_INFO("Irrigation GW: pushed config epoch=%u to node=0x%08x", entry->desiredEpoch, node);
+    } else if (remoteEpoch > entry->desiredEpoch) {
+        // Estação está à frente do desejado: solicita GET_CONFIG para adotar.
+        epochCooldownMs[slot] = now;
+        meshtastic_MeshPacket *p = allocDataPacket();
+        p->to = node;
+        p->decoded.payload.size = (uint16_t)encodeGetConfig(p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), ++txSeq);
+        if (!p->decoded.payload.size) {
+            packetPool.release(p);
+            return;
+        }
+        service->sendToMesh(p, RX_SRC_LOCAL, false);
+        LOG_INFO("Irrigation GW: GET_CONFIG from node=0x%08x (remote epoch=%u > desired=%u)", node, remoteEpoch,
+                 entry->desiredEpoch);
+    }
+    // remoteEpoch == desiredEpoch: em sincronia, nada a fazer.
+}
+
+// Decisão §3: MSG_ACK recebido pelo gateway.
+void IrrigationModule::handleGwAck(const meshtastic_MeshPacket &mp, const Header &h)
+{
+    Ack ack;
+    if (!decodeAck(mp.decoded.payload.bytes, mp.decoded.payload.size, ack)) {
+        LOG_WARN("Irrigation GW: bad ACK payload from 0x%08x", mp.from);
+        return;
+    }
+
+    // Task 6, decisão §6: NACK é resposta definitiva — remove pendência e alerta.
+    if (ack.status != ACK_OK) {
+        // onAck remove a pendência independente do status.
+        if (gateway.tracker.onAck(mp.from, ack.ackedSeq)) {
+            LOG_WARN("Irrigation GW: NACK from 0x%08x seq=%u reason=%u", mp.from, ack.ackedSeq, ack.reason);
+            // Determina zoneId a partir do ackedSeq — o tracker já removeu o slot,
+            // então logamos com zoneId=0 (informação de alerta é best-effort aqui;
+            // o diagnóstico detalhado é Fase 6).
+            Alert a;
+            a.type = AlertType::CMD_FAIL;
+            a.node = mp.from;
+            a.arg = ack.reason; // reason como arg conforme decisão §6
+            a.atMs = millis();
+            gateway.alerts.push(a);
+        }
+    } else {
+        gateway.tracker.onAck(mp.from, ack.ackedSeq);
+    }
+
+    // Reconciliação de epoch (mesma regra do HB — decisão §3).
+    gwReconcileEpoch(mp.from, ack.configEpoch);
+}
+
+// Decisão §3: MSG_HEARTBEAT recebido pelo gateway.
+void IrrigationModule::handleGwHeartbeat(const meshtastic_MeshPacket &mp, const Header &h)
+{
+    Heartbeat hb;
+    if (!decodeHeartbeat(mp.decoded.payload.bytes, mp.decoded.payload.size, hb)) {
+        LOG_WARN("Irrigation GW: bad HB payload from 0x%08x", mp.from);
+        return;
+    }
+
+    // Alertas de bateria e reboot via StationMonitor.
+    Alert monAlerts[3];
+    int cnt = gateway.monitor.onHeartbeat(mp.from, hb.vbatCentiV, hb.rebootCount, millis(), monAlerts);
+    for (int i = 0; i < cnt; i++)
+        gateway.alerts.push(monAlerts[i]);
+
+    // Reconciliação de epoch.
+    gwReconcileEpoch(mp.from, hb.configEpoch);
+}
+
+// Decisão §3: MSG_EVENTO recebido pelo gateway (auditoria; Fase 6 processa detalhes).
+void IrrigationModule::handleGwEvento(const meshtastic_MeshPacket &mp, const Header &h)
+{
+    Evento ev;
+    if (!decodeEvento(mp.decoded.payload.bytes, mp.decoded.payload.size, ev)) {
+        LOG_WARN("Irrigation GW: bad EVENTO from 0x%08x", mp.from);
+        return;
+    }
+    LOG_INFO("Irrigation GW: EVENTO code=%u arg=%u from 0x%08x (audit log)", ev.code, ev.arg, mp.from);
+}
+
+// Decisão §3: MSG_SET_CONFIG no role GATEWAY = resposta de GET_CONFIG.
+void IrrigationModule::handleGwSetConfig(const meshtastic_MeshPacket &mp, const Header &h)
+{
+    SetConfig sc;
+    if (!decodeSetConfig(mp.decoded.payload.bytes, mp.decoded.payload.size, sc)) {
+        LOG_WARN("Irrigation GW: bad SET_CONFIG from 0x%08x", mp.from);
+        return;
+    }
+
+    auto r = reasm.add(mp.from, sc.epoch, sc.crc, sc.totalLen, sc.fragIndex, sc.fragCount, sc.frag, sc.fragLen, millis());
+    if (r != FragmentReassembler::Add::COMPLETE)
+        return; // intermediário ou inválido: sem ação por enquanto
+
+    // Blob completo: adoptar como config da estação.
+    if (reasm.blobLen() <= sizeof(StationEntry::blob)) {
+        gateway.stations.adoptConfig(mp.from, reasm.blob(), reasm.epoch());
+        saveGatewayState(); // persiste após mutação (decisão §5)
+
+        Alert a;
+        a.type = AlertType::CONFIG_ADOPTED;
+        a.node = mp.from;
+        a.arg = reasm.epoch();
+        a.atMs = millis();
+        gateway.alerts.push(a);
+        LOG_INFO("Irrigation GW: adopted config epoch=%u from 0x%08x", reasm.epoch(), mp.from);
+    } else {
+        LOG_WARN("Irrigation GW: SET_CONFIG blob too large (%u) from 0x%08x", reasm.blobLen(), mp.from);
+    }
+    reasm.reset();
 }
 

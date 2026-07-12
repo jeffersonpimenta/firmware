@@ -13,6 +13,8 @@ class Allowlist
     bool remove(uint32_t nodeId);
     bool contains(uint32_t nodeId) const;
     size_t count() const { return n; }
+    // Retorna o nodeId na posição i (0-based). 0 se fora do range.
+    uint32_t nodeAt(size_t i) const { return i < n ? ids[i] : 0; }
     size_t serialize(uint8_t *buf, size_t cap) const;
     bool deserialize(const uint8_t *buf, size_t len);
 

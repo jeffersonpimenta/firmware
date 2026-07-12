@@ -4,6 +4,7 @@
 #include "modules/irrigation/Allowlist.h"
 #include "modules/irrigation/ButtonGesture.h"
 #include "modules/irrigation/FragmentReassembler.h"
+#include "modules/irrigation/IrrigationGateway.h"
 #include "modules/irrigation/IrrigationProtocol.h"
 #include "modules/irrigation/IrrigationSettings.h"
 #include "modules/irrigation/LedPattern.h"
@@ -47,6 +48,15 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     // Pairing handlers — no senderAuthorized check; physical window + button is the authorization (spec §6).
     void handlePairAnnounce(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
     void handlePairGrant(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
+    // Gateway handlers (Fase 4, Task 6: decisões 1-6)
+    void handleGwAck(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
+    void handleGwHeartbeat(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
+    void handleGwEvento(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
+    void handleGwSetConfig(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
+    void gwTick(); // chamado no runOnce do GATEWAY 1×/s
+    void gwSendValveCmd(uint32_t node, uint8_t index, uint8_t tipo, uint8_t action, uint16_t durationS, uint8_t zoneId,
+                        uint8_t attempts); // decisão §1
+    void gwReconcileEpoch(uint32_t node, uint32_t remoteEpoch);
     void commitPairing();
     void factoryReset();
     void logFarmKey(); // dumps primary PSK as base64 to serial (spec §11.2)
@@ -54,6 +64,8 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     void refreshLedMode(); // call at end of runOnce
     bool loadAllowlist();
     bool saveAllowlist();
+    bool loadGatewayState();
+    bool saveGatewayState(); // persiste stations, zones, programs, mirror
     IrrigationSettings mergeRemoteConfig(const IrrigationSettings &fresh, uint32_t newEpoch) const;
     void activateSettings(const IrrigationSettings &merged);
     void sendAck(uint32_t to, uint32_t ackedSeq, uint8_t status, uint8_t reason);
@@ -73,11 +85,18 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     GatewayPairing gatewayPairing;
     Allowlist allowlist;
     LedPatternController led;
+    // Gateway aggregate — only meaningful when role == GATEWAY (Task 6, decisão §1).
+    IrrigationGateway gateway;
+    // Mapa de cooldowns para reconciliação de epoch por nó (30 s) — indexed by registry slot.
+    // Usamos array paralelo ao StationRegistry::MAX slots (16 entradas).
+    uint32_t epochCooldownMs[StationRegistry::MAX] = {};
     uint32_t txSeq = 0;
     uint32_t lastHeartbeatMs = 0;
     uint32_t lastGatewayRxMs = 0; // last millis() we received a packet from boundGateway
     bool safeMode = false;
     bool bootHeartbeatPending = true;
+    // Controle de LOG_WARN de RTC (1×/h para não spam)
+    uint32_t lastRtcWarnMs = 0;
 };
 
 extern IrrigationModule *irrigationModule;
