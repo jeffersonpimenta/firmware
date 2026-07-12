@@ -3,6 +3,10 @@
 bool CommandTracker::track(uint32_t seq, uint32_t node, uint8_t zoneId, uint8_t action, uint16_t durationS,
                            uint8_t attempts, uint32_t nowMs)
 {
+    // Clamp attempts: 0 could create a phantom FAILED timeout on the first poll
+    if (attempts == 0)
+        attempts = 1;
+
     // Procura slot vazio
     for (auto &slot : slots) {
         if (!slot.inUse) {
@@ -32,7 +36,7 @@ bool CommandTracker::onAck(uint32_t node, uint32_t ackedSeq)
     return false; // não encontrado
 }
 
-void CommandTracker::retrack(uint32_t newSeq, const Retry &r, uint32_t nowMs)
+bool CommandTracker::retrack(uint32_t newSeq, const Retry &r, uint32_t nowMs)
 {
     // Procura slot vazio (RESEND já removeu a pendência anterior)
     for (auto &slot : slots) {
@@ -45,9 +49,10 @@ void CommandTracker::retrack(uint32_t newSeq, const Retry &r, uint32_t nowMs)
             slot.durationS = r.durationS;
             slot.attemptsLeft = r.attemptsLeft;
             slot.sentAtMs = nowMs;
-            return;
+            return true;
         }
     }
+    return false; // No free slot
 }
 
 CommandTracker::Retry CommandTracker::poll(uint32_t nowMs)

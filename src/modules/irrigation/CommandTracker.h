@@ -27,7 +27,8 @@ class CommandTracker
     bool onAck(uint32_t node, uint32_t ackedSeq);
 
     // Registra reenvio após timeout (chamado após glue reenvia com novo seq).
-    void retrack(uint32_t newSeq, const Retry &r, uint32_t nowMs);
+    // Retorna false se não há slot livre (a perda silenciosa esconderia um comando de segurança).
+    bool retrack(uint32_t newSeq, const Retry &r, uint32_t nowMs);
 
     // Verifica timeout (nowMs - sentAt >= 8000): retorna 1 por chamada.
     // RESEND: removeu slot e devolve attemptsLeft-1 (glue chama retrack com novo seq).
