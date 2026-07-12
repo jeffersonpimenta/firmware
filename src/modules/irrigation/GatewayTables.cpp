@@ -194,9 +194,11 @@ size_t StationRegistry::count() const
 
 void StationRegistry::adoptConfig(uint32_t node, const uint8_t *blob52, uint32_t epoch)
 {
+    if (!blob52) return;
     auto *e = mutableByNode(node);
     if (!e)
         return; // no-op se nó ausente
+    // regra do maior epoch (§5.4): estritamente maior; mesmo epoch = já adotado, ignora
     if (epoch > e->desiredEpoch) {
         memcpy(e->blob, blob52, 52);
         e->desiredEpoch = epoch;
