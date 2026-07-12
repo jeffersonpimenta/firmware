@@ -854,8 +854,8 @@ class StationMonitor {
     static constexpr uint16_t HYST_CV = 20; // 0,2 V
     static constexpr uint16_t AVISO_CV = 1220, CRITICO_CV = 1180, HIBER_CV = 1150;
     static constexpr uint16_t REBOOT_LIMIT_24H = 5;
-    // devolve até 2 alertas por chamada (nível de bateria + reboot) via out; retorna quantos
-    int onHeartbeat(uint32_t node, uint16_t vbatCentiV, uint16_t rebootCount, uint32_t nowMs, Alert out[2]);
+    // devolve até 3 alertas por chamada (volta de silêncio + nível de bateria + reboot) via out; retorna quantos
+    int onHeartbeat(uint32_t node, uint16_t vbatCentiV, uint16_t rebootCount, uint32_t nowMs, Alert out[3]);
     // varredura de silêncio: chamar 1×/s por estação registrada; SILENT dispara 1× até voltar
     bool checkSilence(uint32_t node, uint32_t silencioMs, uint32_t nowMs, Alert &out);
     uint32_t lastHeardMs(uint32_t node) const; // 0 = nunca
@@ -878,7 +878,7 @@ void tearDown(void) {}
 static void test_batteryLevelsWithHysteresis()
 {
     StationMonitor m;
-    Alert out[2];
+    Alert out[3];
     TEST_ASSERT_EQUAL_INT(0, m.onHeartbeat(0x11, 1250, 0, 1000, out)); // normal
     TEST_ASSERT_EQUAL_INT(1, m.onHeartbeat(0x11, 1210, 0, 2000, out)); // < 12,2
     TEST_ASSERT_EQUAL(AlertType::BATT_AVISO, out[0].type);
@@ -895,7 +895,7 @@ static void test_batteryLevelsWithHysteresis()
 static void test_silenceFiresOnceAndBackOnline()
 {
     StationMonitor m;
-    Alert out[2], a;
+    Alert out[3], a;
     m.onHeartbeat(0x11, 1250, 0, 1000, out);
     TEST_ASSERT_FALSE(m.checkSilence(0x11, 60000, 50000, a));
     TEST_ASSERT_TRUE(m.checkSilence(0x11, 60000, 62000, a));
@@ -916,7 +916,7 @@ static void test_silenceNeverHeardDoesNotFire()
 static void test_rebootAnomaly()
 {
     StationMonitor m;
-    Alert out[2];
+    Alert out[3];
     m.onHeartbeat(0x11, 1250, 10, 1000, out);                          // baseline 10
     TEST_ASSERT_EQUAL_INT(0, m.onHeartbeat(0x11, 1250, 14, 2000, out)); // +4
     TEST_ASSERT_EQUAL_INT(1, m.onHeartbeat(0x11, 1250, 16, 3000, out)); // +6 > 5
