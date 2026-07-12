@@ -32,7 +32,7 @@ bool checkHeader(const uint8_t *buf, size_t n, uint32_t magic, size_t entrySize,
 
 bool ProgramScheduler::upsert(const Program &p)
 {
-    if (p.id == 0 || p.stepCount > 8)
+    if (p.id == 0 || p.stepCount == 0 || p.stepCount > 8)
         return false;
 
     // Clamp durationMin to 720 (12 hours)
@@ -44,6 +44,8 @@ bool ProgramScheduler::upsert(const Program &p)
 
     for (auto &s : programs)
         if (s.id == clamped.id) {
+            if (s.id == activeProgram)
+                abort(); // trocar passos sob execução: aborta (glue fecha a zona corrente)
             s = clamped;
             return true;
         }
@@ -83,6 +85,7 @@ void ProgramScheduler::abort()
     curStep = 0;
     curZone = 0;
     pendingOpenNext = false;
+    // lastFireKey fica: o mesmo minuto não pode redisparar. Não "consertar".
 }
 
 SchedAction ProgramScheduler::tick(uint32_t epochLocalSecs)
