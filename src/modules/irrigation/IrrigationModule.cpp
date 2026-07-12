@@ -551,6 +551,8 @@ void IrrigationModule::commitPairing()
     memcpy(ch.settings.name, g.channelName, g.nameLen);
     channels.setChannel(ch);
     channels.onConfigChanged();
+    service->reloadConfig(SEGMENT_CHANNELS); // persiste o canal: sem isso, queda de
+    // energia antes do reboot deixaria vínculo gravado com PSK antiga em flash
 
     settings.boundGateway = g.gatewayId;
     if (!saveIrrigationSettings(settings)) {
