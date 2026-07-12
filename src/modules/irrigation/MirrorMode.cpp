@@ -99,7 +99,8 @@ bool MirrorMode::inputActive(uint8_t input) const
 {
     if (input >= INPUTS)
         return false;
-    return _inputs[input].stable;
+    // só faz sentido com o espelho habilitado: desabilitado já drenou os CLOSEs
+    return _enabled && _inputs[input].stable;
 }
 
 size_t MirrorMode::serialize(uint8_t *buf, size_t cap) const
