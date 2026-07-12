@@ -5,7 +5,7 @@ Spec: `myfork/especificacao-irrigacao-mesh.md` (v0.1). Spec cobre múltiplos sub
 | Fase | Escopo (seções da spec) | Plano |
 |---|---|---|
 | 1 | Núcleo do protocolo + estação fail-safe: mensagens binárias no portnum privado, anti-replay, rate limit, ValveController com timer local, ACK, heartbeat, role em settings (§3.1, §3.2, §4) | `2026-07-11-irrigacao-fase1-nucleo.md` |
-| 2 | Persistência NVS atômica, epoch de config, `SET_CONFIG`/`GET_CONFIG` fragmentável, regra do maior epoch, modo seguro (§5) | futuro |
+| 2 | Persistência NVS atômica, epoch de config, `SET_CONFIG`/`GET_CONFIG` fragmentável, regra do maior epoch, modo seguro (§5) | concluída (2026-07-12, plano 2026-07-11-irrigacao-fase2-config.md; regra do maior epoch movida p/ Fase 4 — lado gateway) |
 | 3 | Pareamento, vínculo nó↔gateway, allowlist, reset de fábrica, botão multifunção, LED de status (§6, §8.6, §8.7) | futuro |
 | 4 | Gateway: registro de estações, zonas, programas/cronograma, retries de ACK, alertas (bateria, estação muda, reboots) (§5.2–§5.3, §8.1–§8.3) | futuro |
 | 5 | Painel web do gateway + captive portal de campo (LittleFS, endpoints JSON) (§7) | futuro |
