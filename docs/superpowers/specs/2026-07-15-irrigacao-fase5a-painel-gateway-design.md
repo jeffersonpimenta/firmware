@@ -49,9 +49,13 @@ Três opções para servir o painel:
 
 A wins: reuso, menos superfície nova, menos código exclusivo de ESP32.
 
-JSON: **ArduinoJson** (já é dependência do projeto — `MeshPacketSerializer.cpp`;
-header-only, compila no host), usado tanto na serialização quanto no parsing, o que
-mantém a camada pura testável nativamente.
+JSON: **serializador/parser mínimo escrito à mão** na camada pura. O projeto não
+depende de ArduinoJson; o único JSON em árvore é jsoncpp (`<json/json.h>` em
+`MeshPacketSerializer.cpp`), cuja disponibilidade no env `coverage`/`native` não é
+garantida. Escrever um writer/reader mínimo (sem dependência externa) segue exatamente
+o idioma do codec binário já presente no módulo e garante que a camada pura compile e
+rode no host — que é o ponto de toda a arquitetura de teste. YAGNI: só o subconjunto de
+JSON que o painel realmente troca.
 
 Gating: tudo ativo apenas quando `IrrigationSettings.role == IrrigationRole::GATEWAY`
 (valor 1) e sob `#if !MESHTASTIC_EXCLUDE_WEBSERVER` em plataforma ESP32.
@@ -86,9 +90,19 @@ Parsers + validadores (JSON → struct validada + lista de erros):
 
 Cada parser reaproveita a validação de `GatewayTables` (upsert) e o codec `SET_CONFIG`
 existentes; devolve um resultado que a cola HTTP converte em 200 ou 400. Nunca aplica
-efeito colateral — só valida e monta a struct.
+efeito colateral — só valida e monta a struct. JSON via writer/reader mínimo escrito à
+mão (sem dependência externa; idioma do codec binário).
 
-Nova suíte: `test_irrigation_webapi`.
+Complementos necessários para o painel:
+
+- **`StationTelemetryCache`** (nova classe pura): hoje o gateway não guarda
+  vbat/vpainel/SNR/flags/epoch por estação (o `StationMonitor` só guarda
+  nível/último-contato/reboot). O cache é alimentado no `handleGwHeartbeat` e lido pelo
+  serializador de estações. Entra no agregado `IrrigationGateway`.
+- **`computeSync(desiredEpoch, reportedEpoch, silent)`** — helper puro que deriva o
+  estado composto `sincronizada`/`pendente`/`inalcançável`.
+
+Nova suíte: `test_irrigation_webapi`. `test/native-suite-count`: 43 → 44.
 
 ### 2. `IrrigationWebEndpoints` — cola HTTP (só ESP32 / CI)
 
