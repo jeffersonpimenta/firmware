@@ -1,6 +1,7 @@
 #include "Arduino.h"
 #include "TestUtil.h"
 #include "modules/irrigation/GatewayTables.h"
+#include "modules/irrigation/StationTelemetryCache.h"
 #include <string.h>
 #include <unity.h>
 
@@ -131,6 +132,31 @@ static void test_stations_nodeAtCompacted()
     TEST_ASSERT_NULL(r.nodeAt(99));
 }
 
+static void test_telemetryCache_upsertAndLookup()
+{
+    StationTelemetryCache c;
+    StationTelemetry t = {};
+    t.node = 0x55;
+    t.vbatCentiV = 1230;
+    t.vpanelCentiV = 1810;
+    t.snrQuarterDb = 24;
+    t.rebootCount = 4;
+    t.flags = 0x02;
+    t.configEpoch = 9;
+    t.atMs = 1000;
+    c.update(t);
+    const StationTelemetry *got = c.byNode(0x55);
+    TEST_ASSERT_NOT_NULL(got);
+    TEST_ASSERT_EQUAL_UINT16(1230, got->vbatCentiV);
+    TEST_ASSERT_EQUAL_UINT32(9, got->configEpoch);
+    // update do mesmo nó sobrescreve
+    t.vbatCentiV = 1200;
+    t.atMs = 2000;
+    c.update(t);
+    TEST_ASSERT_EQUAL_UINT16(1200, c.byNode(0x55)->vbatCentiV);
+    TEST_ASSERT_NULL(c.byNode(0x99));
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -141,6 +167,7 @@ void setup()
     RUN_TEST(test_stations_upsertAdoptAndRoundTrip);
     RUN_TEST(test_stations_fullAndNodeZeroRejected);
     RUN_TEST(test_stations_nodeAtCompacted);
+    RUN_TEST(test_telemetryCache_upsertAndLookup);
     exit(UNITY_END());
 }
 

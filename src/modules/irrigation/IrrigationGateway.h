@@ -8,6 +8,7 @@
 #include "modules/irrigation/MirrorMode.h"
 #include "modules/irrigation/ProgramScheduler.h"
 #include "modules/irrigation/StationMonitor.h"
+#include "modules/irrigation/StationTelemetryCache.h"
 
 struct IrrigationGateway {
     ZoneTable zones;
@@ -17,4 +18,5 @@ struct IrrigationGateway {
     StationMonitor monitor;
     AlertCenter alerts;
     MirrorMode mirror;
+    StationTelemetryCache telemetry;
 };

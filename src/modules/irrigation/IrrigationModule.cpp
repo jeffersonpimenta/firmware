@@ -1241,6 +1241,18 @@ void IrrigationModule::handleGwHeartbeat(const meshtastic_MeshPacket &mp, const 
 
     // Reconciliação de epoch.
     gwReconcileEpoch(mp.from, hb.configEpoch);
+
+    // Telemetria por estação (RAM; alimenta o painel web).
+    StationTelemetry tel = {};
+    tel.node = mp.from;
+    tel.vbatCentiV = hb.vbatCentiV;
+    tel.vpanelCentiV = hb.vpanelCentiV;
+    tel.snrQuarterDb = hb.snrQuarterDb;
+    tel.rebootCount = hb.rebootCount;
+    tel.flags = hb.flags;
+    tel.configEpoch = hb.configEpoch;
+    tel.atMs = millis();
+    gateway.telemetry.update(tel);
 }
 
 // Decisão §3: MSG_EVENTO recebido pelo gateway (auditoria; Fase 6 processa detalhes).
