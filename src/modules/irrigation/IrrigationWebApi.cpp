@@ -261,4 +261,110 @@ ParseResult parseZoneDelete(const char *json, size_t len, uint8_t &outId)
     return r;
 }
 
+ParseResult parseProgramUpsert(const char *json, size_t len, Program &out)
+{
+    ParseResult r;
+    JsonReader rd(json, len);
+    int64_t id = 0, days = 0, start = 0;
+    bool enabled = true;
+    if (!rd.getInt("id", id) || id < 1 || id > 255) r.fail("id invalido (1..255)");
+    if (!rd.getInt("daysMask", days) || days < 0 || days > 127) r.fail("daysMask fora de 0..127");
+    if (!rd.getInt("startMinute", start) || start < 0 || start > 1439) r.fail("startMinute fora de 0..1439");
+    rd.getBool("enabled", enabled); // opcional
+
+    // Localiza o array "steps".
+    const char *sp = strstr(json, "\"steps\"");
+    const char *arr = sp ? strchr(sp, '[') : nullptr;
+    const char *arrEnd = arr ? strchr(arr, ']') : nullptr;
+    if (!arr || !arrEnd) r.fail("steps ausente");
+    Program p = Program{};
+    uint8_t count = 0;
+    if (arr && arrEnd) {
+        const char *o = arr;
+        while ((o = strchr(o, '{')) != nullptr && o < arrEnd) {
+            const char *oEnd = strchr(o, '}');
+            if (!oEnd || oEnd > arrEnd) break;
+            if (count >= 8) { r.fail("mais de 8 etapas"); break; }
+            JsonReader sr(o, (size_t)(oEnd - o + 1));
+            int64_t zoneId = 0, dur = 0;
+            if (!sr.getInt("zoneId", zoneId) || zoneId < 1 || zoneId > 255) { r.fail("zoneId de etapa invalido"); break; }
+            if (!sr.getInt("durationMin", dur) || dur < 1 || dur > 120) { r.fail("durationMin de etapa fora de 1..120"); break; }
+            p.steps[count].zoneId = (uint8_t)zoneId;
+            p.steps[count].durationMin = (uint16_t)dur;
+            count++;
+            o = oEnd + 1;
+        }
+    }
+    if (count == 0) r.fail("programa sem etapas");
+    if (!r.ok) return r;
+    p.id = (uint8_t)id;
+    p.enabled = enabled;
+    p.daysMask = (uint8_t)days;
+    p.startMinute = (uint16_t)start;
+    p.stepCount = count;
+    out = p;
+    return r;
+}
+
+ParseResult parseProgramToggle(const char *json, size_t len, uint8_t &outId, bool &outEnabled)
+{
+    ParseResult r;
+    JsonReader rd(json, len);
+    int64_t id = 0;
+    bool en = false;
+    if (!rd.getInt("id", id) || id < 1 || id > 255) r.fail("id invalido (1..255)");
+    if (!rd.getBool("enabled", en)) r.fail("enabled ausente");
+    if (!r.ok) return r;
+    outId = (uint8_t)id;
+    outEnabled = en;
+    return r;
+}
+
+ParseResult parseProgramDelete(const char *json, size_t len, uint8_t &outId)
+{
+    ParseResult r;
+    JsonReader rd(json, len);
+    int64_t id = 0;
+    if (!rd.getInt("id", id) || id < 1 || id > 255) { r.fail("id invalido (1..255)"); return r; }
+    outId = (uint8_t)id;
+    return r;
+}
+
+ParseResult parseCommand(const char *json, size_t len, WebCommand &out)
+{
+    ParseResult r;
+    JsonReader rd(json, len);
+    char kind[20] = {0};
+    if (!rd.getStr("kind", kind, sizeof(kind))) { r.fail("kind ausente"); return r; }
+    WebCommand c = WebCommand{};
+    int64_t zoneId = 0, dur = 0, node = 0;
+    rd.getInt("zoneId", zoneId);
+    rd.getInt("durationS", dur);
+    rd.getInt("node", node);
+    c.zoneId = (uint8_t)zoneId;
+    c.node = (uint32_t)node;
+    if (strcmp(kind, "pulse") == 0) {
+        if (zoneId < 1 || zoneId > 255) r.fail("zoneId invalido");
+        c.kind = CmdKind::PULSE_TEST;
+        c.durationS = 10; // §7.1: teste de pulso abre 10 s
+    } else if (strcmp(kind, "open") == 0) {
+        if (zoneId < 1 || zoneId > 255) r.fail("zoneId invalido");
+        if (dur < 1 || dur > 7200) r.fail("durationS fora de 1..7200");
+        c.kind = CmdKind::OPEN;
+        c.durationS = (uint16_t)dur;
+    } else if (strcmp(kind, "close") == 0) {
+        if (zoneId < 1 || zoneId > 255) r.fail("zoneId invalido");
+        c.kind = CmdKind::CLOSE;
+    } else if (strcmp(kind, "ack") == 0) {
+        c.kind = CmdKind::ACK_ALERT; // node/zoneId identificam o alerta
+    } else if (strcmp(kind, "approve_pairing") == 0) {
+        c.kind = CmdKind::APPROVE_PAIRING;
+    } else {
+        r.fail("kind desconhecido");
+    }
+    if (!r.ok) return r;
+    out = c;
+    return r;
+}
+
 } // namespace IrrigationWeb

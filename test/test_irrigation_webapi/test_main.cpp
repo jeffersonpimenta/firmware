@@ -193,6 +193,67 @@ static void test_parseZoneDelete_ok()
     TEST_ASSERT_FALSE(parseZoneDelete(jb, strlen(jb), id).ok);
 }
 
+static void test_parseProgramUpsert_ok()
+{
+    const char *j = "{\"id\":2,\"enabled\":true,\"daysMask\":127,\"startMinute\":360,"
+                    "\"steps\":[{\"zoneId\":1,\"durationMin\":15},{\"zoneId\":2,\"durationMin\":20}]}";
+    Program p;
+    ParseResult r = parseProgramUpsert(j, strlen(j), p);
+    TEST_ASSERT_TRUE(r.ok);
+    TEST_ASSERT_EQUAL_UINT8(2, p.id);
+    TEST_ASSERT_EQUAL_UINT8(2, p.stepCount);
+    TEST_ASSERT_EQUAL_UINT8(1, p.steps[0].zoneId);
+    TEST_ASSERT_EQUAL_UINT16(20, p.steps[1].durationMin);
+}
+
+static void test_parseProgramUpsert_rejectsTooManySteps()
+{
+    // 9 etapas > 8
+    const char *j = "{\"id\":1,\"daysMask\":1,\"startMinute\":0,\"steps\":["
+        "{\"zoneId\":1,\"durationMin\":1},{\"zoneId\":1,\"durationMin\":1},{\"zoneId\":1,\"durationMin\":1},"
+        "{\"zoneId\":1,\"durationMin\":1},{\"zoneId\":1,\"durationMin\":1},{\"zoneId\":1,\"durationMin\":1},"
+        "{\"zoneId\":1,\"durationMin\":1},{\"zoneId\":1,\"durationMin\":1},{\"zoneId\":1,\"durationMin\":1}]}";
+    Program p;
+    TEST_ASSERT_FALSE(parseProgramUpsert(j, strlen(j), p).ok);
+}
+
+static void test_parseProgramUpsert_rejectsNoSteps()
+{
+    const char *j = "{\"id\":1,\"daysMask\":1,\"startMinute\":0,\"steps\":[]}";
+    Program p;
+    TEST_ASSERT_FALSE(parseProgramUpsert(j, strlen(j), p).ok);
+}
+
+static void test_parseProgramToggle_ok()
+{
+    const char *j = "{\"id\":4,\"enabled\":false}";
+    uint8_t id = 0; bool en = true;
+    TEST_ASSERT_TRUE(parseProgramToggle(j, strlen(j), id, en).ok);
+    TEST_ASSERT_EQUAL_UINT8(4, id);
+    TEST_ASSERT_FALSE(en);
+}
+
+static void test_parseCommand_kinds()
+{
+    WebCommand c;
+    const char *jp = "{\"kind\":\"pulse\",\"zoneId\":1}";
+    TEST_ASSERT_TRUE(parseCommand(jp, strlen(jp), c).ok);
+    TEST_ASSERT_EQUAL(CmdKind::PULSE_TEST, c.kind);
+    TEST_ASSERT_EQUAL_UINT16(10, c.durationS);
+
+    const char *jo = "{\"kind\":\"open\",\"zoneId\":2,\"durationS\":600}";
+    TEST_ASSERT_TRUE(parseCommand(jo, strlen(jo), c).ok);
+    TEST_ASSERT_EQUAL(CmdKind::OPEN, c.kind);
+    TEST_ASSERT_EQUAL_UINT16(600, c.durationS);
+
+    const char *ja = "{\"kind\":\"approve_pairing\"}";
+    TEST_ASSERT_TRUE(parseCommand(ja, strlen(ja), c).ok);
+    TEST_ASSERT_EQUAL(CmdKind::APPROVE_PAIRING, c.kind);
+
+    const char *jbad = "{\"kind\":\"open\",\"zoneId\":0,\"durationS\":600}";
+    TEST_ASSERT_FALSE(parseCommand(jbad, strlen(jbad), c).ok); // zoneId 0
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -208,6 +269,11 @@ void setup()
     RUN_TEST(test_parseZoneUpsert_ok);
     RUN_TEST(test_parseZoneUpsert_rejectsBadRange);
     RUN_TEST(test_parseZoneDelete_ok);
+    RUN_TEST(test_parseProgramUpsert_ok);
+    RUN_TEST(test_parseProgramUpsert_rejectsTooManySteps);
+    RUN_TEST(test_parseProgramUpsert_rejectsNoSteps);
+    RUN_TEST(test_parseProgramToggle_ok);
+    RUN_TEST(test_parseCommand_kinds);
     exit(UNITY_END());
 }
 

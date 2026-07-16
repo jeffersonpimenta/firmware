@@ -104,4 +104,17 @@ class JsonReader
 ParseResult parseZoneUpsert(const char *json, size_t len, Zone &out);
 ParseResult parseZoneDelete(const char *json, size_t len, uint8_t &outId);
 
+ParseResult parseProgramUpsert(const char *json, size_t len, Program &out);
+ParseResult parseProgramToggle(const char *json, size_t len, uint8_t &outId, bool &outEnabled);
+ParseResult parseProgramDelete(const char *json, size_t len, uint8_t &outId);
+
+enum class CmdKind : uint8_t { NONE, PULSE_TEST, OPEN, CLOSE, ACK_ALERT, APPROVE_PAIRING };
+struct WebCommand {
+    CmdKind kind = CmdKind::NONE;
+    uint8_t zoneId = 0;
+    uint16_t durationS = 0;
+    uint32_t node = 0;
+};
+ParseResult parseCommand(const char *json, size_t len, WebCommand &out);
+
 } // namespace IrrigationWeb
