@@ -174,17 +174,21 @@ const char *JsonReader::findValue(const char *key) const
     char pat[40];
     int pn = snprintf(pat, sizeof(pat), "\"%s\"", key);
     if (pn <= 0) return nullptr;
-    const char *p = _j;
+    size_t patLen = (size_t)pn;
     const char *end = _j + _len;
-    while ((p = strstr(p, pat)) != nullptr && p < end) {
-        const char *q = p + pn;
+    // Busca limitada a [_j, _j+_len): compara pat sem passar de end (não usa strstr,
+    // que varreria até o NUL ignorando _len).
+    for (const char *p = _j; p + patLen <= end; ++p) {
+        if (memcmp(p, pat, patLen) != 0) continue;
+        const char *q = p + patLen;
         while (q < end && (*q == ' ' || *q == '\t')) q++;
         if (q < end && *q == ':') {
             q++;
             while (q < end && (*q == ' ' || *q == '\t')) q++;
-            return q;
+            if (q < end) return q; // 1º char do valor, ainda dentro dos limites
         }
-        p = q;
+        // pat casou mas não formava "chave": pula ao próximo char após o pat.
+        p = q - 1; // -1 compensa o ++p do laço
     }
     return nullptr;
 }
@@ -193,9 +197,23 @@ bool JsonReader::getInt(const char *key, int64_t &out) const
 {
     const char *v = findValue(key);
     if (!v) return false;
-    char *end = nullptr;
-    long long n = strtoll(v, &end, 10);
-    if (end == v) return false;
+    const char *end = _j + _len;
+    // Copia o token numérico (sinal opcional + dígitos) que cabe em [v, end) para um
+    // buffer local NUL-terminado; strtoll não pode ultrapassar _len.
+    char tok[24];
+    size_t i = 0;
+    const char *p = v;
+    if (p < end && (*p == '+' || *p == '-') && i + 1 < sizeof(tok)) tok[i++] = *p++;
+    bool anyDigit = false;
+    while (p < end && *p >= '0' && *p <= '9' && i + 1 < sizeof(tok)) {
+        tok[i++] = *p++;
+        anyDigit = true;
+    }
+    if (!anyDigit) return false;
+    tok[i] = '\0';
+    char *tend = nullptr;
+    long long n = strtoll(tok, &tend, 10);
+    if (tend == tok) return false;
     out = (int64_t)n;
     return true;
 }
@@ -204,23 +222,25 @@ bool JsonReader::getBool(const char *key, bool &out) const
 {
     const char *v = findValue(key);
     if (!v) return false;
-    if (strncmp(v, "true", 4) == 0) { out = true; return true; }
-    if (strncmp(v, "false", 5) == 0) { out = false; return true; }
+    const char *end = _j + _len;
+    if ((size_t)(end - v) >= 4 && memcmp(v, "true", 4) == 0) { out = true; return true; }
+    if ((size_t)(end - v) >= 5 && memcmp(v, "false", 5) == 0) { out = false; return true; }
     return false;
 }
 
 bool JsonReader::getStr(const char *key, char *out, size_t cap) const
 {
     const char *v = findValue(key);
-    if (!v || *v != '"' || cap == 0) return false;
+    const char *end = _j + _len;
+    if (!v || v >= end || *v != '"' || cap == 0) return false;
     v++; // pula a aspa de abertura
     size_t i = 0;
-    while (*v && *v != '"' && i + 1 < cap) {
-        if (*v == '\\' && v[1]) v++; // escape simples: copia o próximo literal
+    while (v < end && *v != '"' && i + 1 < cap) {
+        if (*v == '\\' && v + 1 < end) v++; // escape simples: copia o próximo literal
         out[i++] = *v++;
     }
     out[i] = '\0';
-    return (*v == '"'); // só ok se fechou a string
+    return (v < end && *v == '"'); // só ok se fechou a string dentro dos limites
 }
 
 ParseResult parseZoneUpsert(const char *json, size_t len, Zone &out)

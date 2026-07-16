@@ -224,6 +224,44 @@ static void test_parseProgramUpsert_rejectsNoSteps()
     TEST_ASSERT_FALSE(parseProgramUpsert(j, strlen(j), p).ok);
 }
 
+// Uma etapa sem durationMin não pode "pegar emprestado" o valor de uma etapa posterior:
+// o slice de JsonReader deve respeitar _len e rejeitar.
+static void test_parseProgramUpsert_rejectsTruncatedStep()
+{
+    const char *j = "{\"id\":1,\"daysMask\":1,\"startMinute\":0,\"steps\":[{\"zoneId\":1}]}";
+    Program p;
+    TEST_ASSERT_FALSE(parseProgramUpsert(j, strlen(j), p).ok);
+}
+
+// String sem aspa de fechamento: getStr deve retornar false.
+static void test_jsonReader_unterminatedString()
+{
+    const char *s = "{\"name\":\"abc}";
+    JsonReader r(s, strlen(s));
+    char name[16] = {0};
+    TEST_ASSERT_FALSE(r.getStr("name", name, sizeof(name)));
+}
+
+// Valor ausente após ':' — getInt deve retornar false (sem dígitos).
+static void test_jsonReader_missingValue()
+{
+    const char *s = "{\"id\":}";
+    JsonReader r(s, strlen(s));
+    int64_t v = 0;
+    TEST_ASSERT_FALSE(r.getInt("id", v));
+}
+
+// _len é honrado (não o NUL): "id":5 está APÓS len, logo é invisível.
+static void test_jsonReader_respectsLen()
+{
+    const char *s = "{\"x\":1} \"id\":5";
+    JsonReader r(s, 7); // apenas {"x":1}
+    int64_t v = 0;
+    TEST_ASSERT_FALSE(r.getInt("id", v)); // "id" está além de len
+    TEST_ASSERT_TRUE(r.getInt("x", v));   // "x" está dentro de len
+    TEST_ASSERT_EQUAL_INT64(1, v);
+}
+
 static void test_parseProgramToggle_ok()
 {
     const char *j = "{\"id\":4,\"enabled\":false}";
@@ -272,6 +310,10 @@ void setup()
     RUN_TEST(test_parseProgramUpsert_ok);
     RUN_TEST(test_parseProgramUpsert_rejectsTooManySteps);
     RUN_TEST(test_parseProgramUpsert_rejectsNoSteps);
+    RUN_TEST(test_parseProgramUpsert_rejectsTruncatedStep);
+    RUN_TEST(test_jsonReader_unterminatedString);
+    RUN_TEST(test_jsonReader_missingValue);
+    RUN_TEST(test_jsonReader_respectsLen);
     RUN_TEST(test_parseProgramToggle_ok);
     RUN_TEST(test_parseCommand_kinds);
     exit(UNITY_END());
