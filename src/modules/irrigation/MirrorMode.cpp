@@ -136,3 +136,8 @@ bool MirrorMode::deserialize(const uint8_t *buf, size_t n)
     _enabled = (buf[5] != 0);
     return true;
 }
+
+bool mirrorOwnsZoneOutput(const MirrorMode &m, int8_t fonteInput)
+{
+    return m.enabled() && fonteInput >= 0 && m.inputActive((uint8_t)fonteInput);
+}

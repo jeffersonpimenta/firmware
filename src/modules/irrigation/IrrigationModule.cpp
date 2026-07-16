@@ -993,9 +993,9 @@ void IrrigationModule::gwTick()
                 continue;
             }
             if (a.type == SchedAction::Type::OPEN) {
-                // Bypass: se mirror está ativo e esta zona tem fonte, suprime (mirror manda).
-                if (gateway.mirror.enabled() && z->fonteInput >= 0 && gateway.mirror.inputActive((uint8_t)z->fonteInput)) {
-                    LOG_DEBUG("Irrigation GW: scheduler OPEN zone=%u suppressed (mirror active on input %d)", a.zoneId, z->fonteInput);
+                // Bypass: se o espelho é dono desta zona, ele manda — suprime o OPEN.
+                if (mirrorOwnsZoneOutput(gateway.mirror, z->fonteInput)) {
+                    LOG_DEBUG("Irrigation GW: scheduler OPEN zone=%u suprimido (espelho dono)", a.zoneId);
                     continue;
                 }
                 // Clamp pela maxMin da zona (scheduler já conhece durationS).
@@ -1007,6 +1007,11 @@ void IrrigationModule::gwTick()
                 uint8_t attempts = (stEntry && stEntry->retries > 0) ? stEntry->retries : 3;
                 gwSendValveCmd(z->node, z->index, z->tipo, 1, dur, a.zoneId, attempts);
             } else { // CLOSE
+                // Mesma proteção: não feche o que o espelho mantém aberto (carryover F4 #1).
+                if (mirrorOwnsZoneOutput(gateway.mirror, z->fonteInput)) {
+                    LOG_DEBUG("Irrigation GW: scheduler CLOSE zone=%u suprimido (espelho dono)", a.zoneId);
+                    continue;
+                }
                 gwSendValveCmd(z->node, z->index, z->tipo, 0, 0, a.zoneId, 1);
             }
         }
