@@ -155,6 +155,44 @@ static void test_buildPrograms_json()
     TEST_ASSERT_TRUE(contains(buf, "\"durationMin\":15"));
 }
 
+static void test_parseZoneUpsert_ok()
+{
+    const char *j = "{\"id\":3,\"name\":\"Horta\",\"node\":4369,\"tipo\":0,\"index\":2,\"maxMin\":45,\"padraoMin\":20,\"fonteInput\":-1}";
+    Zone z;
+    ParseResult r = parseZoneUpsert(j, strlen(j), z);
+    TEST_ASSERT_TRUE(r.ok);
+    TEST_ASSERT_EQUAL_UINT8(3, z.id);
+    TEST_ASSERT_EQUAL_STRING("Horta", z.name);
+    TEST_ASSERT_EQUAL_HEX32(4369, z.node);
+    TEST_ASSERT_EQUAL_UINT16(45, z.maxMin);
+    TEST_ASSERT_EQUAL_INT8(-1, z.fonteInput);
+}
+
+static void test_parseZoneUpsert_rejectsBadRange()
+{
+    Zone z;
+    const char *j1 = "{\"id\":0,\"name\":\"X\",\"node\":1,\"tipo\":0,\"index\":0,\"maxMin\":10,\"padraoMin\":5}";
+    TEST_ASSERT_FALSE(parseZoneUpsert(j1, strlen(j1), z).ok); // id 0
+    const char *j2 = "{\"id\":1,\"name\":\"X\",\"node\":1,\"tipo\":0,\"index\":0,\"maxMin\":200,\"padraoMin\":5}";
+    TEST_ASSERT_FALSE(parseZoneUpsert(j2, strlen(j2), z).ok); // maxMin > 120
+    const char *j3 = "{\"id\":1,\"name\":\"\",\"node\":1,\"tipo\":0,\"index\":0,\"maxMin\":10,\"padraoMin\":5}";
+    TEST_ASSERT_FALSE(parseZoneUpsert(j3, strlen(j3), z).ok); // nome vazio
+    const char *j4 = "{\"id\":1,\"name\":\"X\",\"node\":0,\"tipo\":0,\"index\":0,\"maxMin\":10,\"padraoMin\":5}";
+    TEST_ASSERT_FALSE(parseZoneUpsert(j4, strlen(j4), z).ok); // node 0
+    const char *j5 = "{\"id\":1,\"name\":\"X\",\"node\":1,\"tipo\":0,\"index\":0,\"maxMin\":10,\"padraoMin\":50}";
+    TEST_ASSERT_FALSE(parseZoneUpsert(j5, strlen(j5), z).ok); // padrao > max
+}
+
+static void test_parseZoneDelete_ok()
+{
+    const char *j = "{\"id\":7}";
+    uint8_t id = 0;
+    TEST_ASSERT_TRUE(parseZoneDelete(j, strlen(j), id).ok);
+    TEST_ASSERT_EQUAL_UINT8(7, id);
+    const char *jb = "{\"id\":0}";
+    TEST_ASSERT_FALSE(parseZoneDelete(jb, strlen(jb), id).ok);
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -167,6 +205,9 @@ void setup()
     RUN_TEST(test_buildStations_json);
     RUN_TEST(test_buildZones_json);
     RUN_TEST(test_buildPrograms_json);
+    RUN_TEST(test_parseZoneUpsert_ok);
+    RUN_TEST(test_parseZoneUpsert_rejectsBadRange);
+    RUN_TEST(test_parseZoneDelete_ok);
     exit(UNITY_END());
 }
 

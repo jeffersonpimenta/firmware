@@ -1,5 +1,6 @@
 #include "modules/irrigation/IrrigationWebApi.h"
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace IrrigationWeb
@@ -153,6 +154,111 @@ size_t buildPrograms(const ProgramScheduler &sched, char *buf, size_t cap)
     }
     w.endArray();
     return w.done();
+}
+
+void ParseResult::fail(const char *m)
+{
+    ok = false;
+    if (errorCount < 4) {
+        snprintf(errors[errorCount].msg, sizeof(errors[errorCount].msg), "%s", m);
+        errorCount++;
+    }
+}
+
+// Busca "key" no nível superior. Estratégia simples: procura a substring "\"key\""
+// seguida de ':' e devolve o 1º char não-espaço do valor. Suficiente para objetos
+// planos gerados pelo próprio painel (não é um parser JSON completo — nomes de chave
+// não contêm os caracteres especiais que iludiriam a busca).
+const char *JsonReader::findValue(const char *key) const
+{
+    char pat[40];
+    int pn = snprintf(pat, sizeof(pat), "\"%s\"", key);
+    if (pn <= 0) return nullptr;
+    const char *p = _j;
+    const char *end = _j + _len;
+    while ((p = strstr(p, pat)) != nullptr && p < end) {
+        const char *q = p + pn;
+        while (q < end && (*q == ' ' || *q == '\t')) q++;
+        if (q < end && *q == ':') {
+            q++;
+            while (q < end && (*q == ' ' || *q == '\t')) q++;
+            return q;
+        }
+        p = q;
+    }
+    return nullptr;
+}
+
+bool JsonReader::getInt(const char *key, int64_t &out) const
+{
+    const char *v = findValue(key);
+    if (!v) return false;
+    char *end = nullptr;
+    long long n = strtoll(v, &end, 10);
+    if (end == v) return false;
+    out = (int64_t)n;
+    return true;
+}
+
+bool JsonReader::getBool(const char *key, bool &out) const
+{
+    const char *v = findValue(key);
+    if (!v) return false;
+    if (strncmp(v, "true", 4) == 0) { out = true; return true; }
+    if (strncmp(v, "false", 5) == 0) { out = false; return true; }
+    return false;
+}
+
+bool JsonReader::getStr(const char *key, char *out, size_t cap) const
+{
+    const char *v = findValue(key);
+    if (!v || *v != '"' || cap == 0) return false;
+    v++; // pula a aspa de abertura
+    size_t i = 0;
+    while (*v && *v != '"' && i + 1 < cap) {
+        if (*v == '\\' && v[1]) v++; // escape simples: copia o próximo literal
+        out[i++] = *v++;
+    }
+    out[i] = '\0';
+    return (*v == '"'); // só ok se fechou a string
+}
+
+ParseResult parseZoneUpsert(const char *json, size_t len, Zone &out)
+{
+    ParseResult r;
+    JsonReader rd(json, len);
+    int64_t id = 0, node = 0, tipo = 0, index = 0, maxMin = 0, padraoMin = 0, fonte = -1;
+    char name[16] = {0};
+    if (!rd.getInt("id", id) || id < 1 || id > 255) r.fail("id invalido (1..255)");
+    if (!rd.getStr("name", name, sizeof(name)) || name[0] == '\0') r.fail("nome vazio/ausente");
+    if (!rd.getInt("node", node) || node == 0) r.fail("node ausente/zero");
+    if (!rd.getInt("tipo", tipo) || (tipo != 0 && tipo != 1)) r.fail("tipo deve ser 0 ou 1");
+    if (!rd.getInt("index", index) || index < 0 || index > 7) r.fail("index fora de 0..7");
+    if (!rd.getInt("maxMin", maxMin) || maxMin < 1 || maxMin > 120) r.fail("maxMin fora de 1..120");
+    if (!rd.getInt("padraoMin", padraoMin) || padraoMin < 1 || padraoMin > maxMin) r.fail("padraoMin fora de 1..maxMin");
+    rd.getInt("fonteInput", fonte); // opcional; default -1
+    if (fonte < -1 || fonte > 3) r.fail("fonteInput fora de -1..3");
+    if (!r.ok) return r;
+    out = Zone{};
+    out.id = (uint8_t)id;
+    snprintf(out.name, sizeof(out.name), "%s", name);
+    out.node = (uint32_t)node;
+    out.tipo = (uint8_t)tipo;
+    out.index = (uint8_t)index;
+    out.maxMin = (uint16_t)maxMin;
+    out.padraoMin = (uint16_t)padraoMin;
+    out.fonteInput = (int8_t)fonte;
+    return r;
+}
+
+ParseResult parseZoneDelete(const char *json, size_t len, uint8_t &outId)
+{
+    ParseResult r;
+    JsonReader rd(json, len);
+    int64_t id = 0;
+    if (!rd.getInt("id", id) || id < 1 || id > 255) { r.fail("id invalido (1..255)"); return r; }
+    outId = (uint8_t)id;
+    return r;
 }
 
 } // namespace IrrigationWeb

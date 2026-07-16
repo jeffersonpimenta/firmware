@@ -74,4 +74,34 @@ size_t buildStations(const StationView *views, size_t n, char *buf, size_t cap);
 size_t buildZones(const ZoneTable &zones, char *buf, size_t cap);
 size_t buildPrograms(const ProgramScheduler &sched, char *buf, size_t cap);
 
+struct ParseError {
+    char msg[48];
+};
+struct ParseResult {
+    bool ok = true;
+    uint8_t errorCount = 0;
+    ParseError errors[4];
+    void fail(const char *m);
+};
+
+// Reader de objeto JSON plano: só o nível superior, valores número/string/bool.
+// Sem aninhamento (arrays/objetos são ignorados pelas getters escalares). Suficiente
+// para os corpos que o painel envia. Para programas (com array), ver Task 7.
+class JsonReader
+{
+  public:
+    JsonReader(const char *json, size_t len) : _j(json), _len(len) {}
+    bool getInt(const char *key, int64_t &out) const;
+    bool getStr(const char *key, char *out, size_t cap) const;
+    bool getBool(const char *key, bool &out) const;
+
+  private:
+    const char *findValue(const char *key) const; // aponta pro 1º char do valor, ou nullptr
+    const char *_j;
+    size_t _len;
+};
+
+ParseResult parseZoneUpsert(const char *json, size_t len, Zone &out);
+ParseResult parseZoneDelete(const char *json, size_t len, uint8_t &outId);
+
 } // namespace IrrigationWeb
