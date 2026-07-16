@@ -413,6 +413,162 @@ body {
   font-size: 12.5px;
 }
 
+/* ===== Program card ===== */
+.card.program {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.card.program .pinfo {
+  cursor: pointer;
+  min-width: 0;
+  flex: 1;
+}
+
+.card.program .name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.card.program .sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 3px;
+}
+
+.ptoggle {
+  cursor: pointer;
+  font-family: inherit;
+  border: none;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 7px 14px;
+  flex-shrink: 0;
+}
+
+.ptoggle.chip {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.ptoggle.chip.green {
+  background: oklch(0.47 0.1 150 / 0.12);
+  border: none;
+  color: var(--green);
+}
+
+/* ===== Program edit — toggle switch ===== */
+.toggle-row {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: oklch(0.97 0.003 100);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.toggle-row .tlbl {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.switch {
+  width: 38px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--border);
+  position: relative;
+  flex-shrink: 0;
+}
+
+.switch.on {
+  background: var(--green);
+}
+
+.switch .knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #fff;
+}
+
+.switch.on .knob {
+  left: 18px;
+}
+
+/* ===== Program edit — steps ===== */
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.card.step {
+  border-radius: 14px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.card.step .stephdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.steprm {
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--red);
+}
+
+.stepdur {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stepdur .durlbl {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.finput.dur {
+  width: 70px;
+  padding: 7px 9px;
+  font-size: 13px;
+}
+
+.btn.stepadd {
+  margin-top: 8px;
+  width: 100%;
+  border: 1.5px dashed var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 10px;
+  border-radius: 10px;
+}
+
+.btn.stepadd:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* ===== Empty state ===== */
 .empty {
   font-size: 12.5px;
