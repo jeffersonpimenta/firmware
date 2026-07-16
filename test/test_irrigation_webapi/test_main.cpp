@@ -46,6 +46,36 @@ static void test_buildOverview_truncationReturnsZero()
     TEST_ASSERT_EQUAL_UINT(0, buildOverview(c, buf, sizeof(buf)));
 }
 
+// Arrays de escalares precisam de vírgula entre elementos (str/num/boolean chamam sep_).
+static void test_jsonWriter_scalarArrayCommas()
+{
+    char buf[128];
+    JsonWriter w(buf, sizeof(buf));
+    w.beginArray();
+    w.str("a");
+    w.str("b");
+    w.endArray();
+    TEST_ASSERT_EQUAL_STRING("[\"a\",\"b\"]", buf);
+
+    JsonWriter w2(buf, sizeof(buf));
+    w2.beginArray();
+    w2.num(1);
+    w2.num(2);
+    w2.endArray();
+    TEST_ASSERT_EQUAL_STRING("[1,2]", buf);
+}
+
+// str() escapa aspas/barra/newline e descarta controle.
+static void test_jsonWriter_strEscaping()
+{
+    char buf[64];
+    // "\x01" separado de "e" por concatenação: senão \x01e vira um único hex 0x1E (greedy).
+    JsonWriter w(buf, sizeof(buf));
+    w.str("a\"b\\c\nd\x01"
+          "e");
+    TEST_ASSERT_EQUAL_STRING("\"a\\\"b\\\\c\\nde\"", buf);
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -53,6 +83,8 @@ void setup()
     RUN_TEST(test_computeSync_states);
     RUN_TEST(test_buildOverview_json);
     RUN_TEST(test_buildOverview_truncationReturnsZero);
+    RUN_TEST(test_jsonWriter_scalarArrayCommas);
+    RUN_TEST(test_jsonWriter_strEscaping);
     exit(UNITY_END());
 }
 

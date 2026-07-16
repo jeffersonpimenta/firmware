@@ -22,6 +22,7 @@ void JsonWriter::endArray() { putc_(']'); _needComma = true; }
 void JsonWriter::key(const char *k) { sep_(); putc_('"'); puts_(k); puts_("\":"); _needComma = false; }
 void JsonWriter::str(const char *v)
 {
+    sep_(); // vírgula entre elementos (no-op após key(), que zera _needComma)
     putc_('"');
     for (const char *p = v; *p; ++p) {
         char c = *p;
@@ -33,8 +34,20 @@ void JsonWriter::str(const char *v)
     putc_('"');
     _needComma = true;
 }
-void JsonWriter::num(int64_t v) { char t[24]; snprintf(t, sizeof(t), "%lld", (long long)v); puts_(t); _needComma = true; }
-void JsonWriter::boolean(bool v) { puts_(v ? "true" : "false"); _needComma = true; }
+void JsonWriter::num(int64_t v)
+{
+    sep_();
+    char t[24];
+    snprintf(t, sizeof(t), "%lld", (long long)v);
+    puts_(t);
+    _needComma = true;
+}
+void JsonWriter::boolean(bool v)
+{
+    sep_();
+    puts_(v ? "true" : "false");
+    _needComma = true;
+}
 void JsonWriter::raw(const char *v) { sep_(); puts_(v); _needComma = true; }
 size_t JsonWriter::done() { return _ovf ? 0 : _len; }
 
