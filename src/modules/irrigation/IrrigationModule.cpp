@@ -1035,10 +1035,11 @@ bool IrrigationModule::gwApplyProgramToggle(uint8_t id, bool enabled)
 }
 bool IrrigationModule::gwApplyProgramDelete(uint8_t id)
 {
-    if (gateway.scheduler.running() && gateway.scheduler.currentZone() != 0) {
-        // Fecha a zona corrente antes de abortar (mesma disciplina do gwTick).
+    // Só mexe na saída se o programa EXCLUÍDO for o que está em execução. removeById()
+    // já aborta o scheduler internamente, mas não emite o CLOSE de rádio — a cola fecha
+    // a zona corrente aqui. Excluir um programa ocioso não deve perturbar outro em curso.
+    if (gateway.scheduler.runningProgramId() == id && gateway.scheduler.currentZone() != 0) {
         const Zone *z = gateway.zones.byId(gateway.scheduler.currentZone());
-        gateway.scheduler.abort();
         if (z)
             gwSendValveCmd(z->node, z->index, z->tipo, 0, 0, z->id, 1);
     }
@@ -1051,7 +1052,11 @@ bool IrrigationModule::gwRunCommand(const IrrigationWeb::WebCommand &c)
 {
     using K = IrrigationWeb::CmdKind;
     if (c.kind == K::APPROVE_PAIRING) {
-        commitPairing();
+        // Aprovar pareamento pelo painel = mesmo gesto do botão SHORT no gateway:
+        // abre a janela de aceite (2 min) para conceder aos anúncios que chegarem.
+        // NÃO é commitPairing() (esse é o commit do lado ESTAÇÃO: grava PSK e reinicia).
+        gatewayPairing.openWindow(millis());
+        refreshLedMode();
         return true;
     }
     if (c.kind == K::ACK_ALERT) {
@@ -1064,6 +1069,8 @@ bool IrrigationModule::gwRunCommand(const IrrigationWeb::WebCommand &c)
     const StationEntry *st = gateway.stations.byNode(z->node);
     uint8_t attempts = (st && st->retries > 0) ? st->retries : 3;
     if (c.kind == K::OPEN || c.kind == K::PULSE_TEST) {
+        // Comando manual do painel: override explícito do operador — sem supressão de
+        // espelho (diferente do gwTick, onde o scheduler cede a zona ao espelho).
         uint16_t dur = c.durationS;
         if (z->maxMin > 0 && dur > (uint16_t)(z->maxMin * 60))
             dur = (uint16_t)(z->maxMin * 60);

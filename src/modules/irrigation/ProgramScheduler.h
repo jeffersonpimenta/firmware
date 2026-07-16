@@ -34,6 +34,7 @@ class ProgramScheduler {
     // por chamada; chamar de novo no mesmo segundo até NONE.
     SchedAction tick(uint32_t epochLocalSecs);
     bool running() const { return activeProgram != 0; }
+    uint8_t runningProgramId() const { return activeProgram; } // id do programa em execução (0 = nenhum)
     void abort(); // glue fecha a zona corrente antes (usa currentZone())
     uint8_t currentZone() const { return running() ? curZone : 0; }
     size_t serialize(uint8_t *buf, size_t cap) const;
