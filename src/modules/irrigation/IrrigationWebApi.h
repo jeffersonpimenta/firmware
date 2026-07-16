@@ -55,4 +55,18 @@ struct OverviewCtx {
 };
 size_t buildOverview(const OverviewCtx &ctx, char *buf, size_t cap);
 
+struct StationView {
+    uint32_t node = 0;
+    const char *name = "";
+    SyncState sync = SyncState::SINCRONIZADA;
+    uint32_t secsSinceHeard = 0;
+    uint16_t vbatCentiV = 0;
+    uint16_t vpanelCentiV = 0;
+    int8_t snrQuarterDb = 0;
+    uint16_t rebootCount = 0;
+    uint8_t flags = 0; // HbFlags: tamper/safe/hibernation
+    int32_t lat = 0, lon = 0;
+};
+size_t buildStations(const StationView *views, size_t n, char *buf, size_t cap);
+
 } // namespace IrrigationWeb

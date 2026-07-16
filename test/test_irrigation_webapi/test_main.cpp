@@ -76,6 +76,35 @@ static void test_jsonWriter_strEscaping()
     TEST_ASSERT_EQUAL_STRING("\"a\\\"b\\\\c\\nde\"", buf);
 }
 
+static void test_buildStations_json()
+{
+    StationView v[2] = {};
+    v[0].node = 0x1111;
+    v[0].name = "Pasto Norte";
+    v[0].sync = SyncState::SINCRONIZADA;
+    v[0].secsSinceHeard = 120;
+    v[0].vbatCentiV = 1250;
+    v[0].vpanelCentiV = 1800;
+    v[0].snrQuarterDb = 40;
+    v[0].rebootCount = 2;
+    v[0].flags = 0;
+    v[0].lat = -2212340;
+    v[0].lon = -4765430;
+    v[1].node = 0x2222;
+    v[1].name = "Horta";
+    v[1].sync = SyncState::INALCANCAVEL;
+    v[1].secsSinceHeard = 4000;
+    char buf[1024];
+    size_t n = buildStations(v, 2, buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_TRUE(contains(buf, "\"node\":4369")); // 0x1111
+    TEST_ASSERT_TRUE(contains(buf, "\"name\":\"Pasto Norte\""));
+    TEST_ASSERT_TRUE(contains(buf, "\"sync\":\"sincronizada\""));
+    TEST_ASSERT_TRUE(contains(buf, "\"sync\":\"inalcancavel\""));
+    TEST_ASSERT_TRUE(contains(buf, "\"vbatCentiV\":1250"));
+    TEST_ASSERT_TRUE(contains(buf, "\"lat\":-2212340"));
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -85,6 +114,7 @@ void setup()
     RUN_TEST(test_buildOverview_truncationReturnsZero);
     RUN_TEST(test_jsonWriter_scalarArrayCommas);
     RUN_TEST(test_jsonWriter_strEscaping);
+    RUN_TEST(test_buildStations_json);
     exit(UNITY_END());
 }
 

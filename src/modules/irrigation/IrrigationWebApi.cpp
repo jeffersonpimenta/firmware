@@ -82,4 +82,28 @@ size_t buildOverview(const OverviewCtx &ctx, char *buf, size_t cap)
     return w.done();
 }
 
+size_t buildStations(const StationView *views, size_t n, char *buf, size_t cap)
+{
+    JsonWriter w(buf, cap);
+    w.beginArray();
+    for (size_t i = 0; i < n; i++) {
+        const StationView &v = views[i];
+        w.beginObject();
+        w.keyNum("node", (int64_t)v.node);
+        w.keyStr("name", v.name);
+        w.keyStr("sync", syncLabel(v.sync));
+        w.keyNum("secsSinceHeard", v.secsSinceHeard);
+        w.keyNum("vbatCentiV", v.vbatCentiV);
+        w.keyNum("vpanelCentiV", v.vpanelCentiV);
+        w.keyNum("snrQuarterDb", v.snrQuarterDb);
+        w.keyNum("rebootCount", v.rebootCount);
+        w.keyNum("flags", v.flags);
+        w.keyNum("lat", v.lat);
+        w.keyNum("lon", v.lon);
+        w.endObject();
+    }
+    w.endArray();
+    return w.done();
+}
+
 } // namespace IrrigationWeb
