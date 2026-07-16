@@ -1,5 +1,6 @@
 #include "modules/irrigation/IrrigationModule.h"
 #include "FSCommon.h"
+#include "modules/irrigation/IrrigationWebApi.h"
 #include "MeshService.h"
 #include "MeshTypes.h"
 #include "NodeDB.h"
@@ -970,13 +971,120 @@ void IrrigationModule::gwSendValveCmd(uint32_t node, uint8_t index, uint8_t tipo
     LOG_DEBUG("Irrigation GW: sent cmd zone=%u node=0x%08x action=%u dur=%u", zoneId, node, action, durationS);
 }
 
+// Fonte única de hora local do gateway (mesma que o scheduler consome no gwTick).
+bool IrrigationModule::computeLocalSecs(uint32_t &out) const
+{
+    uint32_t epochLocal = getValidTime(RTCQualityDevice, true);
+    out = epochLocal;
+    return epochLocal != 0;
+}
+
+// --- Serviço do painel web (gateway). Ponte entre a cola HTTP (Task 10) e o estado do gateway. ---
+bool IrrigationModule::gwIsGateway() const
+{
+    return settings.role == (uint8_t)IrrigationRole::GATEWAY;
+}
+
+bool IrrigationModule::gwHasRtc() const
+{
+    uint32_t s = 0;
+    return computeLocalSecs(s);
+}
+uint32_t IrrigationModule::gwLocalSecs() const
+{
+    uint32_t s = 0;
+    computeLocalSecs(s);
+    return s;
+}
+
+bool IrrigationModule::gwApplyZoneUpsert(const Zone &z)
+{
+    if (!gateway.zones.upsert(z))
+        return false;
+    saveGatewayState();
+    return true;
+}
+bool IrrigationModule::gwApplyZoneDelete(uint8_t id)
+{
+    bool ok = gateway.zones.removeById(id);
+    if (ok)
+        saveGatewayState();
+    return ok;
+}
+bool IrrigationModule::gwApplyProgramUpsert(const Program &p)
+{
+    if (!gateway.scheduler.upsert(p))
+        return false;
+    saveGatewayState();
+    return true;
+}
+bool IrrigationModule::gwApplyProgramToggle(uint8_t id, bool enabled)
+{
+    // Localiza o programa atual e re-upsert com enabled ajustado.
+    for (size_t i = 0; i < gateway.scheduler.count(); i++) {
+        const Program *cur = gateway.scheduler.programAt(i);
+        if (cur && cur->id == id) {
+            Program np = *cur;
+            np.enabled = enabled;
+            gateway.scheduler.upsert(np);
+            saveGatewayState();
+            return true;
+        }
+    }
+    return false;
+}
+bool IrrigationModule::gwApplyProgramDelete(uint8_t id)
+{
+    if (gateway.scheduler.running() && gateway.scheduler.currentZone() != 0) {
+        // Fecha a zona corrente antes de abortar (mesma disciplina do gwTick).
+        const Zone *z = gateway.zones.byId(gateway.scheduler.currentZone());
+        gateway.scheduler.abort();
+        if (z)
+            gwSendValveCmd(z->node, z->index, z->tipo, 0, 0, z->id, 1);
+    }
+    bool ok = gateway.scheduler.removeById(id);
+    if (ok)
+        saveGatewayState();
+    return ok;
+}
+bool IrrigationModule::gwRunCommand(const IrrigationWeb::WebCommand &c)
+{
+    using K = IrrigationWeb::CmdKind;
+    if (c.kind == K::APPROVE_PAIRING) {
+        commitPairing();
+        return true;
+    }
+    if (c.kind == K::ACK_ALERT) {
+        lastAckAllMs = millis();
+        return true;
+    }
+    const Zone *z = gateway.zones.byId(c.zoneId);
+    if (!z)
+        return false;
+    const StationEntry *st = gateway.stations.byNode(z->node);
+    uint8_t attempts = (st && st->retries > 0) ? st->retries : 3;
+    if (c.kind == K::OPEN || c.kind == K::PULSE_TEST) {
+        uint16_t dur = c.durationS;
+        if (z->maxMin > 0 && dur > (uint16_t)(z->maxMin * 60))
+            dur = (uint16_t)(z->maxMin * 60);
+        gwSendValveCmd(z->node, z->index, z->tipo, 1, dur, z->id, attempts);
+        return true;
+    }
+    if (c.kind == K::CLOSE) {
+        gwSendValveCmd(z->node, z->index, z->tipo, 0, 0, z->id, 1);
+        return true;
+    }
+    return false;
+}
+
 // Decisão §2: loop principal do gateway — scheduler, espelho, retries, silêncio.
 void IrrigationModule::gwTick()
 {
     // --- Scheduler (programa/cronograma) ---
     // RTC-OPTIONAL: se não há RTC válido, idle com LOG_WARN 1×/h.
-    uint32_t epochLocal = getValidTime(RTCQualityDevice, true);
-    if (epochLocal == 0) {
+    uint32_t epochLocal = 0;
+    bool hasRtc = computeLocalSecs(epochLocal);
+    if (!hasRtc) {
         if (millis() - lastRtcWarnMs > 3600000U) {
             LOG_WARN("Irrigation GW: no valid RTC — scheduler idle");
             lastRtcWarnMs = millis();

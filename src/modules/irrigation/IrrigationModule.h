@@ -13,6 +13,12 @@
 #include "modules/irrigation/SeqTable.h"
 #include "modules/irrigation/ValveController.h"
 
+// Forward-decl da cola web (definida em IrrigationWebApi.h, incluída só no .cpp).
+namespace IrrigationWeb
+{
+struct WebCommand;
+}
+
 // Ponte H latching: pulso em A abre, pulso em B fecha.
 class GpioValveDriver : public IValveDriver
 {
@@ -36,6 +42,18 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     // Called by IrrigationUiThread to read current LED state (pure function of time).
     bool ledOnNow() { return led.ledOn(millis()); }
 
+    // --- Serviço do painel web (gateway). Chamados pela cola HTTP (IrrigationWebEndpoints). ---
+    bool gwIsGateway() const;
+    const IrrigationGateway &gwState() const { return gateway; }
+    bool gwHasRtc() const;
+    uint32_t gwLocalSecs() const;
+    bool gwApplyZoneUpsert(const Zone &z);
+    bool gwApplyZoneDelete(uint8_t id);
+    bool gwApplyProgramUpsert(const Program &p);
+    bool gwApplyProgramToggle(uint8_t id, bool enabled);
+    bool gwApplyProgramDelete(uint8_t id);
+    bool gwRunCommand(const IrrigationWeb::WebCommand &c);
+
   protected:
     bool wantPacket(const meshtastic_MeshPacket *p) override;
     ProcessMessage handleReceived(const meshtastic_MeshPacket &mp) override;
@@ -54,6 +72,8 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     void handleGwEvento(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
     void handleGwSetConfig(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
     void gwTick(); // chamado no runOnce do GATEWAY 1×/s
+    // Fonte única de hora local do gateway: true + segundos-de-epoch local se há RTC válido; false caso contrário.
+    bool computeLocalSecs(uint32_t &out) const;
     void gwSendValveCmd(uint32_t node, uint8_t index, uint8_t tipo, uint8_t action, uint16_t durationS, uint8_t zoneId,
                         uint8_t attempts); // decisão §1
     void gwReconcileEpoch(uint32_t node, uint32_t remoteEpoch);
@@ -100,6 +120,9 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     bool bootHeartbeatPending = true;
     // Controle de LOG_WARN de RTC (1×/h para não spam)
     uint32_t lastRtcWarnMs = 0;
+    // Marcador de "reconhecimento" de alertas (Fase 5a): alertas com atMs <= este valor são
+    // considerados reconhecidos pelo overview. ACK_ALERT seta = millis().
+    uint32_t lastAckAllMs = 0;
 };
 
 extern IrrigationModule *irrigationModule;
