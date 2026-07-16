@@ -1,5 +1,10 @@
 #include "GatewayTables.h"
+#include "modules/irrigation/IrrigationSettings.h"
 #include <string.h>
+
+static_assert(sizeof(IrrigationSettings) <= sizeof(((StationEntry *)nullptr)->blob),
+              "IrrigationSettings excede StationEntry::blob — a adoção de config falharia em silêncio; "
+              "aumente blob[] e bumpe a versão");
 
 namespace
 {
@@ -190,6 +195,19 @@ size_t StationRegistry::count() const
         if (s.node != 0)
             c++;
     return c;
+}
+
+const StationEntry *StationRegistry::nodeAt(size_t index) const
+{
+    size_t seen = 0;
+    for (size_t i = 0; i < MAX; i++) {
+        if (stations[i].node == 0)
+            continue;
+        if (seen == index)
+            return &stations[i];
+        seen++;
+    }
+    return nullptr;
 }
 
 void StationRegistry::adoptConfig(uint32_t node, const uint8_t *blob52, uint32_t epoch)

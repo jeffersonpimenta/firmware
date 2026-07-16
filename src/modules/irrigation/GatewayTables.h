@@ -48,6 +48,7 @@ class StationRegistry {
     bool removeByNode(uint32_t node);
     const StationEntry *byNode(uint32_t node) const;
     StationEntry *mutableByNode(uint32_t node);
+    const StationEntry *nodeAt(size_t index) const; // index-ésima entrada ocupada; nullptr se >= count()
     size_t count() const;
     void adoptConfig(uint32_t node, const uint8_t *blob52, uint32_t epoch); // regra do maior epoch
     size_t serialize(uint8_t *buf, size_t cap) const;

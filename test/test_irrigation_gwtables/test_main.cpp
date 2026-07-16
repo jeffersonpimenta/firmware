@@ -111,6 +111,26 @@ static void test_stations_fullAndNodeZeroRejected()
     TEST_ASSERT_TRUE(r.upsert(x));
 }
 
+static void test_stations_nodeAtCompacted()
+{
+    StationRegistry r;
+    StationEntry a;
+    a.node = 0xAA;
+    snprintf(a.name, sizeof(a.name), "A");
+    StationEntry b;
+    b.node = 0xBB;
+    snprintf(b.name, sizeof(b.name), "B");
+    TEST_ASSERT_TRUE(r.upsert(a));
+    TEST_ASSERT_TRUE(r.upsert(b));
+    TEST_ASSERT_TRUE(r.removeByNode(0xAA)); // abre buraco no slot 0
+    TEST_ASSERT_EQUAL_UINT(1, r.count());
+    const StationEntry *e0 = r.nodeAt(0);
+    TEST_ASSERT_NOT_NULL(e0);
+    TEST_ASSERT_EQUAL_HEX32(0xBB, e0->node); // compactado: pula o buraco
+    TEST_ASSERT_NULL(r.nodeAt(1));           // fora do count
+    TEST_ASSERT_NULL(r.nodeAt(99));
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -120,6 +140,7 @@ void setup()
     RUN_TEST(test_zones_serializeRoundTrip);
     RUN_TEST(test_stations_upsertAdoptAndRoundTrip);
     RUN_TEST(test_stations_fullAndNodeZeroRejected);
+    RUN_TEST(test_stations_nodeAtCompacted);
     exit(UNITY_END());
 }
 

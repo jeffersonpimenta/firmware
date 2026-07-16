@@ -1095,26 +1095,16 @@ void IrrigationModule::gwTick()
         }
     }
 
-    // --- Silêncio por estação ---
-    for (size_t i = 0; i < StationRegistry::MAX; i++) {
-        // Acesso interno ao registry: itera slots via byNode usando o registry count.
-        // Como não há iterador público, acedemos indiretamente via index do slot.
-        // Adaptação: usa mutableByNode passando pelos nodes da allowlist.
-        // Para iterar todas as entradas: aproveita que allowlist e registry são paralelas.
-        // Decisão de implementação: itera allowlist para obter nós e consulta registry.
-        if (i >= allowlist.count())
-            break;
-        uint32_t node = allowlist.nodeAt(i);
-        if (node == 0)
-            continue;
-        const StationEntry *entry = gateway.stations.byNode(node);
+    // --- Silêncio por estação (itera o registry diretamente, não em paralelo à allowlist) ---
+    for (size_t i = 0; i < gateway.stations.count(); i++) {
+        const StationEntry *entry = gateway.stations.nodeAt(i);
         if (!entry)
-            continue;
+            break;
         uint32_t silMs = (uint32_t)entry->silencioAlertaMin * 60000UL;
         Alert a;
-        if (gateway.monitor.checkSilence(node, silMs, millis(), a)) {
+        if (gateway.monitor.checkSilence(entry->node, silMs, millis(), a)) {
             gateway.alerts.push(a);
-            LOG_WARN("Irrigation GW: SILENT node=0x%08x", node);
+            LOG_WARN("Irrigation GW: SILENT node=0x%08x", entry->node);
         }
     }
 }
