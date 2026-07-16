@@ -106,4 +106,53 @@ size_t buildStations(const StationView *views, size_t n, char *buf, size_t cap)
     return w.done();
 }
 
+size_t buildZones(const ZoneTable &zones, char *buf, size_t cap)
+{
+    JsonWriter w(buf, cap);
+    w.beginArray();
+    for (size_t i = 0; i < zones.count(); i++) {
+        const Zone *z = zones.zoneAt(i);
+        if (!z) break;
+        w.beginObject();
+        w.keyNum("id", z->id);
+        w.keyStr("name", z->name);
+        w.keyNum("node", (int64_t)z->node);
+        w.keyNum("tipo", z->tipo);
+        w.keyNum("index", z->index);
+        w.keyNum("maxMin", z->maxMin);
+        w.keyNum("padraoMin", z->padraoMin);
+        w.keyNum("fonteInput", z->fonteInput);
+        w.endObject();
+    }
+    w.endArray();
+    return w.done();
+}
+
+size_t buildPrograms(const ProgramScheduler &sched, char *buf, size_t cap)
+{
+    JsonWriter w(buf, cap);
+    w.beginArray();
+    for (size_t i = 0; i < sched.count(); i++) {
+        const Program *p = sched.programAt(i);
+        if (!p) break;
+        w.beginObject();
+        w.keyNum("id", p->id);
+        w.keyBool("enabled", p->enabled);
+        w.keyNum("daysMask", p->daysMask);
+        w.keyNum("startMinute", p->startMinute);
+        w.key("steps");
+        w.beginArray();
+        for (uint8_t s = 0; s < p->stepCount && s < 8; s++) {
+            w.beginObject();
+            w.keyNum("zoneId", p->steps[s].zoneId);
+            w.keyNum("durationMin", p->steps[s].durationMin);
+            w.endObject();
+        }
+        w.endArray();
+        w.endObject();
+    }
+    w.endArray();
+    return w.done();
+}
+
 } // namespace IrrigationWeb

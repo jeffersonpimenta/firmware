@@ -29,6 +29,7 @@ class ProgramScheduler {
     bool upsert(const Program &p);
     bool removeById(uint8_t id);
     size_t count() const;
+    const Program *programAt(size_t index) const; // index-ésimo programa ocupado; nullptr se >= count()
     // Chamar 1×/s com hora local válida (epochLocalSecs != 0). Devolve UMA ação
     // por chamada; chamar de novo no mesmo segundo até NONE.
     SchedAction tick(uint32_t epochLocalSecs);

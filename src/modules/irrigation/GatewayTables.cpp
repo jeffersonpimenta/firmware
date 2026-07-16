@@ -91,6 +91,19 @@ size_t ZoneTable::count() const
     return c;
 }
 
+const Zone *ZoneTable::zoneAt(size_t index) const
+{
+    size_t seen = 0;
+    for (size_t i = 0; i < MAX; i++) {
+        if (zones[i].id == 0)
+            continue;
+        if (seen == index)
+            return &zones[i];
+        seen++;
+    }
+    return nullptr;
+}
+
 size_t ZoneTable::serialize(uint8_t *buf, size_t cap) const
 {
     uint8_t cnt = (uint8_t)count();

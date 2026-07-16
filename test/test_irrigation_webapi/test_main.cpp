@@ -1,6 +1,8 @@
 #include "Arduino.h"
 #include "TestUtil.h"
+#include "modules/irrigation/GatewayTables.h"
 #include "modules/irrigation/IrrigationWebApi.h"
+#include "modules/irrigation/ProgramScheduler.h"
 #include <string.h>
 #include <unity.h>
 
@@ -105,6 +107,54 @@ static void test_buildStations_json()
     TEST_ASSERT_TRUE(contains(buf, "\"lat\":-2212340"));
 }
 
+static void test_buildZones_json()
+{
+    ZoneTable t;
+    Zone z;
+    z.id = 1;
+    snprintf(z.name, sizeof(z.name), "Horta");
+    z.node = 0x1111;
+    z.tipo = 0;
+    z.index = 2;
+    z.maxMin = 45;
+    z.padraoMin = 20;
+    z.fonteInput = -1;
+    TEST_ASSERT_TRUE(t.upsert(z));
+    char buf[1024];
+    size_t n = buildZones(t, buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_TRUE(contains(buf, "\"id\":1"));
+    TEST_ASSERT_TRUE(contains(buf, "\"name\":\"Horta\""));
+    TEST_ASSERT_TRUE(contains(buf, "\"node\":4369"));
+    TEST_ASSERT_TRUE(contains(buf, "\"tipo\":0"));
+    TEST_ASSERT_TRUE(contains(buf, "\"index\":2"));
+    TEST_ASSERT_TRUE(contains(buf, "\"maxMin\":45"));
+    TEST_ASSERT_TRUE(contains(buf, "\"fonteInput\":-1"));
+}
+
+static void test_buildPrograms_json()
+{
+    ProgramScheduler s;
+    Program p;
+    p.id = 1;
+    p.enabled = true;
+    p.daysMask = 0x7F;
+    p.startMinute = 360;
+    p.stepCount = 1;
+    p.steps[0].zoneId = 1;
+    p.steps[0].durationMin = 15;
+    TEST_ASSERT_TRUE(s.upsert(p));
+    char buf[1024];
+    size_t n = buildPrograms(s, buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_TRUE(contains(buf, "\"id\":1"));
+    TEST_ASSERT_TRUE(contains(buf, "\"enabled\":true"));
+    TEST_ASSERT_TRUE(contains(buf, "\"daysMask\":127"));
+    TEST_ASSERT_TRUE(contains(buf, "\"startMinute\":360"));
+    TEST_ASSERT_TRUE(contains(buf, "\"zoneId\":1"));
+    TEST_ASSERT_TRUE(contains(buf, "\"durationMin\":15"));
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -115,6 +165,8 @@ void setup()
     RUN_TEST(test_jsonWriter_scalarArrayCommas);
     RUN_TEST(test_jsonWriter_strEscaping);
     RUN_TEST(test_buildStations_json);
+    RUN_TEST(test_buildZones_json);
+    RUN_TEST(test_buildPrograms_json);
     exit(UNITY_END());
 }
 

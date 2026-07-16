@@ -1,4 +1,6 @@
 #pragma once
+#include "modules/irrigation/GatewayTables.h"
+#include "modules/irrigation/ProgramScheduler.h"
 #include <cstddef>
 #include <cstdint>
 
@@ -68,5 +70,8 @@ struct StationView {
     int32_t lat = 0, lon = 0;
 };
 size_t buildStations(const StationView *views, size_t n, char *buf, size_t cap);
+
+size_t buildZones(const ZoneTable &zones, char *buf, size_t cap);
+size_t buildPrograms(const ProgramScheduler &sched, char *buf, size_t cap);
 
 } // namespace IrrigationWeb

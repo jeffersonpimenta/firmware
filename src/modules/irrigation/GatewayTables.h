@@ -22,6 +22,7 @@ class ZoneTable {
     bool removeById(uint8_t id);
     const Zone *byId(uint8_t id) const;  // nullptr = ausente
     const Zone *byFonte(int8_t input) const;
+    const Zone *zoneAt(size_t index) const; // index-ésima zona ocupada; nullptr se >= count()
     size_t count() const;
     size_t serialize(uint8_t *buf, size_t cap) const;
     bool deserialize(const uint8_t *buf, size_t n); // falha => tabela vazia

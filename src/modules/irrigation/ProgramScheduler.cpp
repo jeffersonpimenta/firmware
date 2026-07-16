@@ -79,6 +79,19 @@ size_t ProgramScheduler::count() const
     return c;
 }
 
+const Program *ProgramScheduler::programAt(size_t index) const
+{
+    size_t seen = 0;
+    for (size_t i = 0; i < MAX_PROGRAMS; i++) {
+        if (programs[i].id == 0)
+            continue;
+        if (seen == index)
+            return &programs[i];
+        seen++;
+    }
+    return nullptr;
+}
+
 void ProgramScheduler::abort()
 {
     activeProgram = 0;
