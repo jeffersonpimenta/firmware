@@ -129,7 +129,7 @@ static void hStations(HTTPRequest *req, HTTPResponse *res)
         v.lon = e->lon;
     }
 
-    char buf[2048];
+    char buf[4096];
     if (!buildStations(views, n, buf, sizeof(buf))) {
         res->setStatusCode(500);
         return;
@@ -144,7 +144,7 @@ static void hZonesGet(HTTPRequest *req, HTTPResponse *res)
         res->setStatusCode(404);
         return;
     }
-    char buf[1536];
+    char buf[3072];
     if (!buildZones(irrigationModule->gwState().zones, buf, sizeof(buf))) {
         res->setStatusCode(500);
         return;
@@ -159,7 +159,7 @@ static void hProgramsGet(HTTPRequest *req, HTTPResponse *res)
         res->setStatusCode(404);
         return;
     }
-    char buf[2048];
+    char buf[3072];
     if (!buildPrograms(irrigationModule->gwState().scheduler, buf, sizeof(buf))) {
         res->setStatusCode(500);
         return;
@@ -189,8 +189,11 @@ static void hZonesPost(HTTPRequest *req, HTTPResponse *res)
         sendJson(res, "{\"errors\":[\"tabela cheia\"]}", 400);
         return;
     }
-    char out[1536];
-    buildZones(irrigationModule->gwState().zones, out, sizeof(out));
+    char out[3072];
+    if (!buildZones(irrigationModule->gwState().zones, out, sizeof(out))) {
+        res->setStatusCode(500);
+        return;
+    }
     sendJson(res, out);
 }
 
@@ -212,8 +215,11 @@ static void hZonesDelete(HTTPRequest *req, HTTPResponse *res)
         sendJson(res, "{\"errors\":[\"zona inexistente\"]}", 400);
         return;
     }
-    char out[1536];
-    buildZones(irrigationModule->gwState().zones, out, sizeof(out));
+    char out[3072];
+    if (!buildZones(irrigationModule->gwState().zones, out, sizeof(out))) {
+        res->setStatusCode(500);
+        return;
+    }
     sendJson(res, out);
 }
 
@@ -235,8 +241,11 @@ static void hProgramsPost(HTTPRequest *req, HTTPResponse *res)
         sendJson(res, "{\"errors\":[\"tabela cheia\"]}", 400);
         return;
     }
-    char out[2048];
-    buildPrograms(irrigationModule->gwState().scheduler, out, sizeof(out));
+    char out[3072];
+    if (!buildPrograms(irrigationModule->gwState().scheduler, out, sizeof(out))) {
+        res->setStatusCode(500);
+        return;
+    }
     sendJson(res, out);
 }
 
@@ -259,8 +268,11 @@ static void hProgramsToggle(HTTPRequest *req, HTTPResponse *res)
         sendJson(res, "{\"errors\":[\"programa inexistente\"]}", 400);
         return;
     }
-    char out[2048];
-    buildPrograms(irrigationModule->gwState().scheduler, out, sizeof(out));
+    char out[3072];
+    if (!buildPrograms(irrigationModule->gwState().scheduler, out, sizeof(out))) {
+        res->setStatusCode(500);
+        return;
+    }
     sendJson(res, out);
 }
 
@@ -282,8 +294,11 @@ static void hProgramsDelete(HTTPRequest *req, HTTPResponse *res)
         sendJson(res, "{\"errors\":[\"programa inexistente\"]}", 400);
         return;
     }
-    char out[2048];
-    buildPrograms(irrigationModule->gwState().scheduler, out, sizeof(out));
+    char out[3072];
+    if (!buildPrograms(irrigationModule->gwState().scheduler, out, sizeof(out))) {
+        res->setStatusCode(500);
+        return;
+    }
     sendJson(res, out);
 }
 
