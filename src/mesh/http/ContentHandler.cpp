@@ -46,6 +46,7 @@
 using namespace httpsserver;
 
 #include "mesh/http/ContentHandler.h"
+#include "modules/irrigation/IrrigationWebEndpoints.h"
 
 #define DEST_FS_USES_LITTLEFS
 
@@ -115,6 +116,8 @@ void registerHandlers(HTTPServer *insecureServer, HTTPSServer *secureServer)
     //    secureServer->registerNode(nodeAdminFs);
     //    secureServer->registerNode(nodeAdminSettings);
     //    secureServer->registerNode(nodeAdminSettingsApply);
+    // Rotas do painel de irrigação — antes do catch-all nodeRoot ("/*", GET) para não serem sombreadas.
+    registerIrrigationHandlers(secureServer);
     secureServer->registerNode(nodeRoot); // This has to be last
 
     // Insecure nodes
@@ -136,6 +139,9 @@ void registerHandlers(HTTPServer *insecureServer, HTTPSServer *secureServer)
     //    insecureServer->registerNode(nodeAdminFs);
     //    insecureServer->registerNode(nodeAdminSettings);
     //    insecureServer->registerNode(nodeAdminSettingsApply);
+    // Rotas do painel de irrigação — antes do catch-all nodeRoot ("/*", GET) para não serem sombreadas.
+    // Os próprios handlers respondem 404 quando irrigationModule->gwIsGateway() é falso.
+    registerIrrigationHandlers(insecureServer);
     insecureServer->registerNode(nodeRoot); // This has to be last
 }
 
