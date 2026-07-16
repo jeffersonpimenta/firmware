@@ -100,8 +100,237 @@ async function renderStations() {
       .join('') || '<div class="empty">Nenhuma estação registrada.</div>';
 }
 
-// Mapa extensível: zones/programs adicionados nas Tasks 12/13.
-const RENDER = { overview: renderOverview, stations: renderStations };
+// ===== Zonas =====
+const TIPO_LABEL = { 0: 'Válvula', 1: 'GPO' };
+
+// Nome amigável de uma estação a partir do nó (usa /stations; fallback hex).
+function stationName(stations, node) {
+  const s = (Array.isArray(stations) ? stations : []).find((x) => x && num(x.node) === num(node));
+  return s && s.name ? esc(s.name) : nodeHex(node);
+}
+
+async function renderZones() {
+  const [zones, stations] = await Promise.all([getJson('/zones'), getJson('/stations').catch(() => [])]);
+  const rows = Array.isArray(zones) ? zones : [];
+
+  const cards = rows
+    .map((z) => {
+      z = z || {};
+      const meta =
+        stationName(stations, z.node) + ' · saída ' + num(z.index) + ' · ' + (TIPO_LABEL[num(z.tipo)] || '—');
+      return `<div class="card zone">
+      <div class="zrow">
+        <div class="zinfo">
+          <div class="name">${esc(z.name)}</div>
+          <div class="sub">${meta}</div>
+        </div>
+        <div class="zbtns">
+          <button class="btn ghost sm" data-zedit="${num(z.id)}">Editar</button>
+          <button class="btn outline sm" data-zopen="${num(z.id)}">Abrir</button>
+          <button class="btn solid sm" data-zclose="${num(z.id)}">Fechar</button>
+        </div>
+      </div>
+    </div>`;
+    })
+    .join('');
+
+  view.innerHTML =
+    `<button class="btn dashed" data-znew>+ Nova zona</button>` +
+    (cards || '<div class="empty">Nenhuma zona configurada.</div>');
+
+  view.querySelector('[data-znew]').addEventListener('click', () => zoneEditForm(null, rows, stations));
+  view.querySelectorAll('[data-zedit]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const z = rows.find((x) => x && num(x.id) === num(b.dataset.zedit));
+      zoneEditForm(z || null, rows, stations);
+    });
+  });
+  view.querySelectorAll('[data-zopen]').forEach((b) => {
+    b.addEventListener('click', async () => {
+      const z = rows.find((x) => x && num(x.id) === num(b.dataset.zopen));
+      const durationS = Math.min(7200, Math.max(1, num(z && z.padraoMin) * 60 || 60));
+      await postJson('/command', { kind: 'open', zoneId: num(b.dataset.zopen), durationS });
+      renderZones().catch(() => {});
+    });
+  });
+  view.querySelectorAll('[data-zclose]').forEach((b) => {
+    b.addEventListener('click', async () => {
+      await postJson('/command', { kind: 'close', zoneId: num(b.dataset.zclose) });
+      renderZones().catch(() => {});
+    });
+  });
+}
+
+// Formulário nova/editar zona. z=null → nova. rows/stations reaproveitados da lista.
+function zoneEditForm(z, rows, stations) {
+  const editing = !!z;
+  // Estado local do formulário (defaults para nova zona).
+  const st = {
+    id: editing ? num(z.id) : 0,
+    name: editing ? String(z.name || '') : '',
+    node: editing ? num(z.node) : num((Array.isArray(stations) && stations[0] && stations[0].node) || 0),
+    tipo: editing ? num(z.tipo) : 0,
+    index: editing ? num(z.index) : 0,
+    maxMin: editing ? num(z.maxMin) || 30 : 30,
+    padraoMin: editing ? num(z.padraoMin) || 15 : 15,
+    fonteInput: editing ? (z.fonteInput == null ? -1 : num(z.fonteInput)) : -1,
+  };
+  const sts = Array.isArray(stations) ? stations : [];
+  let errors = [];
+  let confirmDel = false;
+
+  function render() {
+    const errBox = errors.length
+      ? `<div class="card redbox">${errors.map((e) => `<div>${esc(e)}</div>`).join('')}</div>`
+      : '';
+
+    const stationChips = sts.length
+      ? sts
+          .map((s) => {
+            s = s || {};
+            const active = num(s.node) === st.node ? ' active' : '';
+            const label = s.name ? esc(s.name) : nodeHex(s.node);
+            return `<button class="pill${active}" data-node="${num(s.node)}">${label}</button>`;
+          })
+          .join('')
+      : '<div class="empty">Nenhuma estação — pareie uma antes.</div>';
+
+    let saidas = '';
+    for (let i = 0; i < 8; i++) {
+      saidas += `<button class="seg${i === st.index ? ' active' : ''}" data-idx="${i}">${i}</button>`;
+    }
+
+    const delBlock = editing
+      ? (confirmDel
+          ? `<div class="card redbox">
+              <div class="qtext">Excluir esta zona?</div>
+              <div class="btnrow">
+                <button class="btn ghost" data-delcancel>Cancelar</button>
+                <button class="btn danger" data-delconfirm>Excluir</button>
+              </div>
+            </div>`
+          : '') + `<button class="btn dangerline" data-delreq>Excluir zona</button>`
+      : '';
+
+    view.innerHTML =
+      `<div class="backlink" data-zback>‹ Zonas</div>
+       <div class="ztitle">${editing ? 'Editar zona' : 'Nova zona'}</div>
+       ${errBox}
+       <div class="card form">
+         <label class="fld">
+           <span class="flbl">Nome</span>
+           <input class="finput" id="z-name" maxlength="15" placeholder="Ex.: Horta" value="${esc(st.name)}">
+         </label>
+         <div class="frow">
+           <label class="fld">
+             <span class="flbl">Tempo (min)</span>
+             <input class="finput" id="z-padrao" type="number" min="1" max="120" value="${st.padraoMin}">
+           </label>
+           <label class="fld">
+             <span class="flbl">Failsafe (min)</span>
+             <input class="finput" id="z-max" type="number" min="1" max="120" value="${st.maxMin}">
+           </label>
+         </div>
+       </div>
+       <div class="card form">
+         <div class="flbl">Estação</div>
+         <div class="pills">${stationChips}</div>
+         <div class="fld">
+           <span class="flbl">Tipo de saída</span>
+           <div class="segrow">
+             <button class="seg wide${st.tipo === 0 ? ' active' : ''}" data-tipo="0">Válvula</button>
+             <button class="seg wide${st.tipo === 1 ? ' active' : ''}" data-tipo="1">GPO biestável</button>
+           </div>
+         </div>
+         <div class="fld">
+           <span class="flbl">Saída física</span>
+           <div class="segrow">${saidas}</div>
+         </div>
+       </div>
+       <button class="btn solid big" data-zsave>Salvar zona</button>
+       ${delBlock}`;
+
+    view.querySelector('[data-zback]').addEventListener('click', () => renderZones().catch(() => {}));
+    view.querySelector('#z-name').addEventListener('input', (e) => {
+      st.name = e.target.value;
+    });
+    view.querySelector('#z-padrao').addEventListener('input', (e) => {
+      st.padraoMin = num(e.target.value);
+    });
+    view.querySelector('#z-max').addEventListener('input', (e) => {
+      st.maxMin = num(e.target.value);
+    });
+    view.querySelectorAll('[data-node]').forEach((b) => {
+      b.addEventListener('click', () => {
+        st.node = num(b.dataset.node);
+        render();
+      });
+    });
+    view.querySelectorAll('[data-tipo]').forEach((b) => {
+      b.addEventListener('click', () => {
+        st.tipo = num(b.dataset.tipo);
+        render();
+      });
+    });
+    view.querySelectorAll('[data-idx]').forEach((b) => {
+      b.addEventListener('click', () => {
+        st.index = num(b.dataset.idx);
+        render();
+      });
+    });
+    view.querySelector('[data-zsave]').addEventListener('click', save);
+    const dr = view.querySelector('[data-delreq]');
+    if (dr)
+      dr.addEventListener('click', () => {
+        confirmDel = true;
+        render();
+      });
+    const dc = view.querySelector('[data-delcancel]');
+    if (dc)
+      dc.addEventListener('click', () => {
+        confirmDel = false;
+        render();
+      });
+    const dok = view.querySelector('[data-delconfirm]');
+    if (dok) dok.addEventListener('click', del);
+  }
+
+  async function save() {
+    const body = {
+      id: st.id,
+      name: st.name.trim(),
+      node: st.node,
+      tipo: st.tipo,
+      index: st.index,
+      maxMin: st.maxMin,
+      padraoMin: st.padraoMin,
+      fonteInput: st.fonteInput,
+    };
+    const r = await postJson('/zones', body);
+    if (r.ok) {
+      renderZones().catch(() => {});
+    } else {
+      errors = Array.isArray(r.body && r.body.errors) ? r.body.errors : ['Falha ao salvar.'];
+      render();
+    }
+  }
+
+  async function del() {
+    const r = await postJson('/zones/delete', { id: st.id });
+    if (r.ok) {
+      renderZones().catch(() => {});
+    } else {
+      errors = Array.isArray(r.body && r.body.errors) ? r.body.errors : ['Falha ao excluir.'];
+      confirmDel = false;
+      render();
+    }
+  }
+
+  render();
+}
+
+// Mapa extensível: programs adicionado na Task 13.
+const RENDER = { overview: renderOverview, stations: renderStations, zones: renderZones };
 
 async function show(tab) {
   current = tab;

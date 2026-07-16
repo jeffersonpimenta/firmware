@@ -182,6 +182,237 @@ body {
   padding: 3px 8px;
 }
 
+/* ===== Buttons ===== */
+.btn {
+  font-family: inherit;
+  cursor: pointer;
+  font-weight: 700;
+  border-radius: 10px;
+  border: none;
+  white-space: nowrap;
+}
+
+.btn.sm {
+  font-size: 13px;
+  padding: 8px 16px;
+}
+
+.btn.big {
+  font-size: 15px;
+  padding: 13px;
+  width: 100%;
+}
+
+.btn.solid {
+  background: var(--green);
+  color: #fff;
+}
+
+.btn.outline {
+  background: transparent;
+  border: 1.5px solid var(--green);
+  color: var(--green);
+}
+
+.btn.ghost {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.btn.dashed {
+  border: 1.5px dashed oklch(0.47 0.1 150 / 0.5);
+  background: transparent;
+  color: var(--green);
+  font-size: 13.5px;
+  padding: 12px;
+  border-radius: 14px;
+}
+
+.btn.danger {
+  background: var(--red);
+  color: #fff;
+}
+
+.btn.dangerline {
+  background: transparent;
+  border: 1px solid oklch(0.55 0.16 30 / 0.4);
+  color: var(--red);
+  font-size: 13.5px;
+  padding: 11px;
+  border-radius: 12px;
+  width: 100%;
+}
+
+/* ===== Zone card ===== */
+.card.zone .zrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.card.zone .zinfo {
+  min-width: 0;
+}
+
+.card.zone .name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.card.zone .sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 3px;
+}
+
+.card.zone .zbtns {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* ===== Zone edit form ===== */
+.backlink {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--green);
+}
+
+.ztitle {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.card.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fld {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.frow {
+  display: flex;
+  gap: 10px;
+}
+
+.frow .fld {
+  flex: 1;
+}
+
+.flbl {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.finput {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 10px;
+  font-size: 14px;
+  font-family: inherit;
+  background: oklch(0.97 0.003 100);
+  color: var(--text);
+}
+
+.pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pill {
+  cursor: pointer;
+  font-family: inherit;
+  border: 1.5px solid var(--border);
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.pill.active {
+  border-color: var(--green);
+  background: oklch(0.47 0.1 150 / 0.1);
+  color: var(--green);
+}
+
+.segrow {
+  display: flex;
+  gap: 6px;
+}
+
+.seg {
+  cursor: pointer;
+  font-family: inherit;
+  flex: 1;
+  border: 1.5px solid var(--border);
+  padding: 8px;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.seg.wide {
+  padding: 9px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.seg.active {
+  border-color: var(--green);
+  background: oklch(0.47 0.1 150 / 0.1);
+  color: var(--green);
+}
+
+.card.redbox {
+  background: oklch(0.55 0.16 30 / 0.08);
+  border-color: oklch(0.55 0.16 30 / 0.3);
+  border-radius: 12px;
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--red);
+}
+
+.card.redbox .qtext {
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.card.redbox .btnrow {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.card.redbox .btnrow .btn {
+  flex: 1;
+  padding: 9px;
+  font-size: 12.5px;
+}
+
 /* ===== Empty state ===== */
 .empty {
   font-size: 12.5px;
