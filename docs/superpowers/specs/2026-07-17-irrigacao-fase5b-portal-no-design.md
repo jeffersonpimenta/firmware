@@ -77,8 +77,7 @@ Duas abas consumindo `/api/portal/*` via `fetch()`. HTML/CSS/vanilla-JS, sem fra
 
 | Método | Rota | Ação |
 |---|---|---|
-| GET | `/api/portal/node` | Estado do nó: bateria, painel V, estados de válvula/GPO, tamper, safe-mode, papel, nome, gateway vinculado, epoch, coords |
-| POST | `/api/portal/node/config` | Patch de config local (coordenadas) |
+| GET | `/api/portal/node` | Estado do nó: bateria, painel V, estados de válvula/GPO, tamper, safe-mode, papel, nome, gateway vinculado, epoch |
 | POST | `/api/portal/node/pulse` | Teste de pulso local (ValveController; teto de 120 min respeitado) |
 | POST | `/api/portal/net/command` | Comando remoto → relay pelo gateway (`MSG_REMOTE_CMD{zoneId, action, durationS}`) |
 | GET | `/api/portal/net/roster` | Alvos: tabelas reais de zona/estação no gateway; lista de nós ouvidos na estação |
@@ -124,6 +123,9 @@ Cada marco termina GREEN e é integrável isoladamente.
 
 ## Follow-ups conhecidos (deferidos, seguros)
 
+- **Config local ("Este nó" write / coordenadas do próprio nó)**: `IrrigationSettings` não tem campo de
+  coordenadas; persistir exige bump ABI v4 ou arquivo LittleFS separado. Nesta fase a aba "Este nó" é
+  read-only + teste de pulso; o endpoint `POST /api/portal/node/config` fica para fase futura.
 - Sincronização de nomes de zona/roster para nós de campo (Rede mostra números).
 - Aba **Instalador** (§8.4) e o survey (§8.5, `MSG_PING_SURVEY`) foram removidos do escopo desta fase —
   serão objeto de um firmware específico (decisão do usuário 2026-07-17).
