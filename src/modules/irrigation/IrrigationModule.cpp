@@ -1126,7 +1126,13 @@ bool IrrigationModule::portalPulse(const IrrigationWeb::PortalPulseReq &p)
 
 bool IrrigationModule::portalRunNetCommand(const IrrigationWeb::NetCommand &c)
 {
+    // Ação desconhecida (só 0=fechar, 1=abrir): rejeita — não trata silenciosamente como fechar.
+    if (c.action != 0 && c.action != 1)
+        return false;
     if (gwIsGateway()) {
+        // Modo seguro: não abre (mesmo intertravamento de handleCmdValvula). Fechar continua permitido.
+        if (safeMode && c.action == 1)
+            return false;
         // Este nó é o gateway: aplica local sem rádio (reusa a validação de zona do gateway).
         const Zone *z = gateway.zones.byId(c.zoneId);
         if (!z)
