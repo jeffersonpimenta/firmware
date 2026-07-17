@@ -119,6 +119,7 @@ void registerHandlers(HTTPServer *insecureServer, HTTPSServer *secureServer)
     //    secureServer->registerNode(nodeAdminSettingsApply);
     // Rotas do painel de irrigação — antes do catch-all nodeRoot ("/*", GET) para não serem sombreadas.
     registerIrrigationHandlers(secureServer);
+    // Portal de campo (Fase 5b): role-agnóstico — /api/portal/* respondem em qualquer papel (não gateado por gwIsGateway).
     registerIrrigationPortalHandlers(secureServer);
     secureServer->registerNode(nodeRoot); // This has to be last
 
@@ -142,8 +143,9 @@ void registerHandlers(HTTPServer *insecureServer, HTTPSServer *secureServer)
     //    insecureServer->registerNode(nodeAdminSettings);
     //    insecureServer->registerNode(nodeAdminSettingsApply);
     // Rotas do painel de irrigação — antes do catch-all nodeRoot ("/*", GET) para não serem sombreadas.
-    // Os próprios handlers respondem 404 quando irrigationModule->gwIsGateway() é falso.
+    // Os próprios handlers do painel respondem 404 quando irrigationModule->gwIsGateway() é falso.
     registerIrrigationHandlers(insecureServer);
+    // Portal de campo (Fase 5b): role-agnóstico — /api/portal/* respondem em qualquer papel (não gateado por gwIsGateway).
     registerIrrigationPortalHandlers(insecureServer);
     insecureServer->registerNode(nodeRoot); // This has to be last
 }
