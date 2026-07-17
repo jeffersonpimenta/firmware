@@ -736,7 +736,8 @@ void IrrigationModule::onButtonEvent(ButtonGestureDetector::Event ev)
     // Paired station gestures.
     switch (ev) {
     case Ev::SHORT:
-        LOG_INFO("Irrigation: portal request (Phase 5 stub)");
+        portal.requestOpen(millis()); // Fase 5b: sobe o captive portal (10 min, spec §8.7)
+        LOG_INFO("Irrigation: captive portal requested");
         break;
     case Ev::DOUBLE:
         if (valves.isOpen(0)) {
