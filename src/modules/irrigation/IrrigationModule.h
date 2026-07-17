@@ -11,12 +11,15 @@
 #include "modules/irrigation/Pairing.h"
 #include "modules/irrigation/RateLimiter.h"
 #include "modules/irrigation/SeqTable.h"
+#include "modules/irrigation/PortalSession.h"
 #include "modules/irrigation/ValveController.h"
 
 // Forward-decl da cola web (definida em IrrigationWebApi.h, incluída só no .cpp).
 namespace IrrigationWeb
 {
 struct WebCommand;
+struct NodeStateCtx;
+struct PortalPulseReq;
 }
 
 // Ponte H latching: pulso em A abre, pulso em B fecha.
@@ -53,6 +56,11 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     bool gwApplyProgramToggle(uint8_t id, bool enabled);
     bool gwApplyProgramDelete(uint8_t id);
     bool gwRunCommand(const IrrigationWeb::WebCommand &c);
+
+    // --- Serviço do portal de campo (todos os papéis). Chamados pela cola HTTP (IrrigationPortalEndpoints). ---
+    void portalFillNodeState(IrrigationWeb::NodeStateCtx &out) const;
+    bool portalPulse(const IrrigationWeb::PortalPulseReq &p);
+    PortalSession &portalSession() { return portal; }
 
   protected:
     bool wantPacket(const meshtastic_MeshPacket *p) override;
@@ -105,6 +113,7 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     GatewayPairing gatewayPairing;
     Allowlist allowlist;
     LedPatternController led;
+    PortalSession portal; // ciclo de vida do AP do captive portal (Fase 5b)
     // Gateway aggregate — only meaningful when role == GATEWAY (Task 6, decisão §1).
     IrrigationGateway gateway;
     // Cooldowns de reconciliação de epoch indexados por nó (Fix 3: node-keyed, não por posição na allowlist).

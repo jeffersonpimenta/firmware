@@ -1,6 +1,7 @@
 #include "modules/irrigation/IrrigationModule.h"
 #include "FSCommon.h"
 #include "modules/irrigation/IrrigationWebApi.h"
+#include "modules/irrigation/PortalApi.h"
 #include "MeshService.h"
 #include "MeshTypes.h"
 #include "NodeDB.h"
@@ -1082,6 +1083,32 @@ bool IrrigationModule::gwRunCommand(const IrrigationWeb::WebCommand &c)
         return true;
     }
     return false;
+}
+
+// --- Serviço do portal de campo (Fase 5b). Role-agnóstico. ---
+void IrrigationModule::portalFillNodeState(IrrigationWeb::NodeStateCtx &out) const
+{
+    out.role = settings.role;
+    out.name = owner.short_name; // extern meshtastic_User& (mesmo uso de handlePairAnnounce)
+    out.boundGateway = settings.boundGateway;
+    out.configEpoch = settings.configEpoch;
+    out.safeMode = safeMode;
+    out.numValves = settings.numValves;
+    out.valveStates = valves.stateBitmap();
+    out.gpoStates = 0;
+    out.vbatCentiV = batteryCentiV();
+    out.vpanelCentiV = 0;
+    out.flags = safeMode ? HB_FLAG_SAFE_MODE : 0;
+    out.apSecondsLeft = portal.secondsLeft(millis());
+}
+
+bool IrrigationModule::portalPulse(const IrrigationWeb::PortalPulseReq &p)
+{
+    // Teste de pulso local: abre a válvula com fechamento automático pelo timer fail-safe.
+    if (valves.open(p.valveId, p.durationS, settings.maxOpenConfigS, millis()) != ValveController::Result::OK)
+        return false;
+    sendEvento(EV_TEST_PULSE);
+    return true;
 }
 
 // Decisão §2: loop principal do gateway — scheduler, espelho, retries, silêncio.
