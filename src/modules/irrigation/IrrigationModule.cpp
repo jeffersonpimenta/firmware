@@ -2,6 +2,9 @@
 #include "FSCommon.h"
 #include "modules/irrigation/IrrigationWebApi.h"
 #include "modules/irrigation/PortalApi.h"
+#if defined(ARCH_ESP32) && !MESHTASTIC_EXCLUDE_WEBSERVER
+#include "modules/irrigation/PortalAp.h"
+#endif
 #include "MeshService.h"
 #include "MeshTypes.h"
 #include "NodeDB.h"
@@ -459,6 +462,9 @@ void IrrigationModule::handleGetConfig(const meshtastic_MeshPacket &mp, const He
 
 int32_t IrrigationModule::runOnce()
 {
+#if defined(ARCH_ESP32) && !MESHTASTIC_EXCLUDE_WEBSERVER
+    portalApLoop(millis());
+#endif
     // Fail-safe tick roda em TODOS os papéis: num nó mal-configurado nunca deve
     // sobrar válvula aberta sem timer sendo decrementado.
     valves.tick(millis());
