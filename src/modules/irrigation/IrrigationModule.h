@@ -20,6 +20,7 @@ namespace IrrigationWeb
 struct WebCommand;
 struct NodeStateCtx;
 struct PortalPulseReq;
+struct NetCommand;
 }
 
 // Ponte H latching: pulso em A abre, pulso em B fecha.
@@ -60,6 +61,7 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     // --- Serviço do portal de campo (todos os papéis). Chamados pela cola HTTP (IrrigationPortalEndpoints). ---
     void portalFillNodeState(IrrigationWeb::NodeStateCtx &out) const;
     bool portalPulse(const IrrigationWeb::PortalPulseReq &p);
+    bool portalRunNetCommand(const IrrigationWeb::NetCommand &c);
     PortalSession &portalSession() { return portal; }
 
   protected:
@@ -75,6 +77,7 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     void handlePairAnnounce(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
     void handlePairGrant(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
     // Gateway handlers (Fase 4, Task 6: decisões 1-6)
+    void handleRemoteCmd(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
     void handleGwAck(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
     void handleGwHeartbeat(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
     void handleGwEvento(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);

@@ -229,6 +229,12 @@ ProcessMessage IrrigationModule::handleReceived(const meshtastic_MeshPacket &mp)
         else
             LOG_DEBUG("Irrigation: EVENTO from 0x%08x ignored (role=%d)", mp.from, settings.role);
         break;
+    case MSG_REMOTE_CMD:
+        if ((IrrigationRole)settings.role == IrrigationRole::GATEWAY)
+            handleRemoteCmd(mp, h);
+        else
+            LOG_DEBUG("Irrigation: REMOTE_CMD from 0x%08x ignored (role=%d)", mp.from, settings.role);
+        break;
     default:
         LOG_DEBUG("Irrigation: unhandled type %d from 0x%08x", h.type, mp.from);
         break;
@@ -1118,6 +1124,44 @@ bool IrrigationModule::portalPulse(const IrrigationWeb::PortalPulseReq &p)
     return true;
 }
 
+bool IrrigationModule::portalRunNetCommand(const IrrigationWeb::NetCommand &c)
+{
+    if (gwIsGateway()) {
+        // Este nó é o gateway: aplica local sem rádio (reusa a validação de zona do gateway).
+        const Zone *z = gateway.zones.byId(c.zoneId);
+        if (!z)
+            return false;
+        const StationEntry *st = gateway.stations.byNode(z->node);
+        uint8_t attempts = (st && st->retries > 0) ? st->retries : 3;
+        if (c.action == 1) {
+            uint16_t dur = c.durationS;
+            if (z->maxMin > 0 && dur > (uint16_t)(z->maxMin * 60))
+                dur = (uint16_t)(z->maxMin * 60);
+            gwSendValveCmd(z->node, z->index, z->tipo, 1, dur, z->id, attempts);
+        } else {
+            gwSendValveCmd(z->node, z->index, z->tipo, 0, 0, z->id, 1);
+        }
+        return true;
+    }
+    // Nó de campo: encaminha ao gateway vinculado por rádio.
+    if (settings.boundGateway == 0)
+        return false;
+    IrrigationProto::RemoteCmd m = {};
+    m.zoneId = c.zoneId;
+    m.action = c.action;
+    m.durationS = c.durationS;
+    meshtastic_MeshPacket *p = allocDataPacket();
+    p->to = settings.boundGateway;
+    p->decoded.payload.size =
+        (uint16_t)IrrigationProto::encodeRemoteCmd(p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), ++txSeq, m);
+    if (!p->decoded.payload.size) {
+        packetPool.release(p);
+        return false;
+    }
+    service->sendToMesh(p, RX_SRC_LOCAL, false);
+    return true;
+}
+
 // Decisão §2: loop principal do gateway — scheduler, espelho, retries, silêncio.
 void IrrigationModule::gwTick()
 {
@@ -1339,6 +1383,30 @@ void IrrigationModule::gwReconcileEpoch(uint32_t node, uint32_t remoteEpoch)
                  entry->desiredEpoch);
     }
     // remoteEpoch == desiredEpoch: em sincronia, nada a fazer.
+}
+
+void IrrigationModule::handleRemoteCmd(const meshtastic_MeshPacket &mp, const Header &h)
+{
+    // Autoridade = posse da PSK da fazenda (spec §7.2); anti-replay por seq ainda vale.
+    if (!seqTable.checkAndUpdate(mp.from, h.seq)) {
+        LOG_WARN("Irrigation GW: replayed remote-cmd seq %u from 0x%08x", h.seq, mp.from);
+        return;
+    }
+    if (!rateLimiter.allow(millis())) {
+        sendAck(mp.from, h.seq, ACK_NACK, REASON_RATE_LIMIT);
+        return;
+    }
+    RemoteCmd cmd;
+    if (!decodeRemoteCmd(mp.decoded.payload.bytes, mp.decoded.payload.size, cmd)) {
+        sendAck(mp.from, h.seq, ACK_NACK, REASON_BAD_PAYLOAD);
+        return;
+    }
+    IrrigationWeb::NetCommand nc = {};
+    nc.zoneId = cmd.zoneId;
+    nc.action = cmd.action;
+    nc.durationS = cmd.durationS;
+    bool ok = portalRunNetCommand(nc); // gateway => aplica local
+    sendAck(mp.from, h.seq, ok ? ACK_OK : ACK_NACK, ok ? REASON_NONE : REASON_INVALID_ID);
 }
 
 // Decisão §3: MSG_ACK recebido pelo gateway.
