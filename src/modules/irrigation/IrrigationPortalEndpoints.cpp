@@ -89,10 +89,49 @@ static void hNodePulse(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, "{\"ok\":true}");
 }
 
+static void hNetRoster(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!irrigationModule) {
+        res->setStatusCode(404);
+        return;
+    }
+    const ZoneTable *zones = irrigationModule->gwIsGateway() ? &irrigationModule->gwState().zones : nullptr;
+    char buf[2048];
+    if (!buildRoster(zones, buf, sizeof(buf))) {
+        res->setStatusCode(500);
+        return;
+    }
+    sendJson(res, buf);
+}
+
+static void hNetCommand(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!irrigationModule) {
+        res->setStatusCode(404);
+        return;
+    }
+    char body[256];
+    size_t nb = readBody(req, body, sizeof(body));
+    NetCommand c;
+    ParseResult pr = parseNetCommand(body, nb, c);
+    if (!pr.ok) {
+        sendParseErrors(res, pr);
+        return;
+    }
+    if (!irrigationModule->portalRunNetCommand(c)) {
+        sendJson(res, "{\"errors\":[\"comando rejeitado (sem gateway ou zona inexistente)\"]}", 400);
+        return;
+    }
+    sendJson(res, "{\"ok\":true}");
+}
+
 void registerIrrigationPortalHandlers(HTTPServer *server)
 {
     server->registerNode(new ResourceNode("/api/portal/node", "GET", &hNode));
     server->registerNode(new ResourceNode("/api/portal/node/pulse", "POST", &hNodePulse));
+    server->registerNode(new ResourceNode("/api/portal/net/roster", "GET", &hNetRoster));
+    server->registerNode(new ResourceNode("/api/portal/net/command", "POST", &hNetCommand));
 }
 
 #endif
