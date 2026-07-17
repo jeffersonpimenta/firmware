@@ -23,6 +23,7 @@ enum MsgType : uint8_t {
     MSG_PAIR_GRANT = 9,
     MSG_PING_SURVEY = 10,
     MSG_RESYNC_SEQ = 11,
+    MSG_REMOTE_CMD = 12,
 };
 
 enum AckStatus : uint8_t { ACK_OK = 0, ACK_NACK = 1 };
@@ -65,6 +66,12 @@ struct CmdGpo {
     uint8_t gpoId;
     uint8_t action;
     uint16_t durationS; // 0 = biestável
+};
+
+struct RemoteCmd {
+    uint8_t zoneId;    // id de zona no gateway (1..255)
+    uint8_t action;    // 0 = fechar, 1 = abrir
+    uint16_t durationS;
 };
 
 struct Ack {
@@ -136,6 +143,7 @@ size_t encodeGetConfig(uint8_t *buf, size_t len, uint32_t seq);
 size_t encodePairAnnounce(uint8_t *buf, size_t len, uint32_t seq, const PairAnnounce &m);
 size_t encodePairGrant(uint8_t *buf, size_t len, uint32_t seq, const PairGrant &m);
 size_t encodeEvento(uint8_t *buf, size_t len, uint32_t seq, const Evento &m);
+size_t encodeRemoteCmd(uint8_t *buf, size_t len, uint32_t seq, const RemoteCmd &m);
 
 // decodeHeader primeiro; depois o decode do corpo conforme header.type.
 bool decodeHeader(const uint8_t *buf, size_t len, Header &out);
@@ -147,6 +155,7 @@ bool decodeSetConfig(const uint8_t *buf, size_t len, SetConfig &out);
 bool decodePairAnnounce(const uint8_t *buf, size_t len, PairAnnounce &out);
 bool decodePairGrant(const uint8_t *buf, size_t len, PairGrant &out);
 bool decodeEvento(const uint8_t *buf, size_t len, Evento &out);
+bool decodeRemoteCmd(const uint8_t *buf, size_t len, RemoteCmd &out);
 
 uint32_t crc32(const uint8_t *data, size_t len);
 

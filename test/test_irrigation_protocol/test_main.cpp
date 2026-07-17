@@ -254,6 +254,37 @@ static void test_pairGrant_truncated_rejected()
     TEST_ASSERT_FALSE(decodePairGrant(buf, n - 1, out));
 }
 
+static void test_remoteCmd_roundtrip()
+{
+    using namespace IrrigationProto;
+    uint8_t buf[32];
+    RemoteCmd m = {};
+    m.zoneId = 7;
+    m.action = 1;
+    m.durationS = 600;
+    size_t n = encodeRemoteCmd(buf, sizeof(buf), 0x11223344, m);
+    TEST_ASSERT_GREATER_THAN(0, n);
+
+    Header h;
+    TEST_ASSERT_TRUE(decodeHeader(buf, n, h));
+    TEST_ASSERT_EQUAL_UINT8(MSG_REMOTE_CMD, h.type);
+    TEST_ASSERT_EQUAL_UINT32(0x11223344, h.seq);
+
+    RemoteCmd out = {};
+    TEST_ASSERT_TRUE(decodeRemoteCmd(buf, n, out));
+    TEST_ASSERT_EQUAL_UINT8(7, out.zoneId);
+    TEST_ASSERT_EQUAL_UINT8(1, out.action);
+    TEST_ASSERT_EQUAL_UINT16(600, out.durationS);
+}
+
+static void test_remoteCmd_shortBufferFails()
+{
+    using namespace IrrigationProto;
+    uint8_t buf[4]; // menor que o header
+    RemoteCmd m = {};
+    TEST_ASSERT_EQUAL_UINT(0, encodeRemoteCmd(buf, sizeof(buf), 1, m));
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -274,6 +305,8 @@ void setup()
     RUN_TEST(test_pairGrant_nameTooLong_rejected);
     RUN_TEST(test_evento_roundTrip);
     RUN_TEST(test_pairGrant_truncated_rejected);
+    RUN_TEST(test_remoteCmd_roundtrip);
+    RUN_TEST(test_remoteCmd_shortBufferFails);
     exit(UNITY_END());
 }
 
