@@ -25,7 +25,16 @@
   </section>
 
   <section id="tab-net" class="tab hidden">
-    <div class="card muted">Aba Rede — Marco 2.</div>
+    <form id="netForm" class="card">
+      <h2>Comandar zona (via gateway)</h2>
+      <label>Zona <select id="netZone"></select></label>
+      <label>Ação
+        <select id="netAction"><option value="open">Abrir</option><option value="close">Fechar</option></select>
+      </label>
+      <label>Duração (s) <input type="number" id="netDur" min="1" max="7200" value="300" /></label>
+      <button type="submit">Enviar</button>
+      <span id="netMsg" class="muted"></span>
+    </form>
   </section>
 
   <script src="/irrigacao/portal/app.js"></script>

@@ -48,5 +48,41 @@ document.getElementById("pulseForm").addEventListener("submit", async (e) => {
   refresh();
 });
 
+async function loadRoster() {
+  const { ok, body } = await j("/api/portal/net/roster");
+  const sel = document.getElementById("netZone");
+  sel.innerHTML = "";
+  if (ok && Array.isArray(body) && body.length) {
+    body.forEach((z) => {
+      const o = document.createElement("option");
+      o.value = z.id;
+      o.textContent = `${z.id} — ${z.name}`;
+      sel.appendChild(o);
+    });
+  } else {
+    // Estação sem roster: permite digitar o número da zona (1..255).
+    for (let i = 1; i <= 24; i++) {
+      const o = document.createElement("option");
+      o.value = i;
+      o.textContent = "Zona " + i;
+      sel.appendChild(o);
+    }
+  }
+}
+
+document.getElementById("netForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const zoneId = +document.getElementById("netZone").value;
+  const kind = document.getElementById("netAction").value;
+  const durationS = +document.getElementById("netDur").value;
+  const payload = kind === "open" ? { kind, zoneId, durationS } : { kind, zoneId };
+  const { ok, body } = await j("/api/portal/net/command", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  document.getElementById("netMsg").textContent = ok ? "Enviado" : (body.errors || ["erro"]).join("; ");
+});
+
+loadRoster();
 refresh();
 setInterval(refresh, 3000);
