@@ -28,6 +28,8 @@ ParseResult parsePulse(const char *json, size_t len, PortalPulseReq &out)
     ParseResult r;
     JsonReader rd(json, len);
     int64_t valveId = 0, dur = 0;
+    // valveId é o índice físico da válvula local (0-based, 0..MAX_VALVES-1), não o id lógico
+    // de zona do gateway (1-based). Por isso o piso é 0, diferente de parseZoneUpsert/parseCommand.
     if (!rd.getInt("valveId", valveId) || valveId < 0 || valveId > 7) r.fail("valveId fora de 0..7");
     if (!rd.getInt("durationS", dur) || dur < 1 || dur > 7200) r.fail("durationS fora de 1..7200");
     if (!r.ok) return r;
