@@ -551,12 +551,15 @@ Sobe/derruba o AP conforme `PortalSession::apShouldBeUp()`. Só-ESP32, CI-gated.
 
 ```cpp
 #pragma once
-#if !MESHTASTIC_EXCLUDE_WEBSERVER
+// Guarda idêntica à do WebServerThread do ESP32 (main.cpp:1134). Precisa incluir ARCH_ESP32
+// porque o chamador (IrrigationModule::runOnce) É compilado no build nativo — MESHTASTIC_EXCLUDE_WEBSERVER
+// NÃO é definido em native (ARCH_PORTDUINO), então só o ARCH_ESP32 impede o link error contra o .cpp filtrado.
+#if defined(ARCH_ESP32) && !MESHTASTIC_EXCLUDE_WEBSERVER
 
 #include <stdint.h>
 
 // Cola só-ESP32 do captive portal (Fase 5b). Dirigida pela PortalSession do módulo:
-// quando apShouldBeUp() vira true, sobe softAP (WPA2) + DNSServer cativo + mDNS; quando
+// quando apShouldBeUp() vira true, sobe softAP (WPA2) + DNSServer cativo; quando
 // vira false, derruba tudo. Chamar portalApLoop() periodicamente (do runOnce do módulo).
 void portalApLoop(uint32_t nowMs);
 
@@ -569,7 +572,7 @@ void portalApLoop(uint32_t nowMs);
 
 ```cpp
 #include "modules/irrigation/PortalAp.h"
-#if !MESHTASTIC_EXCLUDE_WEBSERVER
+#if defined(ARCH_ESP32) && !MESHTASTIC_EXCLUDE_WEBSERVER
 
 #include "configuration.h"
 #include "main.h" // owner
@@ -639,7 +642,7 @@ Em `variants/native/portduino.ini`, após a linha de `IrrigationWebEndpoints.cpp
 Em `src/modules/irrigation/IrrigationModule.cpp`, no início de `runOnce()`, sob guarda de webserver, invocar o loop do AP. Localizar `int32_t IrrigationModule::runOnce()` e inserir logo após a abertura da função:
 
 ```cpp
-#if !MESHTASTIC_EXCLUDE_WEBSERVER
+#if defined(ARCH_ESP32) && !MESHTASTIC_EXCLUDE_WEBSERVER
     portalApLoop(millis());
 #endif
 ```
@@ -647,7 +650,7 @@ Em `src/modules/irrigation/IrrigationModule.cpp`, no início de `runOnce()`, sob
 E incluir o header no topo do .cpp (após os outros includes de irrigação):
 
 ```cpp
-#if !MESHTASTIC_EXCLUDE_WEBSERVER
+#if defined(ARCH_ESP32) && !MESHTASTIC_EXCLUDE_WEBSERVER
 #include "modules/irrigation/PortalAp.h"
 #endif
 ```
