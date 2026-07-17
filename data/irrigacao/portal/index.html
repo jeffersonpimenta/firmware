@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Portal de Irrigação</title>
+  <link rel="stylesheet" href="/irrigacao/style.css" />
+</head>
+<body>
+  <header><h1>Portal do Nó</h1><span id="apLeft" class="muted"></span></header>
+  <nav class="tabs">
+    <button data-tab="node" class="active">Este nó</button>
+    <button data-tab="net">Rede</button>
+  </nav>
+
+  <section id="tab-node" class="tab">
+    <div id="nodeState" class="card">Carregando…</div>
+    <form id="pulseForm" class="card">
+      <h2>Teste de pulso</h2>
+      <label>Válvula <input type="number" id="pulseValve" min="0" max="7" value="0" /></label>
+      <label>Duração (s) <input type="number" id="pulseDur" min="1" max="7200" value="10" /></label>
+      <button type="submit">Abrir</button>
+      <span id="pulseMsg" class="muted"></span>
+    </form>
+  </section>
+
+  <section id="tab-net" class="tab hidden">
+    <div class="card muted">Aba Rede — Marco 2.</div>
+  </section>
+
+  <script src="/irrigacao/portal/app.js"></script>
+</body>
+</html>
