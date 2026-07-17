@@ -30,4 +30,15 @@ struct PortalPulseReq {
 };
 ParseResult parsePulse(const char *json, size_t len, PortalPulseReq &out);
 
+// --- Aba "Rede" ---
+struct NetCommand {
+    uint8_t zoneId = 0;
+    uint8_t action = 0; // 0 = fechar, 1 = abrir
+    uint16_t durationS = 0;
+};
+ParseResult parseNetCommand(const char *json, size_t len, NetCommand &out);
+
+// Lista de alvos. zones != nullptr (gateway) => emite as zonas; nullptr (estação) => "[]".
+size_t buildRoster(const ZoneTable *zones, char *buf, size_t cap);
+
 } // namespace IrrigationWeb

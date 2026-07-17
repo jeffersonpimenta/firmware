@@ -1,4 +1,5 @@
 #include "modules/irrigation/PortalApi.h"
+#include <cstring>
 
 namespace IrrigationWeb
 {
@@ -36,6 +37,48 @@ ParseResult parsePulse(const char *json, size_t len, PortalPulseReq &out)
     out.valveId = (uint8_t)valveId;
     out.durationS = (uint16_t)dur;
     return r;
+}
+
+ParseResult parseNetCommand(const char *json, size_t len, NetCommand &out)
+{
+    ParseResult r;
+    JsonReader rd(json, len);
+    char kind[12] = {0};
+    int64_t zoneId = 0, dur = 0;
+    if (!rd.getStr("kind", kind, sizeof(kind))) { r.fail("kind ausente"); return r; }
+    if (!rd.getInt("zoneId", zoneId) || zoneId < 1 || zoneId > 255) r.fail("zoneId fora de 1..255");
+    if (strcmp(kind, "open") == 0) {
+        if (!rd.getInt("durationS", dur) || dur < 1 || dur > 7200) r.fail("durationS fora de 1..7200");
+        out.action = 1;
+    } else if (strcmp(kind, "close") == 0) {
+        out.action = 0;
+        dur = 0;
+    } else {
+        r.fail("kind desconhecido");
+    }
+    if (!r.ok) return r;
+    out.zoneId = (uint8_t)zoneId;
+    out.durationS = (uint16_t)dur;
+    return r;
+}
+
+size_t buildRoster(const ZoneTable *zones, char *buf, size_t cap)
+{
+    JsonWriter w(buf, cap);
+    w.beginArray();
+    if (zones) {
+        for (size_t i = 0; i < zones->count(); i++) {
+            const Zone *z = zones->zoneAt(i);
+            if (!z) break;
+            w.beginObject();
+            w.keyNum("id", z->id);
+            w.keyStr("name", z->name);
+            w.keyNum("padraoMin", z->padraoMin);
+            w.endObject();
+        }
+    }
+    w.endArray();
+    return w.done();
 }
 
 } // namespace IrrigationWeb
