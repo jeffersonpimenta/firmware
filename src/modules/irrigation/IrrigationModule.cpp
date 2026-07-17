@@ -1095,9 +1095,9 @@ void IrrigationModule::portalFillNodeState(IrrigationWeb::NodeStateCtx &out) con
     out.safeMode = safeMode;
     out.numValves = settings.numValves;
     out.valveStates = valves.stateBitmap();
-    out.gpoStates = 0;
+    out.gpoStates = 0; // sem acessor de estado de GPO por enquanto (follow-up)
     out.vbatCentiV = batteryCentiV();
-    out.vpanelCentiV = 0;
+    out.vpanelCentiV = 0; // tensão de painel não medida na estação por enquanto (follow-up)
     out.flags = safeMode ? HB_FLAG_SAFE_MODE : 0;
     out.apSecondsLeft = portal.secondsLeft(millis());
 }
