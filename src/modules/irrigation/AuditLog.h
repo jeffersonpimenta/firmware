@@ -10,7 +10,8 @@ enum class AuditOrigin : uint8_t {
 enum class AuditAction : uint8_t {
     ABRIR = 0, FECHAR, PULSO, GPO_ON, GPO_OFF, PAREAR, FACTORY_RESET,
     CONFIG_EPOCH, SAFE_MODE_IN, SAFE_MODE_OUT, TAMPER, REBOOT,
-    HIBERNA_IN, HIBERNA_OUT
+    HIBERNA_IN, HIBERNA_OUT,
+    CMD_REJEITADO, // comando NACKado antes do despacho (motivo em target = NackReason)
 };
 enum class AuditResult : uint8_t { OK = 0, NACK, TIMEOUT };
 

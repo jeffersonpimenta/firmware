@@ -349,6 +349,7 @@ void IrrigationModule::handleCmdValvula(const meshtastic_MeshPacket &mp, const H
     if (!senderAuthorized(mp.from)) {
         LOG_WARN("Irrigation: unauthorized cmd from 0x%08x", mp.from);
         sendAck(mp.from, h.seq, ACK_NACK, REASON_UNAUTHORIZED);
+        auditEvent(AuditOrigin::PAINEL, AuditAction::CMD_REJEITADO, REASON_UNAUTHORIZED, AuditResult::NACK, mp.from, h.seq);
         return;
     }
     // Retransmissões legítimas devem usar seq novo; seq repetido = replay ou bug
@@ -359,17 +360,20 @@ void IrrigationModule::handleCmdValvula(const meshtastic_MeshPacket &mp, const H
     }
     if (!rateLimiter.allow(millis())) {
         sendAck(mp.from, h.seq, ACK_NACK, REASON_RATE_LIMIT);
+        auditEvent(AuditOrigin::PAINEL, AuditAction::CMD_REJEITADO, REASON_RATE_LIMIT, AuditResult::NACK, mp.from, h.seq);
         return;
     }
 
     CmdValvula cmd;
     if (!decodeCmdValvula(mp.decoded.payload.bytes, mp.decoded.payload.size, cmd)) {
         sendAck(mp.from, h.seq, ACK_NACK, REASON_BAD_PAYLOAD);
+        auditEvent(AuditOrigin::PAINEL, AuditAction::CMD_REJEITADO, REASON_BAD_PAYLOAD, AuditResult::NACK, mp.from, h.seq);
         return;
     }
 
     if (safeMode && cmd.action == 1) {
         sendAck(mp.from, h.seq, ACK_NACK, REASON_SAFE_MODE);
+        auditEvent(AuditOrigin::PAINEL, AuditAction::CMD_REJEITADO, REASON_SAFE_MODE, AuditResult::NACK, mp.from, h.seq);
         return;
     }
 
@@ -404,6 +408,7 @@ void IrrigationModule::handleCmdGpo(const meshtastic_MeshPacket &mp, const Heade
     if (!senderAuthorized(mp.from)) {
         LOG_WARN("Irrigation: GPO cmd não autorizado de 0x%08x", mp.from);
         sendAck(mp.from, h.seq, ACK_NACK, REASON_UNAUTHORIZED);
+        auditEvent(AuditOrigin::PAINEL, AuditAction::CMD_REJEITADO, REASON_UNAUTHORIZED, AuditResult::NACK, mp.from, h.seq);
         return;
     }
     // Seq repetido = replay ou bug no gateway — descarta em silêncio.
@@ -413,18 +418,21 @@ void IrrigationModule::handleCmdGpo(const meshtastic_MeshPacket &mp, const Heade
     }
     if (!rateLimiter.allow(millis())) {
         sendAck(mp.from, h.seq, ACK_NACK, REASON_RATE_LIMIT);
+        auditEvent(AuditOrigin::PAINEL, AuditAction::CMD_REJEITADO, REASON_RATE_LIMIT, AuditResult::NACK, mp.from, h.seq);
         return;
     }
 
     CmdGpo cmd;
     if (!decodeCmdGpo(mp.decoded.payload.bytes, mp.decoded.payload.size, cmd)) {
         sendAck(mp.from, h.seq, ACK_NACK, REASON_BAD_PAYLOAD);
+        auditEvent(AuditOrigin::PAINEL, AuditAction::CMD_REJEITADO, REASON_BAD_PAYLOAD, AuditResult::NACK, mp.from, h.seq);
         return;
     }
 
     // Modo seguro: bloqueia ativação de saídas (§5.5). Desligar continua permitido.
     if (safeMode && cmd.action == 1) {
         sendAck(mp.from, h.seq, ACK_NACK, REASON_SAFE_MODE);
+        auditEvent(AuditOrigin::PAINEL, AuditAction::CMD_REJEITADO, REASON_SAFE_MODE, AuditResult::NACK, mp.from, h.seq);
         return;
     }
 
@@ -1106,7 +1114,7 @@ bool IrrigationModule::saveAllowlist()
 
 // ---------------------------------------------------------------------------
 // Mini-log de auditoria (§8.9) — staged-write, espelha padrão da allowlist.
-// Buffer: magic(4) + count(2) + reservado(2) + 100×16 bytes + CRC32(4) = 1608 bytes.
+// Buffer: magic(4) + count(2) + reservado(2) + 100×16 bytes + CRC32(4) = 1612 bytes.
 // ---------------------------------------------------------------------------
 
 void IrrigationModule::auditEvent(AuditOrigin o, AuditAction a, uint8_t target, AuditResult res, uint32_t node, uint32_t seq)
@@ -1462,8 +1470,7 @@ bool IrrigationModule::portalRunNetCommand(const IrrigationWeb::NetCommand &c)
 {
     // Ação desconhecida (só 0=fechar, 1=abrir): rejeita — não trata silenciosamente como fechar.
     if (c.action != 0 && c.action != 1) {
-        auditEvent(AuditOrigin::PORTAL_CAMPO, c.action == 1 ? AuditAction::ABRIR : AuditAction::FECHAR,
-                   c.zoneId, AuditResult::NACK);
+        auditEvent(AuditOrigin::PORTAL_CAMPO, AuditAction::CMD_REJEITADO, REASON_BAD_PAYLOAD, AuditResult::NACK);
         return false;
     }
     if (gwIsGateway()) {
