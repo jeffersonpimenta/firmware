@@ -22,6 +22,7 @@ const AuditRecord &AuditLog::at(size_t i) const
 {
     // Registro sentinela para acesso fora dos limites (defensivo).
     // Chamadores devem respeitar size(); esta proteção evita UB silencioso.
+    // OSThread é cooperativo/single-thread; static const compartilhado é seguro.
     static const AuditRecord ZERO{};
     if (i >= num)
         return ZERO;
@@ -33,8 +34,11 @@ const AuditRecord &AuditLog::at(size_t i) const
 
 size_t AuditLog::serialize(uint8_t *out, size_t outCap) const
 {
+    // count é u16 on-disk: ring acima de 65535 serializa só os 65535 mais recentes
+    size_t emit = num > 0xFFFF ? 0xFFFF : num;
+
     // Calcula espaço necessário: cabeçalho + registros + CRC
-    size_t need = HEADER_SIZE + num * RECORD_SIZE + CRC_SIZE;
+    size_t need = HEADER_SIZE + emit * RECORD_SIZE + CRC_SIZE;
     if (outCap < need)
         return 0;
 
@@ -47,17 +51,16 @@ size_t AuditLog::serialize(uint8_t *out, size_t outCap) const
     out[off++] = (uint8_t)((MAGIC >> 24) & 0xFF);
 
     // count (2 bytes LE)
-    uint16_t count = (uint16_t)num;
-    out[off++] = (uint8_t)(count & 0xFF);
-    out[off++] = (uint8_t)((count >> 8) & 0xFF);
+    out[off++] = (uint8_t)((uint16_t)emit & 0xFF);
+    out[off++] = (uint8_t)((uint16_t)(emit >> 8) & 0xFF);
 
     // reservado (2 bytes = 0)
     out[off++] = 0;
     out[off++] = 0;
 
     // Serializa registros do mais antigo para o mais recente.
-    // at(num-1) é o mais antigo, at(0) é o mais recente.
-    for (size_t i = num; i > 0; i--) {
+    // at(emit-1) é o mais antigo dos emitidos, at(0) é o mais recente.
+    for (size_t i = emit; i > 0; i--) {
         const AuditRecord &r = at(i - 1);
 
         // tsSecs (4 bytes LE)

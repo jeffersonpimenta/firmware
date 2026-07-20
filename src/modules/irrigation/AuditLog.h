@@ -28,7 +28,10 @@ struct AuditRecord {
 class AuditLog
 {
   public:
-    static constexpr uint32_t MAGIC = 0x49414C31; // "IAL1"
+    // "IAL1" — formato on-disk: magic(4) + count(2 LE) + reservado(2, escritos 0, ignorados) + N×16 bytes + CRC32(4).
+    // O campo count é uint16_t, portanto a serialização limita-se a 65535 registros
+    // (rings maiores emitem apenas os 65535 mais recentes).
+    static constexpr uint32_t MAGIC = 0x49414C31;
 
     AuditLog(AuditRecord *storage, size_t cap) : buf(storage), cap(cap) {}
 
