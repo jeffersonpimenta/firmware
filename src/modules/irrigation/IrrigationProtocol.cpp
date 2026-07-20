@@ -127,6 +127,13 @@ size_t encodeHeartbeat(uint8_t *buf, size_t len, uint32_t seq, const Heartbeat &
     w.u8(m.rebootCause);
     w.u8(m.flags);
     w.u32(m.configEpoch);
+    uint8_t cnt = m.sensorCount > HB_MAX_SENSORS ? HB_MAX_SENSORS : m.sensorCount;
+    w.u8(cnt);
+    for (uint8_t i = 0; i < cnt; i++) {
+        w.u8(m.sensors[i].id);
+        w.u8(m.sensors[i].tipo);
+        w.i16(m.sensors[i].valueCenti);
+    }
     return w.ok ? w.pos : 0;
 }
 
@@ -184,6 +191,21 @@ bool decodeHeartbeat(const uint8_t *buf, size_t len, Heartbeat &out)
     out.rebootCause = r.u8();
     out.flags = r.u8();
     out.configEpoch = r.u32();
+    if (!r.ok)
+        return false;
+    // Bloco de sensores é opcional (payloads de firmware anterior não o têm)
+    out.sensorCount = 0;
+    if (r.pos >= len)
+        return true;
+    uint8_t cnt = r.u8();
+    if (cnt > HB_MAX_SENSORS)
+        return false;
+    for (uint8_t i = 0; i < cnt; i++) {
+        out.sensors[i].id = r.u8();
+        out.sensors[i].tipo = r.u8();
+        out.sensors[i].valueCenti = r.i16();
+    }
+    out.sensorCount = r.ok ? cnt : 0;
     return r.ok;
 }
 

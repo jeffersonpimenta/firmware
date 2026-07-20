@@ -285,6 +285,58 @@ static void test_remoteCmd_shortBufferFails()
     TEST_ASSERT_EQUAL_UINT(0, encodeRemoteCmd(buf, sizeof(buf), 1, m));
 }
 
+static void test_heartbeat_sensor_block_roundtrip()
+{
+    Heartbeat hb = {};
+    hb.valveStates = 0x3;
+    hb.configEpoch = 7;
+    hb.sensorCount = 2;
+    hb.sensors[0] = {0, 1, 152};  // analógico 1,52
+    hb.sensors[1] = {1, 0, 100};  // digital ativo
+    uint8_t buf[64];
+    size_t n = encodeHeartbeat(buf, sizeof(buf), 1, hb);
+    TEST_ASSERT_TRUE(n > 0);
+    Heartbeat out;
+    TEST_ASSERT_TRUE(decodeHeartbeat(buf, n, out));
+    TEST_ASSERT_EQUAL_UINT8(2, out.sensorCount);
+    TEST_ASSERT_EQUAL_INT16(152, out.sensors[0].valueCenti);
+    TEST_ASSERT_EQUAL_UINT8(0, out.sensors[1].tipo);
+}
+
+static void test_heartbeat_legacy_payload_decodes_zero_sensors()
+{
+    Heartbeat hb = {};
+    hb.sensorCount = 0;
+    uint8_t buf[64];
+    size_t n = encodeHeartbeat(buf, sizeof(buf), 1, hb);
+    // count=0 emite só o byte de contagem; truncar também o byte simula payload v. anterior
+    Heartbeat out;
+    TEST_ASSERT_TRUE(decodeHeartbeat(buf, n - 1, out));
+    TEST_ASSERT_EQUAL_UINT8(0, out.sensorCount);
+}
+
+static void test_heartbeat_sensor_count_overflow_rejected()
+{
+    Heartbeat hb = {};
+    uint8_t buf[64];
+    size_t n = encodeHeartbeat(buf, sizeof(buf), 1, hb);
+    buf[n - 1] = 5; // count > HB_MAX_SENSORS
+    Heartbeat out;
+    TEST_ASSERT_FALSE(decodeHeartbeat(buf, n, out));
+}
+
+static void test_evento_tamper_roundtrip()
+{
+    uint8_t buf[MAX_PAYLOAD];
+    Evento in = {EV_TAMPER, 1}; // 1 = abriu
+    size_t n = encodeEvento(buf, sizeof(buf), 10, in);
+    TEST_ASSERT_GREATER_THAN(HEADER_LEN, n);
+    Evento out;
+    TEST_ASSERT_TRUE(decodeEvento(buf, n, out));
+    TEST_ASSERT_EQUAL_UINT8(EV_TAMPER, out.code);
+    TEST_ASSERT_EQUAL_UINT32(1, out.arg);
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -307,6 +359,10 @@ void setup()
     RUN_TEST(test_pairGrant_truncated_rejected);
     RUN_TEST(test_remoteCmd_roundtrip);
     RUN_TEST(test_remoteCmd_shortBufferFails);
+    RUN_TEST(test_heartbeat_sensor_block_roundtrip);
+    RUN_TEST(test_heartbeat_legacy_payload_decodes_zero_sensors);
+    RUN_TEST(test_heartbeat_sensor_count_overflow_rejected);
+    RUN_TEST(test_evento_tamper_roundtrip);
     exit(UNITY_END());
 }
 

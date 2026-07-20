@@ -10,6 +10,7 @@ constexpr size_t HEADER_LEN = 8;
 constexpr size_t MAX_PAYLOAD = 200;
 constexpr uint32_t MAX_OPEN_SECONDS = 120 * 60; // teto absoluto compilado (spec §4.2)
 constexpr uint8_t FRAG_DATA_MAX = 160;
+constexpr uint8_t HB_MAX_SENSORS = 4;
 
 enum MsgType : uint8_t {
     MSG_CMD_VALVULA = 1,
@@ -84,6 +85,12 @@ struct Ack {
     uint32_t configEpoch;
 };
 
+struct SensorReading {
+    uint8_t id;
+    uint8_t tipo;       // 0 digital, 1 analógico
+    int16_t valueCenti; // digital: 0/100
+};
+
 struct Heartbeat {
     uint8_t valveStates;
     uint8_t gpoStates;
@@ -95,6 +102,9 @@ struct Heartbeat {
     uint8_t rebootCause;
     uint8_t flags; // HbFlags
     uint32_t configEpoch;
+    // Bloco de sensores opcional (trailing); ausente em payloads de firmware anterior
+    uint8_t sensorCount = 0;
+    SensorReading sensors[HB_MAX_SENSORS] = {};
 };
 
 struct SetConfig {
@@ -125,7 +135,8 @@ enum EventCode : uint8_t {
     EV_MANUAL_CLOSE = 2,
     EV_TEST_PULSE = 3,
     EV_PAIRED = 4,
-    EV_FACTORY_RESET = 5
+    EV_FACTORY_RESET = 5,
+    EV_TAMPER = 6, // arg: 1 = abriu, 0 = fechou
 };
 
 struct Evento {
