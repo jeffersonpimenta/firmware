@@ -4,20 +4,24 @@
 
 enum class IrrigationRole : uint8_t { ESTACAO = 0, GATEWAY = 1, REPETIDOR = 2, SERVICO = 3 };
 
-// Layout do blob on-disk/radio (52 bytes, ABI-locked v3):
+// Layout do blob on-disk/radio (128 bytes, ABI-locked v4):
 //   0  magic(4) | 4  version(2) | 6  role(1) | 7  numValves(1)
 //   8  boundGateway(4) | 12 hbMinutes(2) | 14 vbatMinAbrirCentiV(2) | 16 maxOpenConfigS(2)
 //  18  cmdRatePerMin(1) | 19 pad0(1) | 20 pulseMs(2)
 //  22  pinsHbridgeA[8] | 30 pinsHbridgeB[8] | 38 pad1[2]
 //  40  configEpoch(4) | 44 pinsDigitalIn[4] | 48 digitalInActiveLow(1) | 49 pinBtn(1) | 50 pinLed(1) | 51 pad2(1)
-// Total = 52.
+// --- v4 (Fase 6a) ---
+//  52  pinsGpo[2](2) | 54 pinTamper(1) | 55 hwFlags(1)
+//  56  latE7(4) | 60 lonE7(4)
+//  64  sensores[4]×16(64)
+// Total = 128.
 struct IrrigationSettings {
     static constexpr uint32_t MAGIC = 0x49525231; // "IRR1"
     static constexpr uint8_t MAX_VALVES = 8;
     static constexpr uint8_t MAX_DIGITAL_IN = 4;
 
     uint32_t magic = MAGIC;
-    uint16_t version = 3;
+    uint16_t version = 4;
     uint8_t role = (uint8_t)IrrigationRole::ESTACAO;
     uint8_t numValves = 2;
     uint32_t boundGateway = 0; // 0 = não pareado
@@ -37,19 +41,47 @@ struct IrrigationSettings {
     // v3:
     int8_t pinBtn = -1;   // botão multifunção (§8.6); -1 = ausente
     int8_t pinLed = -1;   // LED de status (§8.7); -1 = ausente
-    uint8_t pad2 = 0;    // explicit padding at offset 51 (end of struct)
+    uint8_t pad2 = 0;    // explicit padding at offset 51 (end of v3 prefix)
+
+    // v4 (Fase 6a):
+    static constexpr uint8_t MAX_GPO = 2;
+    static constexpr uint8_t MAX_SENSORS = 4;
+
+    struct SensorSlot {
+        int8_t pino = -1;        // -1 = slot vazio
+        uint8_t tipo = 0;        // 0 = digital, 1 = analógico
+        uint8_t flags = 0;       // bit0 = ativo-baixo (digital)
+        uint8_t amostragemS = 0; // analógico; 0 → default 30
+        uint16_t debounceMs = 0; // digital; 0 → default 200
+        uint16_t adcMin = 0;     // calibração 2 pontos (analógico)
+        uint16_t adcMax = 4095;
+        int16_t engMin = 0;      // centi-unidades (1000 = 10,00)
+        int16_t engMax = 0;
+        uint8_t unidade = 0;     // 0 raw, 1 bar, 2 %, 3 m, 4 °C
+        uint8_t pad = 0;
+    };
+
+    int8_t pinsGpo[MAX_GPO] = {-1, -1}; // saídas de nível (§8.11)
+    int8_t pinTamper = -1;              // §8.12; -1 desativa
+    uint8_t hwFlags = 0;                // bit0 = tamper ativo-baixo
+    int32_t latE7 = 0;                  // coordenadas locais ×1e-7 (§8.8)
+    int32_t lonE7 = 0;
+    SensorSlot sensores[MAX_SENSORS];
 };
 
 static constexpr size_t IRRIGATION_SETTINGS_V1_SIZE = 40;
+static constexpr size_t IRRIGATION_SETTINGS_V3_SIZE = 52;
+static_assert(sizeof(IrrigationSettings::SensorSlot) == 16, "SensorSlot é ABI on-disk");
 
-// ABI lock v3: magic(4)+version(2)+role(1)+numValves(1)+boundGateway(4)+hbMinutes(2)+
+// ABI lock v4: magic(4)+version(2)+role(1)+numValves(1)+boundGateway(4)+hbMinutes(2)+
 // vbatMinAbrirCentiV(2)+maxOpenConfigS(2)+cmdRatePerMin(1)+pad0(1)+pulseMs(2)+
 // pinsHbridgeA(8)+pinsHbridgeB(8)+pad1(2)+configEpoch(4)+pinsDigitalIn(4)+
-// digitalInActiveLow(1)+pinBtn(1)+pinLed(1)+pad2(1) = 52. All padding explicit and zero-initialized.
+// digitalInActiveLow(1)+pinBtn(1)+pinLed(1)+pad2(1)+pinsGpo(2)+pinTamper(1)+hwFlags(1)+
+// latE7(4)+lonE7(4)+sensores[4×16](64) = 128. All padding explicit and zero-initialized.
 // Bump version AND this assert on any layout change.
-static_assert(sizeof(IrrigationSettings) == 52, "on-disk settings format is ABI-dependent; bump version on layout change");
+static_assert(sizeof(IrrigationSettings) == 128, "on-disk settings format is ABI-dependent; bump version on layout change");
 
-// Blob v1, v2 ou v3 → struct v3. false = magic/versão/tamanho inválido (out fica intacto).
+// Blob v1, v2, v3 ou v4 → struct v4. false = magic/versão/tamanho inválido (out fica intacto).
 bool migrateIrrigationSettings(const uint8_t *raw, size_t n, IrrigationSettings &out);
 
 // false = arquivo ausente/corrompido; `s` fica com os defaults acima.

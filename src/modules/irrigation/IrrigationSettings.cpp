@@ -17,30 +17,32 @@ bool migrateIrrigationSettings(const uint8_t *raw, size_t n, IrrigationSettings 
     if (magic != IrrigationSettings::MAGIC)
         return false;
 
-    if (version == 3) {
+    if (version == 4) {
         if (n != sizeof(IrrigationSettings))
             return false;
         memcpy(&out, raw, sizeof(out));
         return true;
     }
-    if (version == 2) {
-        if (n != sizeof(IrrigationSettings))
+    if (version == 3 || version == 2) {
+        if (n != IRRIGATION_SETTINGS_V3_SIZE)
             return false;
-        IrrigationSettings s;
-        memcpy(&s, raw, sizeof(s));
-        s.version = 3;
-        s.pinBtn = -1; // bytes eram padding no v2
-        s.pinLed = -1;
-        s.pad2 = 0;
+        IrrigationSettings s; // defaults v4 nos campos novos
+        memcpy(&s, raw, IRRIGATION_SETTINGS_V3_SIZE); // layout v2/v3 é prefixo do v4
+        s.version = 4;
+        if (version == 2) { // bytes de v3 eram padding no v2
+            s.pinBtn = -1;
+            s.pinLed = -1;
+            s.pad2 = 0;
+        }
         out = s;
         return true;
     }
     if (version == 1) {
         if (n != IRRIGATION_SETTINGS_V1_SIZE)
             return false;
-        IrrigationSettings s; // defaults v3 para os campos novos
-        memcpy(&s, raw, IRRIGATION_SETTINGS_V1_SIZE); // layout v1 é prefixo do v2/v3
-        s.version = 3;
+        IrrigationSettings s; // defaults v4 para os campos novos
+        memcpy(&s, raw, IRRIGATION_SETTINGS_V1_SIZE); // layout v1 é prefixo do v2/v3/v4
+        s.version = 4;
         out = s;
         return true;
     }
@@ -61,15 +63,15 @@ bool loadIrrigationSettings(IrrigationSettings &s)
         LOG_WARN("Irrigation settings invalid (len=%u), using defaults", (unsigned)n);
         return false;
     }
-    // Detect upgrade: v1 (40 bytes) or stored version != 3
+    // Detect upgrade: v1 (40 bytes), v2/v3 (52 bytes) ou versão anterior a 4
     uint16_t rawVersion = 0;
     if (n >= 6) {
         memcpy(&rawVersion, raw + 4, 2);
     }
-    bool migrated = (n == IRRIGATION_SETTINGS_V1_SIZE) || (rawVersion < 3);
+    bool migrated = (n != sizeof(IrrigationSettings)) || (rawVersion < 4);
     s = tmp;
     if (migrated)
-        saveIrrigationSettings(s); // regrava já em v3
+        saveIrrigationSettings(s); // regrava já em v4
     return true;
 #else
     return false;

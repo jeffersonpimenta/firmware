@@ -39,7 +39,7 @@ static void test_migrate_v1_preservesFieldsAndDefaultsNew()
     buildV1Image(img);
     IrrigationSettings s;
     TEST_ASSERT_TRUE(migrateIrrigationSettings(img, sizeof(img), s));
-    TEST_ASSERT_EQUAL_UINT16(3, s.version);
+    TEST_ASSERT_EQUAL_UINT16(4, s.version);
     TEST_ASSERT_EQUAL_UINT8(1, s.role);
     TEST_ASSERT_EQUAL_UINT8(4, s.numValves);
     TEST_ASSERT_EQUAL_HEX32(0xa1b2c3d4, s.boundGateway);
@@ -63,46 +63,63 @@ static void test_migrate_v1_getsDefaultButtonLedPins()
     buildV1Image(img);
     IrrigationSettings out;
     TEST_ASSERT_TRUE(migrateIrrigationSettings(img, sizeof(img), out));
-    TEST_ASSERT_EQUAL_UINT16(3, out.version);
+    TEST_ASSERT_EQUAL_UINT16(4, out.version);
     TEST_ASSERT_EQUAL_INT8(-1, out.pinBtn);
     TEST_ASSERT_EQUAL_INT8(-1, out.pinLed);
 }
 
 static void test_migrate_v2_getsDefaultButtonLedPins()
 {
+    // blob v2 genuíno: 52 bytes com version=2, pinos ainda não existiam
+    uint8_t raw[IRRIGATION_SETTINGS_V3_SIZE];
+    memset(raw, 0, sizeof(raw));
     IrrigationSettings v2like;
-    v2like.version = 2; // simula blob v2: mesmos 52 bytes, pinos ainda não existiam
-    v2like.pinBtn = 0;  // lixo nos bytes que eram pad no v2
+    v2like.pinBtn = 0; // lixo nos bytes que eram pad no v2
     v2like.pinLed = 0;
+    memcpy(raw, &v2like, IRRIGATION_SETTINGS_V3_SIZE);
+    uint16_t ver2 = 2;
+    memcpy(raw + 4, &ver2, 2);
     IrrigationSettings out;
-    TEST_ASSERT_TRUE(migrateIrrigationSettings((const uint8_t *)&v2like, sizeof(v2like), out));
-    TEST_ASSERT_EQUAL_UINT16(3, out.version);
+    TEST_ASSERT_TRUE(migrateIrrigationSettings(raw, sizeof(raw), out));
+    TEST_ASSERT_EQUAL_UINT16(4, out.version);
     TEST_ASSERT_EQUAL_INT8(-1, out.pinBtn); // v2 não tinha o campo: default
     TEST_ASSERT_EQUAL_INT8(-1, out.pinLed);
 }
 
 static void test_migrate_v3_passthroughKeepsPins()
 {
-    IrrigationSettings in;
-    in.pinBtn = 0;
-    in.pinLed = 2;
+    // blob v3 genuíno: 52 bytes com version=3
+    uint8_t raw[IRRIGATION_SETTINGS_V3_SIZE];
+    memset(raw, 0, sizeof(raw));
+    IrrigationSettings v3like;
+    v3like.pinBtn = 0;
+    v3like.pinLed = 2;
+    memcpy(raw, &v3like, IRRIGATION_SETTINGS_V3_SIZE);
+    uint16_t ver3 = 3;
+    memcpy(raw + 4, &ver3, 2);
     IrrigationSettings out;
-    TEST_ASSERT_TRUE(migrateIrrigationSettings((const uint8_t *)&in, sizeof(in), out));
-    TEST_ASSERT_EQUAL_UINT16(3, out.version);
+    TEST_ASSERT_TRUE(migrateIrrigationSettings(raw, sizeof(raw), out));
+    TEST_ASSERT_EQUAL_UINT16(4, out.version);
     TEST_ASSERT_EQUAL_INT8(0, out.pinBtn);
     TEST_ASSERT_EQUAL_INT8(2, out.pinLed);
 }
 
 static void test_migrate_v3_passthrough()
 {
-    IrrigationSettings in;
-    in.configEpoch = 17;
-    in.pinsDigitalIn[1] = 36;
-    in.digitalInActiveLow = 0b0010;
-    in.numValves = 3;
+    // blob v3 genuíno: 52 bytes com version=3
+    uint8_t raw[IRRIGATION_SETTINGS_V3_SIZE];
+    memset(raw, 0, sizeof(raw));
+    IrrigationSettings v3like;
+    v3like.configEpoch = 17;
+    v3like.pinsDigitalIn[1] = 36;
+    v3like.digitalInActiveLow = 0b0010;
+    v3like.numValves = 3;
+    memcpy(raw, &v3like, IRRIGATION_SETTINGS_V3_SIZE);
+    uint16_t ver3 = 3;
+    memcpy(raw + 4, &ver3, 2);
     IrrigationSettings out;
-    TEST_ASSERT_TRUE(migrateIrrigationSettings((const uint8_t *)&in, sizeof(in), out));
-    TEST_ASSERT_EQUAL_UINT16(3, out.version);
+    TEST_ASSERT_TRUE(migrateIrrigationSettings(raw, sizeof(raw), out));
+    TEST_ASSERT_EQUAL_UINT16(4, out.version);
     TEST_ASSERT_EQUAL_UINT32(17, out.configEpoch);
     TEST_ASSERT_EQUAL_INT8(36, out.pinsDigitalIn[1]);
     TEST_ASSERT_EQUAL_UINT8(0b0010, out.digitalInActiveLow);
@@ -111,17 +128,22 @@ static void test_migrate_v3_passthrough()
 
 static void test_migrate_v2_preservesFieldsResetsPins()
 {
+    // blob v2 genuíno: 52 bytes com version=2
+    uint8_t raw[IRRIGATION_SETTINGS_V3_SIZE];
+    memset(raw, 0, sizeof(raw));
     IrrigationSettings v2like;
-    v2like.version = 2; // blob v2 genuíno: mesmos 52 bytes
     v2like.configEpoch = 17;
     v2like.numValves = 5;
     v2like.pinsDigitalIn[2] = 36;
     v2like.digitalInActiveLow = 0b0100;
     v2like.pinBtn = 13; // bytes que eram padding no v2: NÃO podem sobreviver
     v2like.pinLed = 14;
+    memcpy(raw, &v2like, IRRIGATION_SETTINGS_V3_SIZE);
+    uint16_t ver2 = 2;
+    memcpy(raw + 4, &ver2, 2);
     IrrigationSettings out;
-    TEST_ASSERT_TRUE(migrateIrrigationSettings((const uint8_t *)&v2like, sizeof(v2like), out));
-    TEST_ASSERT_EQUAL_UINT16(3, out.version);
+    TEST_ASSERT_TRUE(migrateIrrigationSettings(raw, sizeof(raw), out));
+    TEST_ASSERT_EQUAL_UINT16(4, out.version);
     TEST_ASSERT_EQUAL_UINT32(17, out.configEpoch);
     TEST_ASSERT_EQUAL_UINT8(5, out.numValves);
     TEST_ASSERT_EQUAL_INT8(36, out.pinsDigitalIn[2]);
@@ -142,7 +164,7 @@ static void test_migrate_rejectsBadInput()
     TEST_ASSERT_FALSE(migrateIrrigationSettings(img, sizeof(img), s));
     img[0] ^= 0xFF;
 
-    img[4] = 3; // versão desconhecida
+    img[4] = 3; // versão 3 válida, mas tamanho 40 != 52 → rejeitado
     TEST_ASSERT_FALSE(migrateIrrigationSettings(img, sizeof(img), s));
 }
 
@@ -151,6 +173,48 @@ static void test_migrate_v2_wrongSize_rejected()
     IrrigationSettings in;
     IrrigationSettings out;
     TEST_ASSERT_FALSE(migrateIrrigationSettings((const uint8_t *)&in, sizeof(in) - 1, out));
+}
+
+static void test_migrate_v3_to_v4()
+{
+    // Blob v3 sintético: struct atual "rebaixada" — monta 52 bytes com version=3.
+    IrrigationSettings v4;
+    v4.numValves = 3;
+    v4.pinBtn = 0;
+    v4.configEpoch = 9;
+    uint8_t raw[IRRIGATION_SETTINGS_V3_SIZE];
+    memcpy(raw, &v4, IRRIGATION_SETTINGS_V3_SIZE); // prefixo v3 == primeiros 52 bytes do v4
+    uint16_t ver3 = 3;
+    memcpy(raw + 4, &ver3, 2);
+
+    IrrigationSettings out;
+    TEST_ASSERT_TRUE(migrateIrrigationSettings(raw, IRRIGATION_SETTINGS_V3_SIZE, out));
+    TEST_ASSERT_EQUAL_UINT16(4, out.version);
+    TEST_ASSERT_EQUAL_UINT8(3, out.numValves);
+    TEST_ASSERT_EQUAL_UINT32(9, out.configEpoch);
+    // Campos novos em default
+    TEST_ASSERT_EQUAL_INT8(-1, out.pinsGpo[0]);
+    TEST_ASSERT_EQUAL_INT8(-1, out.pinsGpo[1]);
+    TEST_ASSERT_EQUAL_INT8(-1, out.pinTamper);
+    TEST_ASSERT_EQUAL_INT32(0, out.latE7);
+    for (int i = 0; i < 4; i++)
+        TEST_ASSERT_EQUAL_INT8(-1, out.sensores[i].pino);
+}
+
+static void test_v4_roundtrip_and_size()
+{
+    TEST_ASSERT_EQUAL_size_t(128, sizeof(IrrigationSettings));
+    IrrigationSettings s;
+    s.sensores[1] = {36, 1, 0, 30, 0, 300, 3800, 0, 1000, 1, 0}; // analógico bar
+    s.pinsGpo[0] = 27;
+    s.latE7 = -221234560;
+    uint8_t raw[sizeof(IrrigationSettings)];
+    memcpy(raw, &s, sizeof(s));
+    IrrigationSettings out;
+    TEST_ASSERT_TRUE(migrateIrrigationSettings(raw, sizeof(raw), out));
+    TEST_ASSERT_EQUAL_INT8(36, out.sensores[1].pino);
+    TEST_ASSERT_EQUAL_INT16(1000, out.sensores[1].engMax);
+    TEST_ASSERT_EQUAL_INT32(-221234560, out.latE7);
 }
 
 static void test_defaultStruct_bytesDeterministic()
@@ -180,6 +244,8 @@ void setup()
     RUN_TEST(test_migrate_v3_passthroughKeepsPins);
     RUN_TEST(test_migrate_rejectsBadInput);
     RUN_TEST(test_migrate_v2_wrongSize_rejected);
+    RUN_TEST(test_migrate_v3_to_v4);
+    RUN_TEST(test_v4_roundtrip_and_size);
     RUN_TEST(test_defaultStruct_bytesDeterministic);
     exit(UNITY_END());
 }

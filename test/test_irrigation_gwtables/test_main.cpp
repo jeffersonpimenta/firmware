@@ -80,7 +80,7 @@ static void test_stations_upsertAdoptAndRoundTrip()
     TEST_ASSERT_TRUE(r.upsert(e));
     TEST_ASSERT_EQUAL_UINT32(5, r.byNode(0xa1b2c3d4)->desiredEpoch);
 
-    uint8_t newBlob[52];
+    uint8_t newBlob[128];
     memset(newBlob, 0xCD, sizeof(newBlob));
     r.adoptConfig(0xa1b2c3d4, newBlob, 9); // regra do maior epoch
     TEST_ASSERT_EQUAL_UINT32(9, r.byNode(0xa1b2c3d4)->desiredEpoch);

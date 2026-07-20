@@ -35,7 +35,7 @@ struct StationEntry {
     uint32_t node = 0;       // 0 = slot vazio
     char name[16] = {0};
     uint32_t desiredEpoch = 0;
-    uint8_t blob[52] = {0};  // config v3 desejada (push §5.4)
+    uint8_t blob[128] = {0}; // config v4 desejada (push §5.4)
     uint8_t retries = 3;
     uint16_t silencioAlertaMin = 35;
     int32_t lat = 0, lon = 0; // graus * 1e-5 (WGS84, §8.8)
@@ -51,7 +51,7 @@ class StationRegistry {
     StationEntry *mutableByNode(uint32_t node);
     const StationEntry *nodeAt(size_t index) const; // index-ésima entrada ocupada; nullptr se >= count()
     size_t count() const;
-    void adoptConfig(uint32_t node, const uint8_t *blob52, uint32_t epoch); // regra do maior epoch
+    void adoptConfig(uint32_t node, const uint8_t *blob128, uint32_t epoch); // regra do maior epoch
     size_t serialize(uint8_t *buf, size_t cap) const;
     bool deserialize(const uint8_t *buf, size_t n);
 
