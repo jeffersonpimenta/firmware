@@ -67,6 +67,20 @@ static void test_grow_forces_new_slots_off()
     TEST_ASSERT_FALSE(g.isOn(1));
 }
 
+static void test_reissue_renews_timer_without_redriving()
+{
+    FakeGpoDriver d;
+    GpoController g(d, 2);
+    g.command(0, 1, 60, 0);
+    int setsAfterOn = d.setCount;
+    g.command(0, 1, 60, 30000); // re-emissão: renova prazo, sem novo set()
+    TEST_ASSERT_EQUAL_INT(setsAfterOn, d.setCount);
+    g.tick(60000); // prazo antigo (0+60s) já renovado → continua ligado
+    TEST_ASSERT_TRUE(g.isOn(0));
+    g.tick(90000); // novo prazo (30000+60s) vence
+    TEST_ASSERT_FALSE(g.isOn(0));
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -76,6 +90,7 @@ void setup()
     RUN_TEST(test_invalid_id_and_alloff);
     RUN_TEST(test_shrink_turns_off_removed);
     RUN_TEST(test_grow_forces_new_slots_off);
+    RUN_TEST(test_reissue_renews_timer_without_redriving);
     exit(UNITY_END());
 }
 

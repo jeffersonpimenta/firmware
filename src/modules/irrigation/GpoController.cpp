@@ -16,7 +16,8 @@ GpoController::Result GpoController::command(uint8_t id, uint8_t action, uint16_
         // em zero (raro, apenas no wrap de millis()), forçamos 1 para preservar o sentinela.
         if (durationS && deadline == 0u)
             deadline = 1u;
-        driver.set(id, true);
+        if (!slots[id].on)
+            driver.set(id, true); // já ligado: só renova o timer, sem re-acionar o driver
         slots[id].on = true;
         slots[id].offAtMs = deadline;
     } else {
