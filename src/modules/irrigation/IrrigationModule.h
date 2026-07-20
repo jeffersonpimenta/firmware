@@ -12,6 +12,7 @@
 #include "modules/irrigation/RateLimiter.h"
 #include "modules/irrigation/SeqTable.h"
 #include "modules/irrigation/PortalSession.h"
+#include "modules/irrigation/GpoController.h"
 #include "modules/irrigation/ValveController.h"
 
 // Forward-decl da cola web (definida em IrrigationWebApi.h, incluída só no .cpp).
@@ -22,6 +23,17 @@ struct NodeStateCtx;
 struct PortalPulseReq;
 struct NetCommand;
 }
+
+// Saída de nível (relé/MOSFET) dos GPOs.
+class GpioGpoDriver : public IGpoDriver
+{
+  public:
+    void configure(const IrrigationSettings &s);
+    void set(uint8_t index, bool on) override;
+
+  private:
+    int8_t pins[IrrigationSettings::MAX_GPO] = {-1, -1};
+};
 
 // Ponte H latching: pulso em A abre, pulso em B fecha.
 class GpioValveDriver : public IValveDriver
@@ -71,6 +83,7 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
 
   private:
     void handleCmdValvula(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
+    void handleCmdGpo(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
     void handleSetConfig(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
     void handleGetConfig(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
     // Pairing handlers — no senderAuthorized check; physical window + button is the authorization (spec §6).
@@ -109,6 +122,8 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     IrrigationSettings settings;
     GpioValveDriver driver;
     ValveController valves;
+    GpioGpoDriver gpoDriver;
+    GpoController gpos;
     SeqTable seqTable;
     RateLimiter rateLimiter;
     FragmentReassembler reasm;

@@ -82,6 +82,42 @@ void GpioValveDriver::pulse(uint8_t index, bool open)
     LOG_INFO("Valve %d pulsed %s", index, open ? "OPEN" : "CLOSE");
 }
 
+// Conta quantos GPOs têm pino configurado (pinsGpo[i] >= 0).
+static uint8_t countGpos(const IrrigationSettings &s)
+{
+    uint8_t n = 0;
+    for (int i = 0; i < IrrigationSettings::MAX_GPO; i++)
+        if (s.pinsGpo[i] >= 0)
+            n++;
+    return n;
+}
+
+void GpioGpoDriver::configure(const IrrigationSettings &s)
+{
+    memcpy(pins, s.pinsGpo, sizeof(pins));
+#ifndef ARCH_PORTDUINO
+    for (uint8_t i = 0; i < IrrigationSettings::MAX_GPO; i++) {
+        if (pins[i] >= 0) {
+            pinMode(pins[i], OUTPUT);
+            digitalWrite(pins[i], LOW);
+        }
+    }
+#endif
+}
+
+void GpioGpoDriver::set(uint8_t index, bool on)
+{
+    if (index >= IrrigationSettings::MAX_GPO)
+        return;
+    int8_t pin = pins[index];
+    if (pin < 0)
+        return;
+#ifndef ARCH_PORTDUINO
+    digitalWrite(pin, on ? HIGH : LOW);
+#endif
+    LOG_INFO("GPO %d %s", index, on ? "ON" : "OFF");
+}
+
 // ---------------------------------------------------------------------------
 // IrrigationUiThread — polls GPIO button at 25 ms, drives LED GPIO.
 // Decision §4: only instantiated when pinBtn >= 0 || pinLed >= 0.
@@ -130,11 +166,15 @@ class IrrigationUiThread : public concurrency::OSThread
 IrrigationModule::IrrigationModule()
     : SinglePortModule("irrigation", meshtastic_PortNum_PRIVATE_APP), concurrency::OSThread("Irrigation"),
       settings(loadIrrigationSettingsOrDefault()), valves(driver, settings.numValves),
-      rateLimiter(settings.cmdRatePerMin)
+      gpos(gpoDriver, 0), rateLimiter(settings.cmdRatePerMin)
 {
     IrrigationSettings probe;
     safeMode = !loadIrrigationSettings(probe); // sem config persistida = modo seguro (spec §5.5)
+    if (safeMode)
+        gpos.allOff(); // §5.5 GPOs inativos em modo seguro
     driver.configure(settings);
+    gpoDriver.configure(settings);
+    gpos.setNumGpos(countGpos(settings));
     // Boot sempre em estado fechado (spec §5.5): solenoides latching podem ter
     // ficado abertos num reset com válvula acionada. forceCloseAll() pulsa
     // incondicionalmente, sem depender do bit open interno (que está falso
@@ -192,6 +232,9 @@ ProcessMessage IrrigationModule::handleReceived(const meshtastic_MeshPacket &mp)
     switch (h.type) {
     case MSG_CMD_VALVULA:
         handleCmdValvula(mp, h);
+        break;
+    case MSG_CMD_GPO:
+        handleCmdGpo(mp, h);
         break;
     case MSG_SET_CONFIG:
         // Task 6, decisão §3: role split — GATEWAY recebe SET_CONFIG como resposta de GET_CONFIG.
@@ -292,6 +335,44 @@ void IrrigationModule::handleCmdValvula(const meshtastic_MeshPacket &mp, const H
     sendAck(mp.from, h.seq, reason == REASON_NONE ? ACK_OK : ACK_NACK, reason);
 }
 
+void IrrigationModule::handleCmdGpo(const meshtastic_MeshPacket &mp, const Header &h)
+{
+    // Apenas remetentes autorizados podem acionar GPOs (§4.2).
+    if (!senderAuthorized(mp.from)) {
+        LOG_WARN("Irrigation: GPO cmd não autorizado de 0x%08x", mp.from);
+        sendAck(mp.from, h.seq, ACK_NACK, REASON_UNAUTHORIZED);
+        return;
+    }
+    // Seq repetido = replay ou bug no gateway — descarta em silêncio.
+    if (!seqTable.checkAndUpdate(mp.from, h.seq)) {
+        LOG_WARN("Irrigation: GPO seq repetido %u de 0x%08x", h.seq, mp.from);
+        return;
+    }
+    if (!rateLimiter.allow(millis())) {
+        sendAck(mp.from, h.seq, ACK_NACK, REASON_RATE_LIMIT);
+        return;
+    }
+
+    CmdGpo cmd;
+    if (!decodeCmdGpo(mp.decoded.payload.bytes, mp.decoded.payload.size, cmd)) {
+        sendAck(mp.from, h.seq, ACK_NACK, REASON_BAD_PAYLOAD);
+        return;
+    }
+
+    // Modo seguro: bloqueia ativação de saídas (§5.5). Desligar continua permitido.
+    if (safeMode && cmd.action == 1) {
+        sendAck(mp.from, h.seq, ACK_NACK, REASON_SAFE_MODE);
+        return;
+    }
+
+    GpoController::Result r = gpos.command(cmd.gpoId, cmd.action, cmd.durationS, millis());
+
+    uint8_t reason = REASON_NONE;
+    if (r == GpoController::Result::INVALID_ID)
+        reason = REASON_INVALID_ID;
+    sendAck(mp.from, h.seq, reason == REASON_NONE ? ACK_OK : ACK_NACK, reason);
+}
+
 void IrrigationModule::sendAck(uint32_t to, uint32_t ackedSeq, uint8_t status, uint8_t reason)
 {
     Ack ack = {};
@@ -299,6 +380,7 @@ void IrrigationModule::sendAck(uint32_t to, uint32_t ackedSeq, uint8_t status, u
     ack.status = status;
     ack.reason = reason;
     ack.valveStates = valves.stateBitmap();
+    ack.gpoStates = gpos.states();
     ack.vbatCentiV = batteryCentiV();
     ack.configEpoch = settings.configEpoch;
 
@@ -316,6 +398,7 @@ void IrrigationModule::sendHeartbeat()
 {
     Heartbeat hb = {};
     hb.valveStates = valves.stateBitmap();
+    hb.gpoStates = gpos.states();
     hb.vbatCentiV = batteryCentiV();
     hb.configEpoch = settings.configEpoch;
     hb.flags = safeMode ? HB_FLAG_SAFE_MODE : 0;
@@ -366,6 +449,8 @@ void IrrigationModule::activateSettings(const IrrigationSettings &merged)
         LOG_WARN("Irrigation: config sets zero valves");
     driver.configure(settings);
     valves.setNumValves(settings.numValves);
+    gpoDriver.configure(settings);
+    gpos.setNumGpos(countGpos(settings));
     rateLimiter = RateLimiter(settings.cmdRatePerMin);
 }
 
@@ -474,6 +559,7 @@ int32_t IrrigationModule::runOnce()
     // Fail-safe tick roda em TODOS os papéis: num nó mal-configurado nunca deve
     // sobrar válvula aberta sem timer sendo decrementado.
     valves.tick(millis());
+    gpos.tick(millis()); // §5.5 GPOs temporizados expirados são desligados automaticamente
     stationPairing.tick(millis());
     gatewayPairing.tick(millis());
 
@@ -651,6 +737,7 @@ void IrrigationModule::factoryReset()
 {
     // pulsos saem no pin map atual; depois do wipe os pinos viram -1 e nada mais fecha fisicamente.
     valves.forceCloseAll();
+    gpos.allOff(); // §5.5 GPOs inativos em modo seguro
     LOG_WARN("Irrigation: factory reset by button");
     led.setMode(LedPatternController::Mode::PAIRING); // visual confirmation for 2 s before reboot
     sendEvento(EV_FACTORY_RESET); // entrega best-effort — reboot em 2 s pode cortar o TX
@@ -1108,7 +1195,7 @@ void IrrigationModule::portalFillNodeState(IrrigationWeb::NodeStateCtx &out) con
     out.safeMode = safeMode;
     out.numValves = settings.numValves;
     out.valveStates = valves.stateBitmap();
-    out.gpoStates = 0; // sem acessor de estado de GPO por enquanto (follow-up)
+    out.gpoStates = gpos.states();
     out.vbatCentiV = batteryCentiV();
     out.vpanelCentiV = 0; // tensão de painel não medida na estação por enquanto (follow-up)
     out.flags = safeMode ? HB_FLAG_SAFE_MODE : 0;
