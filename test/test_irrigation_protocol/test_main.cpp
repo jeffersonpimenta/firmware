@@ -303,6 +303,19 @@ static void test_heartbeat_sensor_block_roundtrip()
     TEST_ASSERT_EQUAL_UINT8(0, out.sensors[1].tipo);
 }
 
+static void test_heartbeat_sensor_block_truncated_rejected()
+{
+    Heartbeat hb = {};
+    hb.sensorCount = 2;
+    hb.sensors[0] = {0, 1, 152};
+    hb.sensors[1] = {1, 0, 100};
+    uint8_t buf[64];
+    size_t n = encodeHeartbeat(buf, sizeof(buf), 1, hb);
+    TEST_ASSERT_TRUE(n > 0);
+    Heartbeat out;
+    TEST_ASSERT_FALSE(decodeHeartbeat(buf, n - 1, out));
+}
+
 static void test_heartbeat_legacy_payload_decodes_zero_sensors()
 {
     Heartbeat hb = {};
@@ -360,6 +373,7 @@ void setup()
     RUN_TEST(test_remoteCmd_roundtrip);
     RUN_TEST(test_remoteCmd_shortBufferFails);
     RUN_TEST(test_heartbeat_sensor_block_roundtrip);
+    RUN_TEST(test_heartbeat_sensor_block_truncated_rejected);
     RUN_TEST(test_heartbeat_legacy_payload_decodes_zero_sensors);
     RUN_TEST(test_heartbeat_sensor_count_overflow_rejected);
     RUN_TEST(test_evento_tamper_roundtrip);
