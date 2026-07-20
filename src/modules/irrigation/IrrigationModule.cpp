@@ -444,6 +444,8 @@ void IrrigationModule::activateSettings(const IrrigationSettings &merged)
 {
     // Fecha tudo ANTES de trocar o pin map: os pulsos de fechar saem nos pinos antigos.
     valves.forceCloseAll();
+    // GPOs desligam ANTES da troca do pin map: set(false) sai nos pinos antigos (mesma razão das válvulas).
+    gpos.allOff();
     settings = merged;
     if (settings.numValves == 0)
         LOG_WARN("Irrigation: config sets zero valves");
