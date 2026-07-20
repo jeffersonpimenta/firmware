@@ -5,8 +5,16 @@ void SensorSampler::configure(const IrrigationSettings &s)
     cfg = s;
     for (auto &sl : st)
         sl = SlotState{};
-    pending = false;
     lastReportMs = 0;
+}
+
+int32_t SensorSampler::analogBand(const IrrigationSettings::SensorSlot &sl) const
+{
+    int32_t span = (int32_t)sl.engMax - sl.engMin;
+    if (span < 0)
+        span = -span;
+    int32_t band = span * HYST_PCT / 100;
+    return band < 1 ? 1 : band;
 }
 
 int16_t SensorSampler::calibrate(const IrrigationSettings::SensorSlot &sl, uint16_t adc) const
@@ -35,18 +43,6 @@ void SensorSampler::tick(uint32_t nowMs, ISensorReader &rd)
             s.valueCenti = calibrate(sl, rd.readAdc(sl.pino));
             s.lastSampleMs = nowMs;
             s.valid = true;
-            // Histerese: banda = 2% do span (mínimo 1 centi)
-            int32_t span = (int32_t)sl.engMax - sl.engMin;
-            if (span < 0)
-                span = -span;
-            int32_t band = span * HYST_PCT / 100;
-            if (band < 1)
-                band = 1;
-            int32_t delta = (int32_t)s.valueCenti - s.reportedCenti;
-            if (delta < 0)
-                delta = -delta;
-            if (s.everReported && delta > band)
-                pending = true;
         } else { // digital
             bool raw = rd.readLevel(sl.pino);
             bool active = (sl.flags & 1) ? !raw : raw;
@@ -60,8 +56,6 @@ void SensorSampler::tick(uint32_t nowMs, ISensorReader &rd)
             if (nowMs - s.rawSinceMs < db)
                 continue;
             int16_t v = active ? 100 : 0;
-            if (s.valid && v != s.valueCenti && s.everReported)
-                pending = true;
             s.valueCenti = v;
             s.valid = true;
         }
@@ -79,14 +73,32 @@ size_t SensorSampler::readings(IrrigationProto::SensorReading out[IrrigationSett
     return n;
 }
 
+// Condição viva, não latch — transiente que volta para a banda não dispara.
 bool SensorSampler::earlyHeartbeatDue(uint32_t nowMs) const
 {
-    return pending && (nowMs - lastReportMs >= EARLY_HB_MIN_INTERVAL_MS);
+    if (nowMs - lastReportMs < EARLY_HB_MIN_INTERVAL_MS)
+        return false;
+    for (uint8_t i = 0; i < IrrigationSettings::MAX_SENSORS; i++) {
+        const auto &s = st[i];
+        if (!s.valid || !s.everReported)
+            continue;
+        const auto &sl = cfg.sensores[i];
+        if (sl.tipo == 1) { // analógico: verifica banda de histerese
+            int32_t delta = (int32_t)s.valueCenti - s.reportedCenti;
+            if (delta < 0)
+                delta = -delta;
+            if (delta > analogBand(sl))
+                return true;
+        } else { // digital: qualquer diferença dispara
+            if (s.valueCenti != s.reportedCenti)
+                return true;
+        }
+    }
+    return false;
 }
 
 void SensorSampler::noteReported(uint32_t nowMs)
 {
-    pending = false;
     lastReportMs = nowMs;
     for (uint8_t i = 0; i < IrrigationSettings::MAX_SENSORS; i++) {
         if (!st[i].valid)

@@ -122,6 +122,27 @@ static void test_digital_change_arms_early_heartbeat()
     TEST_ASSERT_TRUE(sm.earlyHeartbeatDue(300 + 30000));
 }
 
+static void test_transient_settles_back_no_early_heartbeat()
+{
+    // Transiente que cruza a banda e volta antes do rate-limit NÃO dispara HB antecipado
+    IrrigationSettings cfg = cfgAnalog();
+    cfg.sensores[0].amostragemS = 1;
+    SensorSampler sm;
+    sm.configure(cfg);
+    FakeReader rd;
+    rd.adc[36] = 2000; // 5,00
+    sm.tick(0, rd);
+    sm.noteReported(0);
+    rd.adc[36] = 2500; // 7,50: fora da banda
+    sm.tick(1000, rd);
+    rd.adc[36] = 2005; // ~5,02: de volta à banda
+    sm.tick(2000, rd);
+    TEST_ASSERT_FALSE(sm.earlyHeartbeatDue(30001)); // condição viva: nada significativo agora
+    rd.adc[36] = 2500; // sai de novo e FICA fora
+    sm.tick(3000, rd);
+    TEST_ASSERT_TRUE(sm.earlyHeartbeatDue(30002));
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -131,6 +152,7 @@ void setup()
     RUN_TEST(test_digital_debounce_and_polarity);
     RUN_TEST(test_early_heartbeat_hysteresis_and_ratelimit);
     RUN_TEST(test_digital_change_arms_early_heartbeat);
+    RUN_TEST(test_transient_settles_back_no_early_heartbeat);
     exit(UNITY_END());
 }
 

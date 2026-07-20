@@ -27,6 +27,7 @@ class SensorSampler
     void tick(uint32_t nowMs, ISensorReader &rd);
     // Preenche leituras válidas; devolve quantas (0..MAX_SENSORS).
     size_t readings(IrrigationProto::SensorReading out[IrrigationSettings::MAX_SENSORS]) const;
+    // Condição viva, não latch — transiente que volta para a banda não dispara.
     bool earlyHeartbeatDue(uint32_t nowMs) const;
     void noteReported(uint32_t nowMs); // chamar após TODO envio de heartbeat
 
@@ -43,8 +44,9 @@ class SensorSampler
     };
     IrrigationSettings cfg;
     SlotState st[IrrigationSettings::MAX_SENSORS];
-    bool pending = false;
     uint32_t lastReportMs = 0;
 
     int16_t calibrate(const IrrigationSettings::SensorSlot &sl, uint16_t adc) const;
+    // Calcula banda de histerese analógica para um slot (mínimo 1 centi).
+    int32_t analogBand(const IrrigationSettings::SensorSlot &sl) const;
 };
