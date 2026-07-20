@@ -2,6 +2,7 @@
 #include "SinglePortModule.h"
 #include "concurrency/OSThread.h"
 #include "modules/irrigation/Allowlist.h"
+#include "modules/irrigation/AuditLog.h"
 #include "modules/irrigation/ButtonGesture.h"
 #include "modules/irrigation/FragmentReassembler.h"
 #include "modules/irrigation/IrrigationGateway.h"
@@ -76,6 +77,8 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     bool portalPulse(const IrrigationWeb::PortalPulseReq &p);
     bool portalRunNetCommand(const IrrigationWeb::NetCommand &c);
     PortalSession &portalSession() { return portal; }
+    // Acesso de leitura ao mini-log de auditoria (Task 10: portal de campo). §8.9
+    const AuditLog &auditLogRef() const { return audit; }
 
   protected:
     bool wantPacket(const meshtastic_MeshPacket *p) override;
@@ -83,6 +86,16 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     int32_t runOnce() override;
 
   private:
+    // §8.9: mini-log de auditoria da estação (100 registros em ring).
+    static constexpr size_t AUDIT_CAP = 100;
+    AuditRecord auditStore[AUDIT_CAP];
+    AuditLog audit{auditStore, AUDIT_CAP};
+    bool auditDirty = false;
+    uint32_t lastAuditSaveMs = 0;
+    void auditEvent(AuditOrigin o, AuditAction a, uint8_t target, AuditResult res, uint32_t node = 0, uint32_t seq = 0);
+    bool loadAuditLog();
+    bool saveAuditLog();
+
     void handleCmdValvula(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
     void handleCmdGpo(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
     void handleSetConfig(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);

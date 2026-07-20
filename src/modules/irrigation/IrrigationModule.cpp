@@ -22,6 +22,10 @@ static constexpr uint32_t DEFAULT_MANUAL_OPEN_S = 20 * 60; // 20 min
 static const char *ALLOWLIST_PATH = "/prefs/irrigation-allow.dat";
 static const char *ALLOWLIST_TMP = "/prefs/irrigation-allow.tmp";
 
+// Persistência do mini-log de auditoria (§8.9) — staged-write.
+static const char *AUDIT_LOG_PATH = "/prefs/irrigation_log.dat";
+static const char *AUDIT_LOG_TMP = "/prefs/irrigation_log.tmp";
+
 // Persistência do estado gateway (Task 6, decisão §5) — staged-write em 4 arquivos.
 static const char *GW_STATIONS_PATH = "/prefs/irrigation-stations.dat";
 static const char *GW_STATIONS_TMP = "/prefs/irrigation-stations.tmp";
@@ -236,6 +240,11 @@ IrrigationModule::IrrigationModule()
         loadAllowlist();
         loadGatewayState();
     }
+    // §8.9: carrega o mini-log sobrevivente de reboot e registra o boot.
+    loadAuditLog();
+    auditEvent(AuditOrigin::SISTEMA, AuditAction::REBOOT, /*target=*/0, AuditResult::OK);
+    if (safeMode)
+        auditEvent(AuditOrigin::SISTEMA, AuditAction::SAFE_MODE_IN, 0, AuditResult::OK);
     LOG_INFO("IrrigationModule role=%d valves=%d gateway=0x%08x epoch=%u safe=%d", settings.role, settings.numValves,
              settings.boundGateway, settings.configEpoch, (int)safeMode);
     // Spin up the GPIO button/LED thread only when at least one pin is wired (spec §8.6/§8.7).
@@ -382,7 +391,11 @@ void IrrigationModule::handleCmdValvula(const meshtastic_MeshPacket &mp, const H
         reason = REASON_BATTERY_LOW;
         break;
     }
-    sendAck(mp.from, h.seq, reason == REASON_NONE ? ACK_OK : ACK_NACK, reason);
+    bool cmdOk = (reason == REASON_NONE);
+    sendAck(mp.from, h.seq, cmdOk ? ACK_OK : ACK_NACK, reason);
+    // §8.9: audita comando de válvula recebido por rádio.
+    auditEvent(AuditOrigin::PAINEL, cmd.action == 1 ? AuditAction::ABRIR : AuditAction::FECHAR,
+               cmd.valveId, cmdOk ? AuditResult::OK : AuditResult::NACK, mp.from, h.seq);
 }
 
 void IrrigationModule::handleCmdGpo(const meshtastic_MeshPacket &mp, const Header &h)
@@ -420,7 +433,11 @@ void IrrigationModule::handleCmdGpo(const meshtastic_MeshPacket &mp, const Heade
     uint8_t reason = REASON_NONE;
     if (r == GpoController::Result::INVALID_ID)
         reason = REASON_INVALID_ID;
-    sendAck(mp.from, h.seq, reason == REASON_NONE ? ACK_OK : ACK_NACK, reason);
+    bool cmdOk = (reason == REASON_NONE);
+    sendAck(mp.from, h.seq, cmdOk ? ACK_OK : ACK_NACK, reason);
+    // §8.9: audita comando GPO recebido por rádio.
+    auditEvent(AuditOrigin::PAINEL, cmd.action == 1 ? AuditAction::GPO_ON : AuditAction::GPO_OFF,
+               cmd.gpoId, cmdOk ? AuditResult::OK : AuditResult::NACK, mp.from, h.seq);
 }
 
 void IrrigationModule::sendAck(uint32_t to, uint32_t ackedSeq, uint8_t status, uint8_t reason)
@@ -513,6 +530,8 @@ void IrrigationModule::tickTamper(uint32_t nowMs)
 
     bool novoEstado = ativo;
     tamperActive = novoEstado;
+    // §8.9: tamper sempre auditado (mesmo quando EVENTO suprimido pela janela do portal — §8.12).
+    auditEvent(AuditOrigin::SISTEMA, AuditAction::TAMPER, tamperActive ? 1 : 0, AuditResult::OK);
     // Janela de manutenção automática: portal aberto suprime o EVENTO (§8.12); estado segue no heartbeat.
     if (!portal.apShouldBeUp())
         sendEvento(IrrigationProto::EV_TAMPER, tamperActive ? 1 : 0);
@@ -619,9 +638,14 @@ void IrrigationModule::handleSetConfig(const meshtastic_MeshPacket &mp, const He
         return;
     }
     activateSettings(merged);
+    bool wasSafe = safeMode;
     safeMode = false;
     LOG_INFO("Irrigation: config applied epoch=%u from 0x%08x", newEpoch, mp.from);
     sendAck(mp.from, h.seq, ACK_OK, REASON_NONE);
+    // §8.9: audita adoção de epoch de configuração.
+    auditEvent(AuditOrigin::PAINEL, AuditAction::CONFIG_EPOCH, 0, AuditResult::OK, mp.from, h.seq);
+    if (wasSafe)
+        auditEvent(AuditOrigin::SISTEMA, AuditAction::SAFE_MODE_OUT, 0, AuditResult::OK);
 }
 
 void IrrigationModule::handleGetConfig(const meshtastic_MeshPacket &mp, const Header &h)
@@ -670,8 +694,22 @@ int32_t IrrigationModule::runOnce()
 #endif
     // Fail-safe tick roda em TODOS os papéis: num nó mal-configurado nunca deve
     // sobrar válvula aberta sem timer sendo decrementado.
+    // §8.9: captura estado antes do tick para detectar fechamentos por fail-safe timer.
+    uint8_t vBefore = valves.stateBitmap();
+    uint8_t gBefore = gpos.states();
     valves.tick(millis());
     gpos.tick(millis()); // §5.5 GPOs temporizados expirados são desligados automaticamente
+    // Audita cada saída que foi fechada pelo fail-safe timer.
+    uint8_t vAfter = valves.stateBitmap();
+    uint8_t gAfter = gpos.states();
+    for (uint8_t i = 0; i < IrrigationSettings::MAX_VALVES; i++) {
+        if ((vBefore >> i & 1) && !(vAfter >> i & 1))
+            auditEvent(AuditOrigin::FAILSAFE_TIMER, AuditAction::FECHAR, i, AuditResult::OK);
+    }
+    for (uint8_t i = 0; i < IrrigationSettings::MAX_GPO; i++) {
+        if ((gBefore >> i & 1) && !(gAfter >> i & 1))
+            auditEvent(AuditOrigin::FAILSAFE_TIMER, AuditAction::GPO_OFF, i, AuditResult::OK);
+    }
     stationPairing.tick(millis());
     gatewayPairing.tick(millis());
 
@@ -691,6 +729,14 @@ int32_t IrrigationModule::runOnce()
             service->sendToMesh(p, RX_SRC_LOCAL, false);
         else
             packetPool.release(p);
+    }
+
+    // §8.9: flush do mini-log com debounce de 60 s — preserva flash e sobrevive a reboot.
+    // Roda antes do branch de papel para garantir flush em qualquer configuração.
+    if (auditDirty && millis() - lastAuditSaveMs >= 60000) {
+        saveAuditLog();
+        auditDirty = false;
+        lastAuditSaveMs = millis();
     }
 
     if ((IrrigationRole)settings.role != IrrigationRole::ESTACAO) {
@@ -843,6 +889,8 @@ void IrrigationModule::commitPairing()
         return;
     }
     safeMode = false;
+    // §8.9: audita pareamento concluído com o gateway.
+    auditEvent(AuditOrigin::SISTEMA, AuditAction::PAREAR, 0, AuditResult::OK, g.gatewayId);
     sendEvento(EV_PAIRED, g.gatewayId);
     LOG_INFO("Irrigation: paired to gateway 0x%08x, rebooting in 3 s", g.gatewayId);
     rebootAtMsec = millis() + 3000;
@@ -870,6 +918,10 @@ void IrrigationModule::factoryReset()
     saveIrrigationSettings(def); // boundGateway=0, epoch=0: nó volta ao modo fábrica
 #ifdef FSCom
     FSCom.remove(ALLOWLIST_PATH);
+    // §8.9: factory reset apaga o log — estação volta zerada (decisão de design:
+    // log de auditoria é parte da identidade do nó; reset deve limpar tudo).
+    audit.clear();
+    FSCom.remove(AUDIT_LOG_PATH);
 #endif
     rebootAtMsec = millis() + 2000;
 }
@@ -953,14 +1005,26 @@ void IrrigationModule::onButtonEvent(ButtonGestureDetector::Event ev)
         if (valves.isOpen(0)) {
             valves.close(0);
             sendEvento(EV_MANUAL_CLOSE);
+            // §8.9: fechamento manual por botão físico.
+            auditEvent(AuditOrigin::BOTAO_FISICO, AuditAction::FECHAR, 0, AuditResult::OK);
         } else if (valves.open(0, DEFAULT_MANUAL_OPEN_S, settings.maxOpenConfigS, millis()) ==
                    ValveController::Result::OK) {
             sendEvento(EV_MANUAL_OPEN, DEFAULT_MANUAL_OPEN_S);
+            // §8.9: abertura manual por botão físico.
+            auditEvent(AuditOrigin::BOTAO_FISICO, AuditAction::ABRIR, 0, AuditResult::OK);
+        } else {
+            // §8.9: abertura manual rejeitada (bateria baixa ou configuração).
+            auditEvent(AuditOrigin::BOTAO_FISICO, AuditAction::ABRIR, 0, AuditResult::NACK);
         }
         break;
     case Ev::LONG_3S:
-        if (valves.open(0, 10, settings.maxOpenConfigS, millis()) == ValveController::Result::OK)
+        if (valves.open(0, 10, settings.maxOpenConfigS, millis()) == ValveController::Result::OK) {
             sendEvento(EV_TEST_PULSE);
+            // §8.9: pulso de teste por botão físico.
+            auditEvent(AuditOrigin::BOTAO_FISICO, AuditAction::PULSO, 0, AuditResult::OK);
+        } else {
+            auditEvent(AuditOrigin::BOTAO_FISICO, AuditAction::PULSO, 0, AuditResult::NACK);
+        }
         break;
     default:
         break;
@@ -1032,6 +1096,69 @@ bool IrrigationModule::saveAllowlist()
     if (!renameFile(ALLOWLIST_TMP, ALLOWLIST_PATH)) {
         LOG_ERROR("Irrigation allowlist rename failed");
         FSCom.remove(ALLOWLIST_TMP);
+        return false;
+    }
+    return true;
+#else
+    return false;
+#endif
+}
+
+// ---------------------------------------------------------------------------
+// Mini-log de auditoria (§8.9) — staged-write, espelha padrão da allowlist.
+// Buffer: magic(4) + count(2) + reservado(2) + 100×16 bytes + CRC32(4) = 1608 bytes.
+// ---------------------------------------------------------------------------
+
+void IrrigationModule::auditEvent(AuditOrigin o, AuditAction a, uint8_t target, AuditResult res, uint32_t node, uint32_t seq)
+{
+    AuditRecord r = {};
+    computeLocalSecs(r.tsSecs); // 0 se sem RTC no momento (tolerado pela spec)
+    r.origin = (uint8_t)o;
+    r.action = (uint8_t)a;
+    r.target = target;
+    r.result = (uint8_t)res;
+    r.node = node;
+    r.seq = seq;
+    audit.append(r);
+    auditDirty = true;
+}
+
+bool IrrigationModule::loadAuditLog()
+{
+#ifdef FSCom
+    auto f = FSCom.open(AUDIT_LOG_PATH, FILE_O_READ);
+    if (!f)
+        return false;
+    uint8_t raw[8 + AUDIT_CAP * 16 + 4];
+    size_t n = f.read(raw, sizeof(raw));
+    f.close();
+    return audit.deserialize(raw, n);
+#else
+    return false;
+#endif
+}
+
+bool IrrigationModule::saveAuditLog()
+{
+#ifdef FSCom
+    uint8_t raw[8 + AUDIT_CAP * 16 + 4];
+    size_t n = audit.serialize(raw, sizeof(raw));
+    if (n == 0)
+        return false;
+    // Staged write: grava em .tmp depois renomeia — falha de energia não corrompe o arquivo ativo.
+    auto f = FSCom.open(AUDIT_LOG_TMP, FILE_O_WRITE);
+    if (!f)
+        return false;
+    size_t w = f.write(raw, n);
+    f.close();
+    if (w != n) {
+        FSCom.remove(AUDIT_LOG_TMP);
+        return false;
+    }
+    FSCom.remove(AUDIT_LOG_PATH);
+    if (!renameFile(AUDIT_LOG_TMP, AUDIT_LOG_PATH)) {
+        LOG_ERROR("Irrigation auditlog rename failed");
+        FSCom.remove(AUDIT_LOG_TMP);
         return false;
     }
     return true;
@@ -1322,7 +1449,10 @@ void IrrigationModule::portalFillNodeState(IrrigationWeb::NodeStateCtx &out) con
 bool IrrigationModule::portalPulse(const IrrigationWeb::PortalPulseReq &p)
 {
     // Teste de pulso local: abre a válvula com fechamento automático pelo timer fail-safe.
-    if (valves.open(p.valveId, p.durationS, settings.maxOpenConfigS, millis()) != ValveController::Result::OK)
+    bool ok = valves.open(p.valveId, p.durationS, settings.maxOpenConfigS, millis()) == ValveController::Result::OK;
+    // §8.9: audita pulso solicitado pelo portal de campo.
+    auditEvent(AuditOrigin::PORTAL_CAMPO, AuditAction::PULSO, p.valveId, ok ? AuditResult::OK : AuditResult::NACK);
+    if (!ok)
         return false;
     sendEvento(EV_TEST_PULSE);
     return true;
@@ -1331,16 +1461,24 @@ bool IrrigationModule::portalPulse(const IrrigationWeb::PortalPulseReq &p)
 bool IrrigationModule::portalRunNetCommand(const IrrigationWeb::NetCommand &c)
 {
     // Ação desconhecida (só 0=fechar, 1=abrir): rejeita — não trata silenciosamente como fechar.
-    if (c.action != 0 && c.action != 1)
+    if (c.action != 0 && c.action != 1) {
+        auditEvent(AuditOrigin::PORTAL_CAMPO, c.action == 1 ? AuditAction::ABRIR : AuditAction::FECHAR,
+                   c.zoneId, AuditResult::NACK);
         return false;
+    }
     if (gwIsGateway()) {
         // Modo seguro: não abre (mesmo intertravamento de handleCmdValvula). Fechar continua permitido.
-        if (safeMode && c.action == 1)
+        if (safeMode && c.action == 1) {
+            auditEvent(AuditOrigin::PORTAL_CAMPO, AuditAction::ABRIR, c.zoneId, AuditResult::NACK);
             return false;
+        }
         // Este nó é o gateway: aplica local sem rádio (reusa a validação de zona do gateway).
         const Zone *z = gateway.zones.byId(c.zoneId);
-        if (!z)
+        if (!z) {
+            auditEvent(AuditOrigin::PORTAL_CAMPO, c.action == 1 ? AuditAction::ABRIR : AuditAction::FECHAR,
+                       c.zoneId, AuditResult::NACK);
             return false;
+        }
         const StationEntry *st = gateway.stations.byNode(z->node);
         uint8_t attempts = (st && st->retries > 0) ? st->retries : 3;
         if (c.action == 1) {
@@ -1351,11 +1489,17 @@ bool IrrigationModule::portalRunNetCommand(const IrrigationWeb::NetCommand &c)
         } else {
             gwSendValveCmd(z->node, z->index, z->tipo, 0, 0, z->id, 1);
         }
+        // §8.9: audita comando de rede via portal (gateway aplica localmente).
+        auditEvent(AuditOrigin::PORTAL_CAMPO, c.action == 1 ? AuditAction::ABRIR : AuditAction::FECHAR,
+                   c.zoneId, AuditResult::OK);
         return true;
     }
     // Nó de campo: encaminha ao gateway vinculado por rádio.
-    if (settings.boundGateway == 0)
+    if (settings.boundGateway == 0) {
+        auditEvent(AuditOrigin::PORTAL_CAMPO, c.action == 1 ? AuditAction::ABRIR : AuditAction::FECHAR,
+                   c.zoneId, AuditResult::NACK);
         return false;
+    }
     IrrigationProto::RemoteCmd m = {};
     m.zoneId = c.zoneId;
     m.action = c.action;
@@ -1366,9 +1510,15 @@ bool IrrigationModule::portalRunNetCommand(const IrrigationWeb::NetCommand &c)
         (uint16_t)IrrigationProto::encodeRemoteCmd(p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), ++txSeq, m);
     if (!p->decoded.payload.size) {
         packetPool.release(p);
+        // §8.9: falha de encode = rejeição local.
+        auditEvent(AuditOrigin::PORTAL_CAMPO, c.action == 1 ? AuditAction::ABRIR : AuditAction::FECHAR,
+                   c.zoneId, AuditResult::NACK);
         return false;
     }
     service->sendToMesh(p, RX_SRC_LOCAL, false);
+    // §8.9: TX despachado ao gateway — OK = rádio TX enviado (sem confirmação end-to-end aqui).
+    auditEvent(AuditOrigin::PORTAL_CAMPO, c.action == 1 ? AuditAction::ABRIR : AuditAction::FECHAR,
+               c.zoneId, AuditResult::OK);
     return true;
 }
 
