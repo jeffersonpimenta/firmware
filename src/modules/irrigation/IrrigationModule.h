@@ -108,6 +108,7 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     void sendEvento(uint8_t code, uint32_t arg = 0);
     void refreshLedMode(); // call at end of runOnce
     void tickTamper(uint32_t nowMs);
+    void resetTamperState();
     void configureSensorPins();
     bool loadAllowlist();
     bool saveAllowlist();

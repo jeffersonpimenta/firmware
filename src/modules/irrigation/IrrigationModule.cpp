@@ -518,6 +518,16 @@ void IrrigationModule::tickTamper(uint32_t nowMs)
         sendEvento(IrrigationProto::EV_TAMPER, tamperActive ? 1 : 0);
 }
 
+void IrrigationModule::resetTamperState()
+{
+    // Config nova pode trocar o pino/polaridade do tamper: reinicia o debounce
+    // para que a primeira amostra inicialize sem disparar EV_TAMPER espúrio.
+    tamperActive = false;
+    tamperRawLast = false;
+    tamperRawSinceMs = 0;
+    tamperInit = false;
+}
+
 // Monta a config remota mesclada: identidade preservada, limites saneados.
 IrrigationSettings IrrigationModule::mergeRemoteConfig(const IrrigationSettings &fresh, uint32_t newEpoch) const
 {
@@ -552,6 +562,7 @@ void IrrigationModule::activateSettings(const IrrigationSettings &merged)
     gpos.setNumGpos(countGpos(settings));
     configureSensorPins();
     sampler.configure(settings);
+    resetTamperState();
     rateLimiter = RateLimiter(settings.cmdRatePerMin);
 }
 
