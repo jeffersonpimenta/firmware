@@ -69,5 +69,10 @@ void GpoController::setNumGpos(uint8_t n)
         slots[i].on = false;
         slots[i].offAtMs = 0;
     }
+    // Cresceu: estado físico desconhecido após reconfig em runtime → força desligado
+    for (uint8_t i = numGpos; i < n; i++) {
+        driver.set(i, false);
+        slots[i] = Slot{};
+    }
     numGpos = n;
 }

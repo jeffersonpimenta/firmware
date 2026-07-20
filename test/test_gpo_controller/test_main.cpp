@@ -57,6 +57,16 @@ static void test_shrink_turns_off_removed()
     TEST_ASSERT_EQUAL_UINT8(0, g.states());
 }
 
+static void test_grow_forces_new_slots_off()
+{
+    FakeGpoDriver d;
+    GpoController g(d, 1);
+    d.level[1] = true; // estado físico desconhecido (ex.: reconfig em runtime)
+    g.setNumGpos(2);
+    TEST_ASSERT_FALSE(d.level[1]); // driver forçado a desligar o slot novo
+    TEST_ASSERT_FALSE(g.isOn(1));
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -65,6 +75,7 @@ void setup()
     RUN_TEST(test_timed_auto_off);
     RUN_TEST(test_invalid_id_and_alloff);
     RUN_TEST(test_shrink_turns_off_removed);
+    RUN_TEST(test_grow_forces_new_slots_off);
     exit(UNITY_END());
 }
 
