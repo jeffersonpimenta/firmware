@@ -81,6 +81,14 @@ static_assert(sizeof(IrrigationSettings::SensorSlot) == 16, "SensorSlot é ABI o
 // Bump version AND this assert on any layout change.
 static_assert(sizeof(IrrigationSettings) == 128, "on-disk settings format is ABI-dependent; bump version on layout change");
 
+// Pino de offsets do apêndice v4: drift silencioso de layout vira erro de compilação.
+static_assert(offsetof(IrrigationSettings, pinsGpo) == 52, "ABI v4");
+static_assert(offsetof(IrrigationSettings, pinTamper) == 54, "ABI v4");
+static_assert(offsetof(IrrigationSettings, hwFlags) == 55, "ABI v4");
+static_assert(offsetof(IrrigationSettings, latE7) == 56, "ABI v4");
+static_assert(offsetof(IrrigationSettings, lonE7) == 60, "ABI v4");
+static_assert(offsetof(IrrigationSettings, sensores) == 64, "ABI v4");
+
 // Blob v1, v2, v3 ou v4 → struct v4. false = magic/versão/tamanho inválido (out fica intacto).
 bool migrateIrrigationSettings(const uint8_t *raw, size_t n, IrrigationSettings &out);
 

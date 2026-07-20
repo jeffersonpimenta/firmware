@@ -168,11 +168,24 @@ static void test_migrate_rejectsBadInput()
     TEST_ASSERT_FALSE(migrateIrrigationSettings(img, sizeof(img), s));
 }
 
-static void test_migrate_v2_wrongSize_rejected()
+static void test_migrate_v4_wrongSize_rejected()
 {
     IrrigationSettings in;
     IrrigationSettings out;
     TEST_ASSERT_FALSE(migrateIrrigationSettings((const uint8_t *)&in, sizeof(in) - 1, out));
+}
+
+static void test_migrate_v2_wrongSize_rejected()
+{
+    // Blob sintético: magic correto + version=2, mas apenas 51 bytes (v2/v3 exigem exatamente 52).
+    uint8_t buf[51];
+    memset(buf, 0, sizeof(buf));
+    uint32_t magic = IrrigationSettings::MAGIC;
+    memcpy(buf + 0, &magic, 4);
+    uint16_t ver2 = 2;
+    memcpy(buf + 4, &ver2, 2);
+    IrrigationSettings out;
+    TEST_ASSERT_FALSE(migrateIrrigationSettings(buf, sizeof(buf), out));
 }
 
 static void test_migrate_v3_to_v4()
@@ -219,7 +232,7 @@ static void test_v4_roundtrip_and_size()
 
 static void test_defaultStruct_bytesDeterministic()
 {
-    // Constrói duas instâncias sobre lixo de memória diferente: todos os 52 bytes
+    // Constrói duas instâncias sobre lixo de memória diferente: todos os 128 bytes
     // (incluindo padding explícito) devem ser idênticos — CRC estável p/ o gateway.
     alignas(IrrigationSettings) uint8_t rawA[sizeof(IrrigationSettings)];
     alignas(IrrigationSettings) uint8_t rawB[sizeof(IrrigationSettings)];
@@ -243,6 +256,7 @@ void setup()
     RUN_TEST(test_migrate_v3_passthrough);
     RUN_TEST(test_migrate_v3_passthroughKeepsPins);
     RUN_TEST(test_migrate_rejectsBadInput);
+    RUN_TEST(test_migrate_v4_wrongSize_rejected);
     RUN_TEST(test_migrate_v2_wrongSize_rejected);
     RUN_TEST(test_migrate_v3_to_v4);
     RUN_TEST(test_v4_roundtrip_and_size);
