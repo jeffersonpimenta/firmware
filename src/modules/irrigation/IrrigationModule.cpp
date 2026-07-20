@@ -39,6 +39,32 @@ IrrigationModule *irrigationModule;
 
 using namespace IrrigationProto;
 
+namespace
+{
+// Leitor Arduino dos sensores; testes do SensorSampler usam mock próprio.
+struct ArduinoSensorReader : ISensorReader {
+    uint16_t readAdc(int8_t pin) override
+    {
+#ifndef ARCH_PORTDUINO
+        return (uint16_t)analogRead(pin);
+#else
+        (void)pin;
+        return 0;
+#endif
+    }
+    bool readLevel(int8_t pin) override
+    {
+#ifndef ARCH_PORTDUINO
+        return digitalRead(pin) != 0;
+#else
+        (void)pin;
+        return false;
+#endif
+    }
+};
+ArduinoSensorReader sensorReader;
+} // namespace
+
 static IrrigationSettings loadIrrigationSettingsOrDefault()
 {
     IrrigationSettings s;
@@ -118,6 +144,28 @@ void GpioGpoDriver::set(uint8_t index, bool on)
     LOG_INFO("GPO %d %s", index, on ? "ON" : "OFF");
 }
 
+void IrrigationModule::configureSensorPins()
+{
+#ifndef ARCH_PORTDUINO
+    for (uint8_t i = 0; i < IrrigationSettings::MAX_SENSORS; i++) {
+        const auto &sl = settings.sensores[i];
+        if (sl.pino < 0)
+            continue;
+        if (sl.tipo == 0) {
+            // Digital: ativo-baixo usa pull-up interno
+            pinMode(sl.pino, (sl.flags & 1) ? INPUT_PULLUP : INPUT);
+        } else {
+            // Analógico
+            pinMode(sl.pino, INPUT);
+        }
+    }
+    if (settings.pinTamper >= 0) {
+        // bit0 de hwFlags = ativo-baixo: usa pull-up interno
+        pinMode(settings.pinTamper, (settings.hwFlags & 1) ? INPUT_PULLUP : INPUT);
+    }
+#endif
+}
+
 // ---------------------------------------------------------------------------
 // IrrigationUiThread — polls GPIO button at 25 ms, drives LED GPIO.
 // Decision §4: only instantiated when pinBtn >= 0 || pinLed >= 0.
@@ -175,6 +223,8 @@ IrrigationModule::IrrigationModule()
     driver.configure(settings);
     gpoDriver.configure(settings);
     gpos.setNumGpos(countGpos(settings));
+    configureSensorPins();
+    sampler.configure(settings);
     // Boot sempre em estado fechado (spec §5.5): solenoides latching podem ter
     // ficado abertos num reset com válvula acionada. forceCloseAll() pulsa
     // incondicionalmente, sem depender do bit open interno (que está falso
@@ -402,6 +452,12 @@ void IrrigationModule::sendHeartbeat()
     hb.vbatCentiV = batteryCentiV();
     hb.configEpoch = settings.configEpoch;
     hb.flags = safeMode ? HB_FLAG_SAFE_MODE : 0;
+    if (tamperActive)
+        hb.flags |= HB_FLAG_TAMPER;
+    IrrigationProto::SensorReading rs[IrrigationSettings::MAX_SENSORS];
+    hb.sensorCount = (uint8_t)sampler.readings(rs);
+    for (uint8_t i = 0; i < hb.sensorCount; i++)
+        hb.sensors[i] = rs[i];
 
     meshtastic_MeshPacket *p = allocDataPacket();
     p->to = settings.boundGateway ? settings.boundGateway : NODENUM_BROADCAST;
@@ -411,6 +467,7 @@ void IrrigationModule::sendHeartbeat()
         return;
     }
     service->sendToMesh(p, RX_SRC_LOCAL, false);
+    sampler.noteReported(millis());
     LOG_DEBUG("Irrigation heartbeat sent, valves=0x%x vbat=%u cV", hb.valveStates, hb.vbatCentiV);
 }
 
@@ -419,6 +476,46 @@ uint16_t IrrigationModule::batteryCentiV() const
     if (powerStatus && powerStatus->getHasBattery())
         return powerStatus->getBatteryVoltageMv() / 10;
     return 0;
+}
+
+void IrrigationModule::tickTamper(uint32_t nowMs)
+{
+    if (settings.pinTamper < 0)
+        return;
+    bool raw = sensorReader.readLevel(settings.pinTamper);
+    // Aplica polaridade: ativo-baixo inverte o sinal
+    bool ativo = (settings.hwFlags & 1) ? !raw : raw;
+
+    // Debounce de 200 ms fixo (§8.12)
+    static constexpr uint32_t TAMPER_DEBOUNCE_MS = 200;
+
+    if (!tamperInit) {
+        // Primeira amostra: inicializa estado sem emitir evento
+        tamperRawLast = ativo;
+        tamperRawSinceMs = nowMs;
+        tamperActive = ativo;
+        tamperInit = true;
+        return;
+    }
+
+    if (ativo != tamperRawLast) {
+        // Mudança de nível: reinicia janela de debounce
+        tamperRawLast = ativo;
+        tamperRawSinceMs = nowMs;
+        return;
+    }
+
+    // Nível estável — verifica se já passou o debounce e se mudou o estado confirmado
+    if (ativo == tamperActive)
+        return; // sem mudança
+    if ((nowMs - tamperRawSinceMs) < TAMPER_DEBOUNCE_MS)
+        return; // ainda dentro da janela
+
+    bool novoEstado = ativo;
+    tamperActive = novoEstado;
+    // Janela de manutenção automática: portal aberto suprime o EVENTO (§8.12); estado segue no heartbeat.
+    if (!portal.apShouldBeUp())
+        sendEvento(IrrigationProto::EV_TAMPER, tamperActive ? 1 : 0);
 }
 
 // Monta a config remota mesclada: identidade preservada, limites saneados.
@@ -453,6 +550,8 @@ void IrrigationModule::activateSettings(const IrrigationSettings &merged)
     valves.setNumValves(settings.numValves);
     gpoDriver.configure(settings);
     gpos.setNumGpos(countGpos(settings));
+    configureSensorPins();
+    sampler.configure(settings);
     rateLimiter = RateLimiter(settings.cmdRatePerMin);
 }
 
@@ -591,6 +690,11 @@ int32_t IrrigationModule::runOnce()
     }
     uint16_t vbat = batteryCentiV();
     valves.setBatteryLockout(vbat != 0 && vbat < settings.vbatMinAbrirCentiV);
+
+    sampler.tick(millis(), sensorReader);
+    tickTamper(millis());
+    if (sampler.earlyHeartbeatDue(millis()))
+        sendHeartbeat(); // mudança significativa de sensor: reporte antecipado (rate-limited no sampler)
 
     if (bootHeartbeatPending && millis() > 10000) {
         bootHeartbeatPending = false;

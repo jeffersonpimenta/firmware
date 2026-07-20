@@ -14,6 +14,7 @@
 #include "modules/irrigation/PortalSession.h"
 #include "modules/irrigation/GpoController.h"
 #include "modules/irrigation/ValveController.h"
+#include "modules/irrigation/SensorSampler.h"
 
 // Forward-decl da cola web (definida em IrrigationWebApi.h, incluída só no .cpp).
 namespace IrrigationWeb
@@ -106,6 +107,8 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     void logFarmKey(); // dumps primary PSK as base64 to serial (spec §11.2)
     void sendEvento(uint8_t code, uint32_t arg = 0);
     void refreshLedMode(); // call at end of runOnce
+    void tickTamper(uint32_t nowMs);
+    void configureSensorPins();
     bool loadAllowlist();
     bool saveAllowlist();
     bool loadGatewayState();
@@ -150,6 +153,12 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     // Marcador de "reconhecimento" de alertas (Fase 5a): alertas com atMs <= este valor são
     // considerados reconhecidos pelo overview. ACK_ALERT seta = millis().
     uint32_t lastAckAllMs = 0;
+    SensorSampler sampler;
+    // Tamper (§8.12): debounce próprio, fora dos 4 slots de sensor.
+    bool tamperActive = false;
+    bool tamperRawLast = false;
+    uint32_t tamperRawSinceMs = 0;
+    bool tamperInit = false;
 };
 
 extern IrrigationModule *irrigationModule;
