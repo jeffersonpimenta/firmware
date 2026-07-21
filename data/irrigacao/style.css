@@ -582,25 +582,26 @@ body {
 .muted { color: var(--muted); font-size: 0.875em; }
 .mono { font-family: monospace; }
 
-/* ===== Portal field — tamper alert ===== */
-.tamper { color: #b00; font-weight: 700; }
+/* ===== Portal field — regras escopadas em .field-portal para NÃO vazar no painel 5a (gateway) ===== */
+/* tamper alert */
+.field-portal .tamper { color: #b00; font-weight: 700; }
 
-/* ===== Portal field — audit log table ===== */
-table { width: 100%; border-collapse: collapse; }
-td, th { border-bottom: 1px solid var(--border); padding: 2px 4px; text-align: left; font-size: .85em; }
+/* audit log table */
+.field-portal table { width: 100%; border-collapse: collapse; }
+.field-portal td, .field-portal th { border-bottom: 1px solid var(--border); padding: 2px 4px; text-align: left; font-size: .85em; }
 
-/* ===== Portal field — nav tabs + section layout ===== */
-nav.tabs { display: flex; gap: 8px; padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
-nav.tabs button { font-family: inherit; font-size: 14px; font-weight: 600; padding: 6px 14px; border: 1px solid var(--border); border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; }
-nav.tabs button.active { background: var(--green); color: #fff; border-color: var(--green); }
-section.tab { display: flex; flex-direction: column; gap: 12px; padding: 16px; max-width: 480px; margin: 0 auto; }
-section.tab.hidden { display: none !important; }
-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
-header h1 { margin: 0; font-size: 1.1em; }
-label { display: block; margin-bottom: 6px; font-size: 0.9em; }
-label input { display: block; margin-top: 2px; width: 100%; box-sizing: border-box; border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: 0.9em; font-family: inherit; }
-button[type="submit"], button[type="button"] { font-family: inherit; cursor: pointer; font-size: 0.875em; padding: 6px 14px; border: 1px solid var(--border); border-radius: 6px; background: var(--green); color: #fff; font-weight: 600; }
-button[type="submit"]:hover, button[type="button"]:hover { opacity: 0.85; }
+/* nav tabs + section layout */
+.field-portal nav.tabs { display: flex; gap: 8px; padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--border); border-top: none; }
+.field-portal nav.tabs button { flex: none; font-family: inherit; font-size: 14px; font-weight: 600; padding: 6px 14px; border: 1px solid var(--border); border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; }
+.field-portal nav.tabs button.active { background: var(--green); color: #fff; border-color: var(--green); }
+.field-portal section.tab { display: flex; flex-direction: column; gap: 12px; padding: 16px; max-width: 480px; margin: 0 auto; }
+.field-portal section.tab.hidden { display: none !important; }
+.field-portal header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.field-portal header h1 { margin: 0; font-size: 1.1em; }
+.field-portal label { display: block; margin-bottom: 6px; font-size: 0.9em; }
+.field-portal label input { display: block; margin-top: 2px; width: 100%; box-sizing: border-box; border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: 0.9em; font-family: inherit; }
+.field-portal button[type="submit"], .field-portal button[type="button"] { font-family: inherit; cursor: pointer; font-size: 0.875em; padding: 6px 14px; border: 1px solid var(--border); border-radius: 6px; background: var(--green); color: #fff; font-weight: 600; }
+.field-portal button[type="submit"]:hover, .field-portal button[type="button"]:hover { opacity: 0.85; }
 
 /* ===== Bottom tab bar ===== */
 .tabs {
