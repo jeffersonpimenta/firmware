@@ -153,8 +153,14 @@ static void test_buildPortalLog_json()
     char buf[512];
     size_t n = buildPortalLog(log, buf, sizeof(buf));
     TEST_ASSERT_GREATER_THAN(0, n);
-    TEST_ASSERT_TRUE(contains(buf, "\"ts\":20")); // mais recente primeiro
+    TEST_ASSERT_TRUE(contains(buf, "\"ts\":20"));
     TEST_ASSERT_TRUE(contains(buf, "\"origem\":3"));
+    // mais recente primeiro: ts=20 aparece ANTES de ts=10 no JSON
+    const char *p20 = strstr(buf, "\"ts\":20");
+    const char *p10 = strstr(buf, "\"ts\":10");
+    TEST_ASSERT_NOT_NULL(p20);
+    TEST_ASSERT_NOT_NULL(p10);
+    TEST_ASSERT_TRUE(p20 < p10);
 }
 
 static void test_parseGpoReq_valid()

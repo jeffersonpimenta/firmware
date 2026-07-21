@@ -55,6 +55,8 @@ struct PortalSensorsCtx {
 };
 size_t buildSensors(const PortalSensorsCtx &ctx, char *buf, size_t cap);
 
+// Serializa até 100 registros. Pior caso ~96 B/registro → ~9,6 KB para um log cheio;
+// o endpoint (Task 10) deve alocar ~10 KB (heap, não stack no ESP32) e checar done()==0.
 size_t buildPortalLog(const AuditLog &log, char *buf, size_t cap);
 
 struct PortalGpoReq {
