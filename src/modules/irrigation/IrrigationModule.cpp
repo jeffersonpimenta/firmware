@@ -245,6 +245,10 @@ IrrigationModule::IrrigationModule()
     auditEvent(AuditOrigin::SISTEMA, AuditAction::REBOOT, /*target=*/0, AuditResult::OK);
     if (safeMode)
         auditEvent(AuditOrigin::SISTEMA, AuditAction::SAFE_MODE_IN, 0, AuditResult::OK);
+    // §8.9: grava o registro de boot já — sem esperar o debounce de 60 s (útil p/ diagnosticar reboot loops).
+    saveAuditLog();
+    auditDirty = false;
+    lastAuditSaveMs = millis();
     LOG_INFO("IrrigationModule role=%d valves=%d gateway=0x%08x epoch=%u safe=%d", settings.role, settings.numValves,
              settings.boundGateway, settings.configEpoch, (int)safeMode);
     // Spin up the GPIO button/LED thread only when at least one pin is wired (spec §8.6/§8.7).
@@ -597,20 +601,23 @@ void IrrigationModule::handleSetConfig(const meshtastic_MeshPacket &mp, const He
 {
     if (!senderAuthorized(mp.from)) {
         sendAck(mp.from, h.seq, ACK_NACK, REASON_UNAUTHORIZED);
+        auditEvent(AuditOrigin::PAINEL, AuditAction::CMD_REJEITADO, REASON_UNAUTHORIZED, AuditResult::NACK, mp.from, h.seq);
         return;
     }
     if (!seqTable.checkAndUpdate(mp.from, h.seq)) {
         LOG_WARN("Irrigation: replayed config seq %u from 0x%08x", h.seq, mp.from);
-        return;
+        return; // replay silencioso: sem NACK, sem auditoria
     }
     if (!rateLimiter.allow(millis())) {
         sendAck(mp.from, h.seq, ACK_NACK, REASON_RATE_LIMIT);
+        auditEvent(AuditOrigin::PAINEL, AuditAction::CMD_REJEITADO, REASON_RATE_LIMIT, AuditResult::NACK, mp.from, h.seq);
         return;
     }
 
     SetConfig sc;
     if (!decodeSetConfig(mp.decoded.payload.bytes, mp.decoded.payload.size, sc)) {
         sendAck(mp.from, h.seq, ACK_NACK, REASON_BAD_PAYLOAD);
+        auditEvent(AuditOrigin::PAINEL, AuditAction::CMD_REJEITADO, REASON_BAD_PAYLOAD, AuditResult::NACK, mp.from, h.seq);
         return;
     }
 
@@ -620,12 +627,15 @@ void IrrigationModule::handleSetConfig(const meshtastic_MeshPacket &mp, const He
         return; // fragmento intermediário: sem ACK (ACK = commit, §5.5)
     case FragmentReassembler::Add::TOO_BIG:
         sendAck(mp.from, h.seq, ACK_NACK, REASON_CONFIG_TOO_BIG);
+        auditEvent(AuditOrigin::PAINEL, AuditAction::CMD_REJEITADO, REASON_CONFIG_TOO_BIG, AuditResult::NACK, mp.from, h.seq);
         return;
     case FragmentReassembler::Add::INVALID:
         sendAck(mp.from, h.seq, ACK_NACK, REASON_FRAG_INVALID);
+        auditEvent(AuditOrigin::PAINEL, AuditAction::CMD_REJEITADO, REASON_FRAG_INVALID, AuditResult::NACK, mp.from, h.seq);
         return;
     case FragmentReassembler::Add::BAD_CRC:
         sendAck(mp.from, h.seq, ACK_NACK, REASON_BAD_CRC);
+        auditEvent(AuditOrigin::PAINEL, AuditAction::CMD_REJEITADO, REASON_BAD_CRC, AuditResult::NACK, mp.from, h.seq);
         return;
     case FragmentReassembler::Add::COMPLETE:
         break;
@@ -635,6 +645,7 @@ void IrrigationModule::handleSetConfig(const meshtastic_MeshPacket &mp, const He
     if (!migrateIrrigationSettings(reasm.blob(), reasm.blobLen(), fresh)) {
         reasm.reset();
         sendAck(mp.from, h.seq, ACK_NACK, REASON_BAD_PAYLOAD);
+        auditEvent(AuditOrigin::PAINEL, AuditAction::CMD_REJEITADO, REASON_BAD_PAYLOAD, AuditResult::NACK, mp.from, h.seq);
         return;
     }
     uint32_t newEpoch = reasm.epoch();
@@ -643,6 +654,7 @@ void IrrigationModule::handleSetConfig(const meshtastic_MeshPacket &mp, const He
     IrrigationSettings merged = mergeRemoteConfig(fresh, newEpoch);
     if (!saveIrrigationSettings(merged)) {
         sendAck(mp.from, h.seq, ACK_NACK, REASON_COMMIT_FAIL);
+        auditEvent(AuditOrigin::PAINEL, AuditAction::CMD_REJEITADO, REASON_COMMIT_FAIL, AuditResult::NACK, mp.from, h.seq);
         return;
     }
     activateSettings(merged);
@@ -929,6 +941,7 @@ void IrrigationModule::factoryReset()
     // §8.9: factory reset apaga o log — estação volta zerada (decisão de design:
     // log de auditoria é parte da identidade do nó; reset deve limpar tudo).
     audit.clear();
+    auditDirty = false; // reset já apagou o arquivo; não deixa o debounce gravar anel vazio.
     FSCom.remove(AUDIT_LOG_PATH);
 #endif
     rebootAtMsec = millis() + 2000;
