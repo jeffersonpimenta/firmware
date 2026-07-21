@@ -5,6 +5,7 @@
 #include "modules/irrigation/PortalApi.h"
 
 #include <Arduino.h>
+#include <cstdlib> // malloc/free explícitos (hLog aloca ~10 KB no heap)
 
 #undef str
 #include <HTTPRequest.hpp>
