@@ -7,6 +7,9 @@ enum class AuditOrigin : uint8_t {
     SISTEMA = 0, CRONOGRAMA, PAINEL, PORTAL_CAMPO, BOTAO_FISICO,
     ENTRADA_FISICA, INTERTRAVAMENTO, FAILSAFE_TIMER, SERVICO
 };
+// Valores são ABI persistida (log em flash) e contrato com os rótulos do JS (portal/app.js):
+// só APPEND no fim, nunca reordenar/remover. FACTORY_RESET (log é apagado no reset, não se
+// audita) e HIBERNA_IN/OUT são reservados p/ fase futura — ainda não emitidos por auditEvent.
 enum class AuditAction : uint8_t {
     ABRIR = 0, FECHAR, PULSO, GPO_ON, GPO_OFF, PAREAR, FACTORY_RESET,
     CONFIG_EPOCH, SAFE_MODE_IN, SAFE_MODE_OUT, TAMPER, REBOOT,
