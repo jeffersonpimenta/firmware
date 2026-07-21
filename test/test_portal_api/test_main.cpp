@@ -1,5 +1,6 @@
 #include "Arduino.h"
 #include "TestUtil.h"
+#include "modules/irrigation/AuditLog.h"
 #include "modules/irrigation/PortalApi.h"
 #include <stdio.h>
 #include <string.h>
@@ -116,6 +117,97 @@ static void test_buildRoster_stationEmpty()
     TEST_ASSERT_EQUAL_STRING("[]", buf);
 }
 
+static void test_buildSensors_json()
+{
+    PortalSensorsCtx c = {};
+    c.count = 2;
+    c.items[0] = {0, 1, 1, 152}; // analógico, bar, 1,52
+    c.items[1] = {1, 0, 0, 100}; // digital ativo
+    char buf[256];
+    size_t n = buildSensors(c, buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_TRUE(contains(buf, "\"id\":0"));
+    TEST_ASSERT_TRUE(contains(buf, "\"unidade\":\"bar\""));
+    TEST_ASSERT_TRUE(contains(buf, "\"valor\":152"));
+    TEST_ASSERT_TRUE(contains(buf, "\"tipo\":0"));
+}
+
+static void test_buildPortalLog_json()
+{
+    AuditRecord store[8];
+    AuditLog log(store, 8);
+    AuditRecord r1 = {};
+    r1.tsSecs = 10;
+    r1.origin = 4;
+    r1.action = 0;
+    r1.target = 1;
+    r1.result = 0;
+    AuditRecord r2 = {};
+    r2.tsSecs = 20;
+    r2.origin = 3;
+    r2.action = 1;
+    r2.target = 2;
+    r2.result = 1;
+    log.append(r1);
+    log.append(r2);
+    char buf[512];
+    size_t n = buildPortalLog(log, buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_TRUE(contains(buf, "\"ts\":20")); // mais recente primeiro
+    TEST_ASSERT_TRUE(contains(buf, "\"origem\":3"));
+}
+
+static void test_parseGpoReq_valid()
+{
+    PortalGpoReq g = {};
+    const char *j = "{\"gpo\":1,\"action\":1,\"durationS\":0,\"confirm\":true}";
+    ParseResult r = parseGpoReq(j, strlen(j), g);
+    TEST_ASSERT_TRUE(r.ok);
+    TEST_ASSERT_EQUAL_UINT8(1, g.gpoId);
+    TEST_ASSERT_EQUAL_UINT8(1, g.action);
+    TEST_ASSERT_EQUAL_UINT16(0, g.durationS);
+    TEST_ASSERT_TRUE(g.confirm);
+}
+
+static void test_parseGpoReq_confirmAbsentDefaultsFalse()
+{
+    PortalGpoReq g = {};
+    const char *j = "{\"gpo\":0,\"action\":1,\"durationS\":60}";
+    ParseResult r = parseGpoReq(j, strlen(j), g);
+    TEST_ASSERT_TRUE(r.ok);
+    TEST_ASSERT_FALSE(g.confirm);
+}
+
+static void test_parseGpoReq_rejectsBadGpo()
+{
+    PortalGpoReq g = {};
+    const char *j = "{\"gpo\":5,\"action\":1,\"durationS\":0}";
+    ParseResult r = parseGpoReq(j, strlen(j), g);
+    TEST_ASSERT_FALSE(r.ok);
+}
+
+static void test_coords_roundtrip()
+{
+    PortalCoords c = {};
+    const char *j = "{\"latE7\":-221234560,\"lonE7\":-476543210}";
+    ParseResult r = parseCoords(j, strlen(j), c);
+    TEST_ASSERT_TRUE(r.ok);
+    TEST_ASSERT_EQUAL_INT32(-221234560, c.latE7);
+    TEST_ASSERT_EQUAL_INT32(-476543210, c.lonE7);
+    char buf[128];
+    size_t n = buildCoords(c, buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_TRUE(contains(buf, "\"latE7\":-221234560"));
+}
+
+static void test_parseCoords_rejectsOutOfRange()
+{
+    PortalCoords c = {};
+    const char *j = "{\"latE7\":2000000000,\"lonE7\":0}";
+    ParseResult r = parseCoords(j, strlen(j), c);
+    TEST_ASSERT_FALSE(r.ok);
+}
+
 void setup()
 {
     UNITY_BEGIN();
@@ -129,6 +221,13 @@ void setup()
     RUN_TEST(test_parseNetCommand_rejectsBadZone);
     RUN_TEST(test_buildRoster_gateway);
     RUN_TEST(test_buildRoster_stationEmpty);
+    RUN_TEST(test_buildSensors_json);
+    RUN_TEST(test_buildPortalLog_json);
+    RUN_TEST(test_parseGpoReq_valid);
+    RUN_TEST(test_parseGpoReq_confirmAbsentDefaultsFalse);
+    RUN_TEST(test_parseGpoReq_rejectsBadGpo);
+    RUN_TEST(test_coords_roundtrip);
+    RUN_TEST(test_parseCoords_rejectsOutOfRange);
     UNITY_END();
 }
 

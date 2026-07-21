@@ -81,4 +81,95 @@ size_t buildRoster(const ZoneTable *zones, char *buf, size_t cap)
     return w.done();
 }
 
+size_t buildSensors(const PortalSensorsCtx &ctx, char *buf, size_t cap)
+{
+    static const char *UNIT_NAMES[] = {"", "bar", "%", "m", "C"};
+    JsonWriter w(buf, cap);
+    w.beginObject();
+    w.key("sensors");
+    w.beginArray();
+    uint8_t n = ctx.count < 4 ? ctx.count : 4;
+    for (uint8_t i = 0; i < n; i++) {
+        const PortalSensorItem &it = ctx.items[i];
+        w.beginObject();
+        w.keyNum("id", it.id);
+        w.keyNum("tipo", it.tipo);
+        const char *uname = (it.unidade < 5) ? UNIT_NAMES[it.unidade] : "";
+        w.keyStr("unidade", uname);
+        w.keyNum("valor", it.valueCenti);
+        w.endObject();
+    }
+    w.endArray();
+    w.endObject();
+    return w.done();
+}
+
+size_t buildPortalLog(const AuditLog &log, char *buf, size_t cap)
+{
+    JsonWriter w(buf, cap);
+    w.beginObject();
+    w.key("log");
+    w.beginArray();
+    size_t total = log.size();
+    if (total > 100) total = 100;
+    for (size_t i = 0; i < total; i++) {
+        const AuditRecord &rec = log.at(i);
+        w.beginObject();
+        w.keyNum("ts", (int64_t)rec.tsSecs);
+        w.keyNum("origem", rec.origin);
+        w.keyNum("acao", rec.action);
+        w.keyNum("alvo", rec.target);
+        w.keyNum("res", rec.result);
+        w.keyNum("no", (int64_t)rec.node);
+        w.keyNum("seq", (int64_t)rec.seq);
+        w.endObject();
+    }
+    w.endArray();
+    w.endObject();
+    return w.done();
+}
+
+ParseResult parseGpoReq(const char *json, size_t len, PortalGpoReq &out)
+{
+    ParseResult r;
+    JsonReader rd(json, len);
+    int64_t gpo = 0, action = 0, dur = 0;
+    if (!rd.getInt("gpo", gpo) || gpo < 0 || gpo > 1) r.fail("gpo fora de 0..1");
+    if (!rd.getInt("action", action) || action < 0 || action > 1) r.fail("action fora de 0..1");
+    if (!rd.getInt("durationS", dur) || dur < 0 || dur > 7200) r.fail("durationS fora de 0..7200");
+    if (!r.ok) return r;
+    out.gpoId = (uint8_t)gpo;
+    out.action = (uint8_t)action;
+    out.durationS = (uint16_t)dur;
+    bool confirm = false;
+    rd.getBool("confirm", confirm); // ausente => false, não é erro
+    out.confirm = confirm;
+    return r;
+}
+
+size_t buildCoords(const PortalCoords &c, char *buf, size_t cap)
+{
+    JsonWriter w(buf, cap);
+    w.beginObject();
+    w.keyNum("latE7", (int64_t)c.latE7);
+    w.keyNum("lonE7", (int64_t)c.lonE7);
+    w.endObject();
+    return w.done();
+}
+
+ParseResult parseCoords(const char *json, size_t len, PortalCoords &out)
+{
+    ParseResult r;
+    JsonReader rd(json, len);
+    int64_t lat = 0, lon = 0;
+    if (!rd.getInt("latE7", lat)) { r.fail("latE7 ausente"); }
+    else if (lat < -900000000LL || lat > 900000000LL) { r.fail("latE7 fora de range"); }
+    if (!rd.getInt("lonE7", lon)) { r.fail("lonE7 ausente"); }
+    else if (lon < -1800000000LL || lon > 1800000000LL) { r.fail("lonE7 fora de range"); }
+    if (!r.ok) return r;
+    out.latE7 = (int32_t)lat;
+    out.lonE7 = (int32_t)lon;
+    return r;
+}
+
 } // namespace IrrigationWeb
