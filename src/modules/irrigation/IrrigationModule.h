@@ -24,6 +24,9 @@ struct WebCommand;
 struct NodeStateCtx;
 struct PortalPulseReq;
 struct NetCommand;
+struct PortalSensorsCtx;
+struct PortalGpoReq;
+struct PortalCoords;
 }
 
 // Saída de nível (relé/MOSFET) dos GPOs.
@@ -76,6 +79,10 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     void portalFillNodeState(IrrigationWeb::NodeStateCtx &out) const;
     bool portalPulse(const IrrigationWeb::PortalPulseReq &p);
     bool portalRunNetCommand(const IrrigationWeb::NetCommand &c);
+    void portalFillSensors(IrrigationWeb::PortalSensorsCtx &out) const;
+    bool portalGpo(const IrrigationWeb::PortalGpoReq &r); // biestável (durationS==0 ao ligar) exige confirm
+    void portalGetCoords(IrrigationWeb::PortalCoords &out) const;
+    bool portalSetCoords(const IrrigationWeb::PortalCoords &c); // persiste settings (coordenada é local, não mexe em epoch)
     PortalSession &portalSession() { return portal; }
     // Acesso de leitura ao mini-log de auditoria (Task 10: portal de campo). §8.9
     const AuditLog &auditLogRef() const { return audit; }

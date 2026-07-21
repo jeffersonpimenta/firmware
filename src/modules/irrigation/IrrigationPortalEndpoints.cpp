@@ -126,12 +126,117 @@ static void hNetCommand(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, "{\"ok\":true}");
 }
 
+static void hSensors(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!irrigationModule) {
+        res->setStatusCode(404);
+        return;
+    }
+    PortalSensorsCtx c = {};
+    irrigationModule->portalFillSensors(c);
+    char buf[512];
+    if (!buildSensors(c, buf, sizeof(buf))) {
+        res->setStatusCode(500);
+        return;
+    }
+    sendJson(res, buf);
+}
+
+static void hLog(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!irrigationModule) {
+        res->setStatusCode(404);
+        return;
+    }
+    // Log cheio (100 registros) ~9,6 KB: buffer no heap, não no stack da task HTTP.
+    const size_t cap = 10240;
+    char *buf = (char *)malloc(cap);
+    if (!buf) {
+        res->setStatusCode(500);
+        return;
+    }
+    size_t n = buildPortalLog(irrigationModule->auditLogRef(), buf, cap);
+    if (!n) {
+        free(buf);
+        res->setStatusCode(500);
+        return;
+    }
+    sendJson(res, buf);
+    free(buf);
+}
+
+static void hGpo(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!irrigationModule) {
+        res->setStatusCode(404);
+        return;
+    }
+    char body[256];
+    size_t nb = readBody(req, body, sizeof(body));
+    PortalGpoReq g;
+    ParseResult pr = parseGpoReq(body, nb, g);
+    if (!pr.ok) {
+        sendParseErrors(res, pr);
+        return;
+    }
+    if (!irrigationModule->portalGpo(g)) {
+        sendJson(res, "{\"errors\":[\"gpo rejeitado (modo seguro, id invalido ou biestavel sem confirmacao)\"]}", 400);
+        return;
+    }
+    sendJson(res, "{\"ok\":true}");
+}
+
+static void hCoordsGet(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!irrigationModule) {
+        res->setStatusCode(404);
+        return;
+    }
+    PortalCoords c = {};
+    irrigationModule->portalGetCoords(c);
+    char buf[128];
+    if (!buildCoords(c, buf, sizeof(buf))) {
+        res->setStatusCode(500);
+        return;
+    }
+    sendJson(res, buf);
+}
+
+static void hCoordsSet(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!irrigationModule) {
+        res->setStatusCode(404);
+        return;
+    }
+    char body[128];
+    size_t nb = readBody(req, body, sizeof(body));
+    PortalCoords c;
+    ParseResult pr = parseCoords(body, nb, c);
+    if (!pr.ok) {
+        sendParseErrors(res, pr);
+        return;
+    }
+    if (!irrigationModule->portalSetCoords(c)) {
+        sendJson(res, "{\"errors\":[\"falha ao gravar coordenadas\"]}", 500);
+        return;
+    }
+    sendJson(res, "{\"ok\":true}");
+}
+
 void registerIrrigationPortalHandlers(HTTPServer *server)
 {
     server->registerNode(new ResourceNode("/api/portal/node", "GET", &hNode));
     server->registerNode(new ResourceNode("/api/portal/node/pulse", "POST", &hNodePulse));
     server->registerNode(new ResourceNode("/api/portal/net/roster", "GET", &hNetRoster));
     server->registerNode(new ResourceNode("/api/portal/net/command", "POST", &hNetCommand));
+    server->registerNode(new ResourceNode("/api/portal/sensors", "GET", &hSensors));
+    server->registerNode(new ResourceNode("/api/portal/log", "GET", &hLog));
+    server->registerNode(new ResourceNode("/api/portal/gpo", "POST", &hGpo));
+    server->registerNode(new ResourceNode("/api/portal/coords", "GET", &hCoordsGet));
+    server->registerNode(new ResourceNode("/api/portal/coords", "POST", &hCoordsSet));
 }
 
 #endif

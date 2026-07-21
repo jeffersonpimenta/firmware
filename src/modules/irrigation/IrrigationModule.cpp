@@ -1542,6 +1542,53 @@ bool IrrigationModule::portalRunNetCommand(const IrrigationWeb::NetCommand &c)
     return true;
 }
 
+void IrrigationModule::portalFillSensors(IrrigationWeb::PortalSensorsCtx &out) const
+{
+    IrrigationProto::SensorReading rs[IrrigationSettings::MAX_SENSORS];
+    size_t n = sampler.readings(rs);
+    out.count = (uint8_t)n;
+    for (size_t i = 0; i < n; i++) {
+        out.items[i].id = rs[i].id;
+        out.items[i].tipo = rs[i].tipo;
+        out.items[i].valueCenti = rs[i].valueCenti;
+        // unidade vem do slot correspondente no pin map (rs[i].id = índice do slot)
+        out.items[i].unidade = (rs[i].id < IrrigationSettings::MAX_SENSORS) ? settings.sensores[rs[i].id].unidade : 0;
+    }
+}
+
+bool IrrigationModule::portalGpo(const IrrigationWeb::PortalGpoReq &r)
+{
+    // Intertravamento: modo seguro nunca liga (mesma regra de handleCmdGpo/portalPulse).
+    if (r.action == 1 && safeMode) {
+        auditEvent(AuditOrigin::PORTAL_CAMPO, AuditAction::CMD_REJEITADO, REASON_SAFE_MODE, AuditResult::NACK);
+        return false;
+    }
+    // Biestável (durationS==0 ao ligar) exige confirmação extra da UI (§8.11).
+    if (r.action == 1 && r.durationS == 0 && !r.confirm) {
+        auditEvent(AuditOrigin::PORTAL_CAMPO, AuditAction::CMD_REJEITADO, REASON_BAD_PAYLOAD, AuditResult::NACK);
+        return false;
+    }
+    GpoController::Result res = gpos.command(r.gpoId, r.action, r.durationS, millis());
+    bool ok = (res == GpoController::Result::OK);
+    auditEvent(AuditOrigin::PORTAL_CAMPO, r.action ? AuditAction::GPO_ON : AuditAction::GPO_OFF, r.gpoId,
+               ok ? AuditResult::OK : AuditResult::NACK);
+    return ok;
+}
+
+void IrrigationModule::portalGetCoords(IrrigationWeb::PortalCoords &out) const
+{
+    out.latE7 = settings.latE7;
+    out.lonE7 = settings.lonE7;
+}
+
+bool IrrigationModule::portalSetCoords(const IrrigationWeb::PortalCoords &c)
+{
+    settings.latE7 = c.latE7;
+    settings.lonE7 = c.lonE7;
+    // Coordenada é local (§8.8): NÃO incrementa config_epoch.
+    return saveIrrigationSettings(settings);
+}
+
 // Decisão §2: loop principal do gateway — scheduler, espelho, retries, silêncio.
 void IrrigationModule::gwTick()
 {
