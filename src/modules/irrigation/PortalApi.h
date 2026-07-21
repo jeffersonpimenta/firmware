@@ -16,6 +16,7 @@ struct NodeStateCtx {
     uint32_t configEpoch = 0;
     bool safeMode = false;
     uint8_t numValves = 0;
+    uint8_t numGpos = 0;
     uint8_t valveStates = 0;   // bitmap
     uint8_t gpoStates = 0;     // bitmap
     uint16_t vbatCentiV = 0;

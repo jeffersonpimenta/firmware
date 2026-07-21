@@ -1459,6 +1459,7 @@ void IrrigationModule::portalFillNodeState(IrrigationWeb::NodeStateCtx &out) con
     out.configEpoch = settings.configEpoch;
     out.safeMode = safeMode;
     out.numValves = settings.numValves;
+    out.numGpos = countGpos(settings);
     out.valveStates = valves.stateBitmap();
     out.gpoStates = gpos.states();
     out.vbatCentiV = batteryCentiV();

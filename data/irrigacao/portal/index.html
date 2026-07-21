@@ -15,6 +15,26 @@
 
   <section id="tab-node" class="tab">
     <div id="nodeState" class="card">Carregando…</div>
+    <div id="sensorsCard" class="card">
+      <h2>Sensores</h2>
+      <div id="sensorsList" class="muted">—</div>
+    </div>
+    <div id="gposCard" class="card hidden">
+      <h2>Saídas (GPO)</h2>
+      <div id="gposList"></div>
+      <span id="gpoMsg" class="muted"></span>
+    </div>
+    <div id="logCard" class="card">
+      <h2>Auditoria <button type="button" id="logRefresh">Atualizar</button></h2>
+      <div id="logList" class="muted">—</div>
+    </div>
+    <form id="coordsForm" class="card">
+      <h2>Coordenadas locais</h2>
+      <label>Latitude <input type="number" id="coordLat" step="0.0000001" value="0" /></label>
+      <label>Longitude <input type="number" id="coordLon" step="0.0000001" value="0" /></label>
+      <button type="submit">Salvar</button>
+      <span id="coordMsg" class="muted"></span>
+    </form>
     <form id="pulseForm" class="card">
       <h2>Teste de pulso</h2>
       <label>Válvula <input type="number" id="pulseValve" min="0" max="7" value="0" /></label>

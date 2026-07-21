@@ -22,6 +22,7 @@ static void test_buildNodeState_json()
     c.configEpoch = 7;
     c.safeMode = false;
     c.numValves = 2;
+    c.numGpos = 1;
     c.valveStates = 0x01;
     c.gpoStates = 0;
     c.vbatCentiV = 1250;
@@ -33,6 +34,7 @@ static void test_buildNodeState_json()
     TEST_ASSERT_TRUE(contains(buf, "\"role\":0"));
     TEST_ASSERT_TRUE(contains(buf, "\"name\":\"Pasto Norte\""));
     TEST_ASSERT_TRUE(contains(buf, "\"boundGateway\":4660")); // 0x1234
+    TEST_ASSERT_TRUE(contains(buf, "\"numGpos\":1"));
     TEST_ASSERT_TRUE(contains(buf, "\"valveStates\":1"));
     TEST_ASSERT_TRUE(contains(buf, "\"vbatCentiV\":1250"));
     TEST_ASSERT_TRUE(contains(buf, "\"apSecondsLeft\":540"));

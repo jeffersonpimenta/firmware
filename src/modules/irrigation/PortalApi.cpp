@@ -14,6 +14,7 @@ size_t buildNodeState(const NodeStateCtx &ctx, char *buf, size_t cap)
     w.keyNum("configEpoch", (int64_t)ctx.configEpoch);
     w.keyBool("safeMode", ctx.safeMode);
     w.keyNum("numValves", ctx.numValves);
+    w.keyNum("numGpos", ctx.numGpos);
     w.keyNum("valveStates", ctx.valveStates);
     w.keyNum("gpoStates", ctx.gpoStates);
     w.keyNum("vbatCentiV", ctx.vbatCentiV);
