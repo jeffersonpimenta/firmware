@@ -132,6 +132,29 @@ static void test_engine_multiplos_caps_menor_vence()
     TEST_ASSERT_EQUAL_UINT8(2, eng.evaluate(tbl, nullptr, 0)); // menor cap positivo
 }
 
+static void test_local_replica_fecha_e_bloqueia()
+{
+    IrrigationSettings::LocalInterlock rules[4] = {};
+    rules[0].sensorIdx = 0; rules[0].condicao = COND_MAIOR_QUE; rules[0].valorCenti = 300;
+    rules[0].histereseCenti = 20; rules[0].acao = ACAO_FECHAR_E_BLOQUEAR; rules[0].saidasMask = 0b00000010;
+    IrrigationProto::SensorReading rd[1] = {};
+    rd[0].id = 0; rd[0].tipo = 1; rd[0].valueCenti = 350; // > 300 -> dispara
+    bool latch[4] = {false};
+    LocalReplicaOut o = evalLocalInterlocks(rules, 4, rd, 1, latch);
+    TEST_ASSERT_EQUAL_UINT8(0b00000010, o.fecharMask);
+    TEST_ASSERT_EQUAL_UINT8(0b00000010, o.bloquearMask);
+}
+
+static void test_local_replica_slot_inativo_ignorado()
+{
+    IrrigationSettings::LocalInterlock rules[4] = {}; // saidasMask=0 -> inativo
+    IrrigationProto::SensorReading rd[1] = {};
+    bool latch[4] = {false};
+    LocalReplicaOut o = evalLocalInterlocks(rules, 4, rd, 1, latch);
+    TEST_ASSERT_EQUAL_UINT8(0, o.fecharMask);
+    TEST_ASSERT_EQUAL_UINT8(0, o.bloquearMask);
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -146,6 +169,8 @@ void setup()
     RUN_TEST(test_engine_duas_regras_mesma_zona_combina);
     RUN_TEST(test_engine_latch_persiste_entre_ticks);
     RUN_TEST(test_engine_multiplos_caps_menor_vence);
+    RUN_TEST(test_local_replica_fecha_e_bloqueia);
+    RUN_TEST(test_local_replica_slot_inativo_ignorado);
     exit(UNITY_END());
 }
 void loop() {}

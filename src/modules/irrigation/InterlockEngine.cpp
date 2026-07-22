@@ -65,3 +65,25 @@ ZoneVerdict InterlockEngine::zoneVerdict(uint8_t zoneId) const {
     }
     return v;
 }
+
+LocalReplicaOut evalLocalInterlocks(const IrrigationSettings::LocalInterlock *rules, size_t nRules,
+                                    const IrrigationProto::SensorReading *readings, size_t nReadings,
+                                    bool *latched)
+{
+    LocalReplicaOut out;
+    for (size_t i = 0; i < nRules; i++) {
+        const auto &r = rules[i];
+        if (r.saidasMask == 0) { if (latched) latched[i] = false; continue; } // inativo
+        const IrrigationProto::SensorReading *rd = nullptr;
+        for (size_t k = 0; k < nReadings; k++) if (readings[k].id == r.sensorIdx) { rd = &readings[k]; break; }
+        if (!rd) { if (latched) latched[i] = false; continue; }
+        bool active = rd->valueCenti != 0; // digital: 0/100
+        bool fire = evalCondition(r.condicao, active, rd->valueCenti,
+                                  r.valorCenti, r.histereseCenti, latched[i]);
+        if (fire) {
+            out.bloquearMask |= r.saidasMask;
+            if (r.acao == ACAO_FECHAR_E_BLOQUEAR) out.fecharMask |= r.saidasMask;
+        }
+    }
+    return out;
+}

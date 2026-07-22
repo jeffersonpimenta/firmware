@@ -1,6 +1,8 @@
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
+#include "modules/irrigation/IrrigationSettings.h"  // IrrigationSettings::LocalInterlock
+#include "modules/irrigation/IrrigationProtocol.h"  // IrrigationProto::SensorReading
 
 enum InterlockCond : uint8_t { COND_ATIVO = 0, COND_INATIVO = 1, COND_MENOR_QUE = 2, COND_MAIOR_QUE = 3 };
 enum InterlockAcao : uint8_t { ACAO_BLOQUEAR_ABERTURA = 0, ACAO_FECHAR_E_BLOQUEAR = 1 };
@@ -52,3 +54,14 @@ class InterlockEngine {
     static const SensorSnapshot *findSnap(const SensorSnapshot *s, size_t n, uint32_t node, uint8_t idx);
     static bool ruleCoversZone(const InterlockRule &r, uint8_t zoneId);
 };
+
+struct LocalReplicaOut {
+    uint8_t fecharMask = 0;   // saídas a fechar+bloquear agora
+    uint8_t bloquearMask = 0; // saídas com abertura bloqueada
+};
+
+// Avalia as regras locais. `readings`/`nReadings`: leituras do SensorSampler local
+// (id = sensorIdx). `latched`: array de estado retido pelo chamador (>= nRules). Puro.
+LocalReplicaOut evalLocalInterlocks(const IrrigationSettings::LocalInterlock *rules, size_t nRules,
+                                    const IrrigationProto::SensorReading *readings, size_t nReadings,
+                                    bool *latched);
