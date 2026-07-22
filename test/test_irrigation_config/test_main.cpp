@@ -39,7 +39,7 @@ static void test_migrate_v1_preservesFieldsAndDefaultsNew()
     buildV1Image(img);
     IrrigationSettings s;
     TEST_ASSERT_TRUE(migrateIrrigationSettings(img, sizeof(img), s));
-    TEST_ASSERT_EQUAL_UINT16(4, s.version);
+    TEST_ASSERT_EQUAL_UINT16(5, s.version);
     TEST_ASSERT_EQUAL_UINT8(1, s.role);
     TEST_ASSERT_EQUAL_UINT8(4, s.numValves);
     TEST_ASSERT_EQUAL_HEX32(0xa1b2c3d4, s.boundGateway);
@@ -63,7 +63,7 @@ static void test_migrate_v1_getsDefaultButtonLedPins()
     buildV1Image(img);
     IrrigationSettings out;
     TEST_ASSERT_TRUE(migrateIrrigationSettings(img, sizeof(img), out));
-    TEST_ASSERT_EQUAL_UINT16(4, out.version);
+    TEST_ASSERT_EQUAL_UINT16(5, out.version);
     TEST_ASSERT_EQUAL_INT8(-1, out.pinBtn);
     TEST_ASSERT_EQUAL_INT8(-1, out.pinLed);
 }
@@ -81,7 +81,7 @@ static void test_migrate_v2_getsDefaultButtonLedPins()
     memcpy(raw + 4, &ver2, 2);
     IrrigationSettings out;
     TEST_ASSERT_TRUE(migrateIrrigationSettings(raw, sizeof(raw), out));
-    TEST_ASSERT_EQUAL_UINT16(4, out.version);
+    TEST_ASSERT_EQUAL_UINT16(5, out.version);
     TEST_ASSERT_EQUAL_INT8(-1, out.pinBtn); // v2 não tinha o campo: default
     TEST_ASSERT_EQUAL_INT8(-1, out.pinLed);
 }
@@ -99,7 +99,7 @@ static void test_migrate_v3_passthroughKeepsPins()
     memcpy(raw + 4, &ver3, 2);
     IrrigationSettings out;
     TEST_ASSERT_TRUE(migrateIrrigationSettings(raw, sizeof(raw), out));
-    TEST_ASSERT_EQUAL_UINT16(4, out.version);
+    TEST_ASSERT_EQUAL_UINT16(5, out.version);
     TEST_ASSERT_EQUAL_INT8(0, out.pinBtn);
     TEST_ASSERT_EQUAL_INT8(2, out.pinLed);
 }
@@ -119,7 +119,7 @@ static void test_migrate_v3_passthrough()
     memcpy(raw + 4, &ver3, 2);
     IrrigationSettings out;
     TEST_ASSERT_TRUE(migrateIrrigationSettings(raw, sizeof(raw), out));
-    TEST_ASSERT_EQUAL_UINT16(4, out.version);
+    TEST_ASSERT_EQUAL_UINT16(5, out.version);
     TEST_ASSERT_EQUAL_UINT32(17, out.configEpoch);
     TEST_ASSERT_EQUAL_INT8(36, out.pinsDigitalIn[1]);
     TEST_ASSERT_EQUAL_UINT8(0b0010, out.digitalInActiveLow);
@@ -143,7 +143,7 @@ static void test_migrate_v2_preservesFieldsResetsPins()
     memcpy(raw + 4, &ver2, 2);
     IrrigationSettings out;
     TEST_ASSERT_TRUE(migrateIrrigationSettings(raw, sizeof(raw), out));
-    TEST_ASSERT_EQUAL_UINT16(4, out.version);
+    TEST_ASSERT_EQUAL_UINT16(5, out.version);
     TEST_ASSERT_EQUAL_UINT32(17, out.configEpoch);
     TEST_ASSERT_EQUAL_UINT8(5, out.numValves);
     TEST_ASSERT_EQUAL_INT8(36, out.pinsDigitalIn[2]);
@@ -202,7 +202,7 @@ static void test_migrate_v3_to_v4()
 
     IrrigationSettings out;
     TEST_ASSERT_TRUE(migrateIrrigationSettings(raw, IRRIGATION_SETTINGS_V3_SIZE, out));
-    TEST_ASSERT_EQUAL_UINT16(4, out.version);
+    TEST_ASSERT_EQUAL_UINT16(5, out.version);
     TEST_ASSERT_EQUAL_UINT8(3, out.numValves);
     TEST_ASSERT_EQUAL_UINT32(9, out.configEpoch);
     // Campos novos em default
@@ -216,7 +216,7 @@ static void test_migrate_v3_to_v4()
 
 static void test_v4_roundtrip_and_size()
 {
-    TEST_ASSERT_EQUAL_size_t(128, sizeof(IrrigationSettings));
+    TEST_ASSERT_EQUAL_size_t(176, sizeof(IrrigationSettings));
     IrrigationSettings s;
     s.sensores[1] = {36, 1, 0, 30, 0, 300, 3800, 0, 1000, 1, 0}; // analógico bar
     s.pinsGpo[0] = 27;
@@ -232,7 +232,7 @@ static void test_v4_roundtrip_and_size()
 
 static void test_defaultStruct_bytesDeterministic()
 {
-    // Constrói duas instâncias sobre lixo de memória diferente: todos os 128 bytes
+    // Constrói duas instâncias sobre lixo de memória diferente: todos os bytes
     // (incluindo padding explícito) devem ser idênticos — CRC estável p/ o gateway.
     alignas(IrrigationSettings) uint8_t rawA[sizeof(IrrigationSettings)];
     alignas(IrrigationSettings) uint8_t rawB[sizeof(IrrigationSettings)];
@@ -243,6 +243,34 @@ static void test_defaultStruct_bytesDeterministic()
     TEST_ASSERT_EQUAL_MEMORY(a, b, sizeof(IrrigationSettings));
     a->~IrrigationSettings();
     b->~IrrigationSettings();
+}
+
+static void test_v5_size_and_offsets()
+{
+    TEST_ASSERT_EQUAL_UINT32(176, sizeof(IrrigationSettings));
+    TEST_ASSERT_EQUAL_UINT32(12, sizeof(IrrigationSettings::LocalInterlock));
+    TEST_ASSERT_EQUAL_UINT32(128, offsetof(IrrigationSettings, localInterlocks));
+    IrrigationSettings s;
+    TEST_ASSERT_EQUAL_UINT16(5, s.version);
+}
+
+static void test_v4_blob_migrates_to_v5()
+{
+    // Um blob v4 (128 B, version=4) migra: prefixo preservado, regras locais zeradas.
+    IrrigationSettings v4;
+    v4.version = 4;
+    v4.numValves = 3;
+    v4.sensores[0].pino = 34;
+    uint8_t raw[128];
+    memcpy(raw, &v4, 128);
+    uint16_t ver = 4; memcpy(raw + 4, &ver, 2); // garante version=4 no blob
+    IrrigationSettings out;
+    TEST_ASSERT_TRUE(migrateIrrigationSettings(raw, 128, out));
+    TEST_ASSERT_EQUAL_UINT16(5, out.version);
+    TEST_ASSERT_EQUAL_UINT8(3, out.numValves);
+    TEST_ASSERT_EQUAL_INT8(34, out.sensores[0].pino);
+    TEST_ASSERT_EQUAL_UINT8(0, out.localInterlocks[0].sensorIdx);
+    TEST_ASSERT_EQUAL_UINT8(0, out.localInterlocks[0].saidasMask); // inativo
 }
 
 void setup()
@@ -261,6 +289,8 @@ void setup()
     RUN_TEST(test_migrate_v3_to_v4);
     RUN_TEST(test_v4_roundtrip_and_size);
     RUN_TEST(test_defaultStruct_bytesDeterministic);
+    RUN_TEST(test_v5_size_and_offsets);
+    RUN_TEST(test_v4_blob_migrates_to_v5);
     exit(UNITY_END());
 }
 

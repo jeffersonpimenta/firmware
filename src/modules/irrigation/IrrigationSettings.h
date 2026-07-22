@@ -4,7 +4,7 @@
 
 enum class IrrigationRole : uint8_t { ESTACAO = 0, GATEWAY = 1, REPETIDOR = 2, SERVICO = 3 };
 
-// Layout do blob on-disk/radio (128 bytes, ABI-locked v4):
+// Layout do blob on-disk/radio (176 bytes, ABI-locked v5):
 //   0  magic(4) | 4  version(2) | 6  role(1) | 7  numValves(1)
 //   8  boundGateway(4) | 12 hbMinutes(2) | 14 vbatMinAbrirCentiV(2) | 16 maxOpenConfigS(2)
 //  18  cmdRatePerMin(1) | 19 pad0(1) | 20 pulseMs(2)
@@ -14,14 +14,16 @@ enum class IrrigationRole : uint8_t { ESTACAO = 0, GATEWAY = 1, REPETIDOR = 2, S
 //  52  pinsGpo[2](2) | 54 pinTamper(1) | 55 hwFlags(1)
 //  56  latE7(4) | 60 lonE7(4)
 //  64  sensores[4]×16(64)
-// Total = 128.
+// --- v5 (Fase 6b) ---
+// 128  localInterlocks[4]×12(48)
+// Total = 176.
 struct IrrigationSettings {
     static constexpr uint32_t MAGIC = 0x49525231; // "IRR1"
     static constexpr uint8_t MAX_VALVES = 8;
     static constexpr uint8_t MAX_DIGITAL_IN = 4;
 
     uint32_t magic = MAGIC;
-    uint16_t version = 4;
+    uint16_t version = 5;
     uint8_t role = (uint8_t)IrrigationRole::ESTACAO;
     uint8_t numValves = 2;
     uint32_t boundGateway = 0; // 0 = não pareado
@@ -67,19 +69,36 @@ struct IrrigationSettings {
     int32_t latE7 = 0;                  // coordenadas locais ×1e-7 (§8.8)
     int32_t lonE7 = 0;
     SensorSlot sensores[MAX_SENSORS];
+
+    // v5 (Fase 6b): réplica local de intertravamentos (§8.10).
+    static constexpr uint8_t MAX_LOCAL_INTERLOCKS = 4;
+    struct LocalInterlock {
+        uint8_t sensorIdx = 0;      // 0..3 (sensor local)
+        uint8_t condicao = 0;       // InterlockCond (0=ATIVO,1=INATIVO,2=MENOR_QUE,3=MAIOR_QUE)
+        uint8_t acao = 0;           // InterlockAcao (0=BLOQUEAR_ABERTURA,1=FECHAR_E_BLOQUEAR)
+        uint8_t saidasMask = 0;     // bits = índices de válvula/GPO locais; 0 = slot inativo
+        int32_t valorCenti = 0;
+        uint16_t histereseCenti = 0;
+        uint16_t pad = 0;           // completa 12 B
+    };
+    LocalInterlock localInterlocks[MAX_LOCAL_INTERLOCKS];
 };
 
 static constexpr size_t IRRIGATION_SETTINGS_V1_SIZE = 40;
 static constexpr size_t IRRIGATION_SETTINGS_V3_SIZE = 52;
+static constexpr size_t IRRIGATION_SETTINGS_V4_SIZE = 128;
 static_assert(sizeof(IrrigationSettings::SensorSlot) == 16, "SensorSlot é ABI on-disk");
+static_assert(sizeof(IrrigationSettings::LocalInterlock) == 12, "LocalInterlock é ABI on-disk");
+static_assert(offsetof(IrrigationSettings, localInterlocks) == 128, "ABI v5");
 
-// ABI lock v4: magic(4)+version(2)+role(1)+numValves(1)+boundGateway(4)+hbMinutes(2)+
+// ABI lock v5: prefixo v4 (128 B) + localInterlocks[4×12](48) = 176.
+// Prefixo v4: magic(4)+version(2)+role(1)+numValves(1)+boundGateway(4)+hbMinutes(2)+
 // vbatMinAbrirCentiV(2)+maxOpenConfigS(2)+cmdRatePerMin(1)+pad0(1)+pulseMs(2)+
 // pinsHbridgeA(8)+pinsHbridgeB(8)+pad1(2)+configEpoch(4)+pinsDigitalIn(4)+
 // digitalInActiveLow(1)+pinBtn(1)+pinLed(1)+pad2(1)+pinsGpo(2)+pinTamper(1)+hwFlags(1)+
 // latE7(4)+lonE7(4)+sensores[4×16](64) = 128. All padding explicit and zero-initialized.
 // Bump version AND this assert on any layout change.
-static_assert(sizeof(IrrigationSettings) == 128, "on-disk settings format is ABI-dependent; bump version on layout change");
+static_assert(sizeof(IrrigationSettings) == 176, "on-disk settings format is ABI-dependent; bump version on layout change");
 
 // Pino de offsets do apêndice v4: drift silencioso de layout vira erro de compilação.
 static_assert(offsetof(IrrigationSettings, pinsGpo) == 52, "ABI v4");
@@ -89,7 +108,7 @@ static_assert(offsetof(IrrigationSettings, latE7) == 56, "ABI v4");
 static_assert(offsetof(IrrigationSettings, lonE7) == 60, "ABI v4");
 static_assert(offsetof(IrrigationSettings, sensores) == 64, "ABI v4");
 
-// Blob v1, v2, v3 ou v4 → struct v4. false = magic/versão/tamanho inválido (out fica intacto).
+// Blob v1, v2, v3, v4 ou v5 → struct v5. false = magic/versão/tamanho inválido (out fica intacto).
 bool migrateIrrigationSettings(const uint8_t *raw, size_t n, IrrigationSettings &out);
 
 // false = arquivo ausente/corrompido; `s` fica com os defaults acima.

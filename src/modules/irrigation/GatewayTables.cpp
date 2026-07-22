@@ -152,7 +152,7 @@ bool ZoneTable::deserialize(const uint8_t *buf, size_t n)
 }
 
 // ---- StationRegistry ----
-static constexpr size_t STATION_ENTRY = 163; // node(4)+name(16)+desiredEpoch(4)+blob(128)+retries(1)+silencioAlertaMin(2)+lat(4)+lon(4)
+static constexpr size_t STATION_ENTRY = 211; // node(4)+name(16)+desiredEpoch(4)+blob(176)+retries(1)+silencioAlertaMin(2)+lat(4)+lon(4)
 
 bool StationRegistry::upsert(const StationEntry &e)
 {
@@ -249,11 +249,11 @@ size_t StationRegistry::serialize(uint8_t *buf, size_t cap) const
         memcpy(buf + off, &e.node, 4);
         memcpy(buf + off + 4, e.name, 16);
         memcpy(buf + off + 20, &e.desiredEpoch, 4);
-        memcpy(buf + off + 24, e.blob, sizeof(e.blob));   // 128 bytes
-        buf[off + 152] = e.retries;
-        memcpy(buf + off + 153, &e.silencioAlertaMin, 2);
-        memcpy(buf + off + 155, &e.lat, 4);
-        memcpy(buf + off + 159, &e.lon, 4);
+        memcpy(buf + off + 24, e.blob, sizeof(e.blob));   // 176 bytes
+        buf[off + 200] = e.retries;
+        memcpy(buf + off + 201, &e.silencioAlertaMin, 2);
+        memcpy(buf + off + 203, &e.lat, 4);
+        memcpy(buf + off + 207, &e.lon, 4);
         off += STATION_ENTRY;
     }
     return need;
@@ -273,11 +273,11 @@ bool StationRegistry::deserialize(const uint8_t *buf, size_t n)
         memcpy(e.name, buf + off + 4, 16);
         e.name[15] = '\0';
         memcpy(&e.desiredEpoch, buf + off + 20, 4);
-        memcpy(e.blob, buf + off + 24, sizeof(e.blob)); // 128 bytes
-        e.retries = buf[off + 152];
-        memcpy(&e.silencioAlertaMin, buf + off + 153, 2);
-        memcpy(&e.lat, buf + off + 155, 4);
-        memcpy(&e.lon, buf + off + 159, 4);
+        memcpy(e.blob, buf + off + 24, sizeof(e.blob)); // 176 bytes
+        e.retries = buf[off + 200];
+        memcpy(&e.silencioAlertaMin, buf + off + 201, 2);
+        memcpy(&e.lat, buf + off + 203, 4);
+        memcpy(&e.lon, buf + off + 207, 4);
         stations[i] = e;
     }
     return true;

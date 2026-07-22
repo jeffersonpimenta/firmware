@@ -35,7 +35,7 @@ struct StationEntry {
     uint32_t node = 0;       // 0 = slot vazio
     char name[16] = {0};
     uint32_t desiredEpoch = 0;
-    uint8_t blob[128] = {0}; // config v4 desejada (push §5.4)
+    uint8_t blob[176] = {0}; // config v5 desejada (push §5.4)
     uint8_t retries = 3;
     uint16_t silencioAlertaMin = 35;
     int32_t lat = 0, lon = 0; // graus * 1e-5 (WGS84, §8.8)
