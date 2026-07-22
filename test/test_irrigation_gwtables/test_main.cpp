@@ -174,6 +174,33 @@ static void test_telemetryCache_upsertAndLookup()
     TEST_ASSERT_NULL(c.byNode(0x99));
 }
 
+static void test_cache_guarda_sensores_e_tamper()
+{
+    StationTelemetryCache c;
+    StationTelemetry t; t.node = 0xAA; t.sensorCount = 2; t.tamper = true;
+    t.sensors[0].id = 0; t.sensors[0].tipo = 1; t.sensors[0].valueCenti = 250;
+    c.update(t);
+    const StationTelemetry *g = c.byNode(0xAA);
+    TEST_ASSERT_NOT_NULL(g);
+    TEST_ASSERT_EQUAL_UINT8(2, g->sensorCount);
+    TEST_ASSERT_TRUE(g->tamper);
+    TEST_ASSERT_EQUAL_INT16(250, g->sensors[0].valueCenti);
+}
+
+static void test_entry_at_itera_ocupados()
+{
+    StationTelemetryCache c;
+    StationTelemetry t; t.node = 0xBB; c.update(t);
+    // entryAt cobre TODOS os slots (0..MAX-1); node==0 = vazio.
+    bool achou = false;
+    for (size_t i = 0; i < StationTelemetryCache::MAX; i++) {
+        const StationTelemetry *e = c.entryAt(i);
+        if (e && e->node == 0xBB) achou = true;
+    }
+    TEST_ASSERT_TRUE(achou);
+    TEST_ASSERT_NULL(c.entryAt(StationTelemetryCache::MAX)); // fora de faixa
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -185,6 +212,8 @@ void setup()
     RUN_TEST(test_stations_fullAndNodeZeroRejected);
     RUN_TEST(test_stations_nodeAtCompacted);
     RUN_TEST(test_telemetryCache_upsertAndLookup);
+    RUN_TEST(test_cache_guarda_sensores_e_tamper);
+    RUN_TEST(test_entry_at_itera_ocupados);
     exit(UNITY_END());
 }
 
