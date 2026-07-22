@@ -27,6 +27,7 @@ bool InterlockTable::upsert(const InterlockRule &in) {
 }
 
 bool InterlockTable::removeById(uint8_t id) {
+    if (!id) return false;
     for (auto &r : rules) if (r.id == id) { r = InterlockRule{}; return true; }
     return false;
 }
