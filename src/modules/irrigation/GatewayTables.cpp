@@ -223,15 +223,20 @@ const StationEntry *StationRegistry::nodeAt(size_t index) const
     return nullptr;
 }
 
-void StationRegistry::adoptConfig(uint32_t node, const uint8_t *blob128, uint32_t epoch)
+void StationRegistry::adoptConfig(uint32_t node, const uint8_t *blobData, size_t blobLen, uint32_t epoch)
 {
-    if (!blob128) return;
+    if (!blobData || blobLen == 0) return;
     auto *e = mutableByNode(node);
     if (!e)
         return; // no-op se nó ausente
     // regra do maior epoch (§5.4): estritamente maior; mesmo epoch = já adotado, ignora
     if (epoch > e->desiredEpoch) {
-        memcpy(e->blob, blob128, sizeof(e->blob));
+        // Migra o blob recebido (pode ser v4=128B ou v5=176B) para v5 canônico antes de armazenar.
+        // Se a migração falhar (magic/versão/tamanho inválido), não adopta e deixa entrada intacta.
+        IrrigationSettings tmp;
+        if (!migrateIrrigationSettings(blobData, blobLen, tmp))
+            return;
+        memcpy(e->blob, &tmp, sizeof(tmp));
         e->desiredEpoch = epoch;
     }
 }

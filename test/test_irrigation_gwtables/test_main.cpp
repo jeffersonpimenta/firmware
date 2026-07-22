@@ -1,6 +1,7 @@
 #include "Arduino.h"
 #include "TestUtil.h"
 #include "modules/irrigation/GatewayTables.h"
+#include "modules/irrigation/IrrigationSettings.h"
 #include "modules/irrigation/StationTelemetryCache.h"
 #include <string.h>
 #include <unity.h>
@@ -80,11 +81,25 @@ static void test_stations_upsertAdoptAndRoundTrip()
     TEST_ASSERT_TRUE(r.upsert(e));
     TEST_ASSERT_EQUAL_UINT32(5, r.byNode(0xa1b2c3d4)->desiredEpoch);
 
-    uint8_t newBlob[128];
-    memset(newBlob, 0xCD, sizeof(newBlob));
-    r.adoptConfig(0xa1b2c3d4, newBlob, 9); // regra do maior epoch
+    // Monta blob v4 válido (128 B) para adoptConfig migrar p/ v5 canônico (176 B).
+    uint8_t newBlob[sizeof(StationEntry::blob)];
+    memset(newBlob, 0, sizeof(newBlob));
+    IrrigationSettings v4src;
+    v4src.version = 4;
+    v4src.numValves = 3;
+    v4src.configEpoch = 9;
+    memcpy(newBlob, &v4src, IRRIGATION_SETTINGS_V4_SIZE);
+    uint16_t ver4 = 4;
+    memcpy(newBlob + 4, &ver4, 2); // garante version=4 no blob
+
+    r.adoptConfig(0xa1b2c3d4, newBlob, IRRIGATION_SETTINGS_V4_SIZE, 9); // regra do maior epoch
     TEST_ASSERT_EQUAL_UINT32(9, r.byNode(0xa1b2c3d4)->desiredEpoch);
-    TEST_ASSERT_EQUAL_UINT8(0xCD, r.byNode(0xa1b2c3d4)->blob[0]);
+    // Após migração p/ v5, magic deve estar nos primeiros 4 bytes do blob
+    uint32_t blobMagic = 0;
+    memcpy(&blobMagic, r.byNode(0xa1b2c3d4)->blob, 4);
+    TEST_ASSERT_EQUAL_HEX32(IrrigationSettings::MAGIC, blobMagic);
+    // Confirmação de cauda: blob[175] deve sobreviver ao roundtrip (cobre os 176 B)
+    TEST_ASSERT_EQUAL_UINT8(0, r.byNode(0xa1b2c3d4)->blob[175]);
 
     uint8_t buf[2048];
     size_t n = r.serialize(buf, sizeof(buf));
@@ -93,6 +108,8 @@ static void test_stations_upsertAdoptAndRoundTrip()
     TEST_ASSERT_TRUE(c.deserialize(buf, n));
     TEST_ASSERT_EQUAL_UINT32(9, c.byNode(0xa1b2c3d4)->desiredEpoch);
     TEST_ASSERT_EQUAL_STRING("Pasto", c.byNode(0xa1b2c3d4)->name);
+    // Cauda do blob preservada após serializar/desserializar
+    TEST_ASSERT_EQUAL_UINT8(0, c.byNode(0xa1b2c3d4)->blob[175]);
 }
 
 static void test_stations_fullAndNodeZeroRejected()

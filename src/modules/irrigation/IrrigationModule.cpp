@@ -1924,9 +1924,9 @@ void IrrigationModule::handleGwSetConfig(const meshtastic_MeshPacket &mp, const 
     if (r != FragmentReassembler::Add::COMPLETE)
         return; // intermediário ou inválido: sem ação por enquanto
 
-    // Blob completo: adoptar como config da estação.
+    // Blob completo: adoptar como config da estação (adoptConfig migra p/ v5 canônico).
     if (reasm.blobLen() <= sizeof(StationEntry::blob)) {
-        gateway.stations.adoptConfig(mp.from, reasm.blob(), reasm.epoch());
+        gateway.stations.adoptConfig(mp.from, reasm.blob(), reasm.blobLen(), reasm.epoch());
         saveGatewayState(); // persiste após mutação (decisão §5)
 
         Alert a;

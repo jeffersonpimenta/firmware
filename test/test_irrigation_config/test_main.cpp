@@ -168,11 +168,31 @@ static void test_migrate_rejectsBadInput()
     TEST_ASSERT_FALSE(migrateIrrigationSettings(img, sizeof(img), s));
 }
 
-static void test_migrate_v4_wrongSize_rejected()
+static void test_migrate_v5_wrongSize_rejected()
 {
+    // Blob v5 com 175 bytes (um a menos): deve ser rejeitado.
     IrrigationSettings in;
     IrrigationSettings out;
     TEST_ASSERT_FALSE(migrateIrrigationSettings((const uint8_t *)&in, sizeof(in) - 1, out));
+}
+
+static void test_migrate_v4_wrongSize_rejected()
+{
+    // Blob v4 com tamanho incorreto (127 e 129 bytes): deve ser rejeitado.
+    uint8_t buf[130];
+    uint32_t magic = IrrigationSettings::MAGIC;
+    uint16_t ver4 = 4;
+
+    memset(buf, 0, sizeof(buf));
+    memcpy(buf + 0, &magic, 4);
+    memcpy(buf + 4, &ver4, 2);
+    IrrigationSettings out;
+    TEST_ASSERT_FALSE(migrateIrrigationSettings(buf, 127, out)); // v4 exige exatamente 128 B
+
+    memset(buf, 0, sizeof(buf));
+    memcpy(buf + 0, &magic, 4);
+    memcpy(buf + 4, &ver4, 2);
+    TEST_ASSERT_FALSE(migrateIrrigationSettings(buf, 129, out)); // também inválido
 }
 
 static void test_migrate_v2_wrongSize_rejected()
@@ -214,7 +234,7 @@ static void test_migrate_v3_to_v4()
         TEST_ASSERT_EQUAL_INT8(-1, out.sensores[i].pino);
 }
 
-static void test_v4_roundtrip_and_size()
+static void test_v5_roundtrip_and_size()
 {
     TEST_ASSERT_EQUAL_size_t(176, sizeof(IrrigationSettings));
     IrrigationSettings s;
@@ -284,10 +304,11 @@ void setup()
     RUN_TEST(test_migrate_v3_passthrough);
     RUN_TEST(test_migrate_v3_passthroughKeepsPins);
     RUN_TEST(test_migrate_rejectsBadInput);
+    RUN_TEST(test_migrate_v5_wrongSize_rejected);
     RUN_TEST(test_migrate_v4_wrongSize_rejected);
     RUN_TEST(test_migrate_v2_wrongSize_rejected);
     RUN_TEST(test_migrate_v3_to_v4);
-    RUN_TEST(test_v4_roundtrip_and_size);
+    RUN_TEST(test_v5_roundtrip_and_size);
     RUN_TEST(test_defaultStruct_bytesDeterministic);
     RUN_TEST(test_v5_size_and_offsets);
     RUN_TEST(test_v4_blob_migrates_to_v5);
