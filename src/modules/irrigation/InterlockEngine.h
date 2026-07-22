@@ -12,3 +12,41 @@ enum InterlockTipo : uint8_t { IL_SENSOR = 0, IL_SIMULTANEIDADE = 1 };
 // Retorna o novo estado de disparo (true = condição satisfeita agora).
 bool evalCondition(uint8_t condicao, bool active, int32_t valueCenti,
                    int32_t thresholdCenti, uint16_t histCenti, bool &latched);
+
+constexpr size_t INTERLOCK_MAX = 16; // = InterlockTable::MAX (travado por static_assert no .cpp)
+
+// Forward decls: InterlockTable.h inclui este header (enums), então NÃO incluímos
+// InterlockTable.h aqui — evita include circular. Definição completa só no .cpp.
+class InterlockTable;
+struct InterlockRule;
+
+// Snapshot de uma leitura de sensor de uma estação.
+struct SensorSnapshot {
+    uint32_t node = 0;
+    uint8_t sensorIdx = 0;
+    bool present = false;   // false = estação não reportou esse sensor
+    bool active = false;    // digital
+    int32_t valueCenti = 0; // analógico
+};
+
+struct ZoneVerdict {
+    bool bloqueada = false;   // novo ciclo proibido (qualquer ação ativa)
+    bool deveFechar = false;  // fechar_e_bloquear ativo
+    uint8_t ruleId = 0;       // regra que disparou (0 = nenhuma)
+};
+
+class InterlockEngine {
+  public:
+    // `snaps`/`nSnaps`: leituras correntes. Atualiza latch interno e devolve
+    // o cap efetivo de simultaneidade (0 = sem limite). Chamar 1×/tick.
+    uint8_t evaluate(const InterlockTable &tbl, const SensorSnapshot *snaps, size_t nSnaps);
+    // Veredito p/ uma zona, após evaluate().
+    ZoneVerdict zoneVerdict(uint8_t zoneId) const;
+
+  private:
+    bool latched[INTERLOCK_MAX] = {false};
+    bool fired[INTERLOCK_MAX] = {false};       // resultado do último evaluate por índice de regra ocupada
+    const InterlockTable *lastTbl = nullptr;
+    static const SensorSnapshot *findSnap(const SensorSnapshot *s, size_t n, uint32_t node, uint8_t idx);
+    static bool ruleCoversZone(const InterlockRule &r, uint8_t zoneId);
+};
