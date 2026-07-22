@@ -14,6 +14,8 @@ bool FlashAuditRing::begin() {
     }
     head = h; num = c; return true;
 }
+// Falha de store.write não é propagada — numa falha de I/O o header pode ficar defasado
+// e o próximo begin() reformata (perde o log). Aceitável p/ log de auditoria.
 void FlashAuditRing::writeHeader() {
     uint8_t hdr[HEADER];
     uint32_t magic = MAGIC;
@@ -22,7 +24,8 @@ void FlashAuditRing::writeHeader() {
     store.write(0, hdr, HEADER);
 }
 void FlashAuditRing::clear() {
-    head = num = 0; writeHeader();
+    head = num = 0;
+    if (capacity() > 0) writeHeader();
 }
 void FlashAuditRing::append(const AuditRecord &r) {
     if (capacity() == 0) return;
@@ -33,11 +36,13 @@ void FlashAuditRing::append(const AuditRecord &r) {
 }
 bool FlashAuditRing::at(size_t i, AuditRecord &out) const {
     if (i >= num) return false;
-    // i=0 = mais recente = head-1
-    uint32_t idx = (head + capacity() - 1 - (uint32_t)i) % capacity();
+    uint32_t cap = (uint32_t)capacity();
+    uint32_t idx = (head + cap - 1 - (uint32_t)i) % cap; // i=0 = mais recente = head-1
     return store.read(slotOffset(idx), &out, REC);
 }
 size_t FlashAuditRing::toCsv(char *buf, size_t cap, size_t maxRecords) const {
+    // cap < ~cabeçalho: devolve 0 (sem CSV parcial). Chamador usa buffer heap folgado.
+    if (cap < 48) return 0;
     size_t o = 0;
     int w = snprintf(buf + o, cap - o, "ts,origem,acao,alvo,resultado,node,seq\n");
     if (w < 0 || (size_t)w >= cap - o) return o; o += w;
