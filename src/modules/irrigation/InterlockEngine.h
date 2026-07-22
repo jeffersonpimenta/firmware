@@ -10,6 +10,8 @@ enum InterlockTipo : uint8_t { IL_SENSOR = 0, IL_SIMULTANEIDADE = 1 };
 // `active`/`valueCenti` vêm do sensor (digital usa active; analógico usa valueCenti).
 // `latched` é o estado retido pelo chamador (entra e sai por referência).
 // Retorna o novo estado de disparo (true = condição satisfeita agora).
+// Nota: `histCenti` é ignorado para COND_ATIVO/COND_INATIVO (condições digitais) —
+// histerese só se aplica às condições analógicas COND_MENOR_QUE/COND_MAIOR_QUE.
 bool evalCondition(uint8_t condicao, bool active, int32_t valueCenti,
                    int32_t thresholdCenti, uint16_t histCenti, bool &latched);
 

@@ -19,6 +19,11 @@ const InterlockRule *InterlockTable::ruleAt(size_t index) const {
     return nullptr;
 }
 
+const InterlockRule *InterlockTable::ruleAtSlot(size_t slot) const {
+    if (slot >= MAX) return nullptr;
+    return rules[slot].id ? &rules[slot] : nullptr;
+}
+
 bool InterlockTable::upsert(const InterlockRule &in) {
     if (!in.id) return false;
     for (auto &r : rules) if (r.id == in.id) { r = in; return true; } // atualiza

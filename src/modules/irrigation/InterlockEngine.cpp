@@ -36,11 +36,12 @@ uint8_t InterlockEngine::evaluate(const InterlockTable &tbl, const SensorSnapsho
     lastTbl = &tbl;
     uint8_t cap = 0; // 0 = sem limite
     for (size_t i = 0; i < INTERLOCK_MAX; i++) {
-        const InterlockRule *r = tbl.ruleAt(i);
+        const InterlockRule *r = tbl.ruleAtSlot(i);
         fired[i] = false;
         if (!r) { latched[i] = false; continue; }
         if (r->tipo == IL_SIMULTANEIDADE) {
             if (r->maxAbertas > 0 && (cap == 0 || r->maxAbertas < cap)) cap = r->maxAbertas;
+            latched[i] = false; // Fix 2: evita latch obsoleto se tipo de slot mudar
             continue;
         }
         const SensorSnapshot *sn = findSnap(snaps, nSnaps, r->node, r->sensorIdx);
@@ -56,7 +57,7 @@ ZoneVerdict InterlockEngine::zoneVerdict(uint8_t zoneId) const {
     if (!lastTbl) return v;
     for (size_t i = 0; i < INTERLOCK_MAX; i++) {
         if (!fired[i]) continue;
-        const InterlockRule *r = lastTbl->ruleAt(i);
+        const InterlockRule *r = lastTbl->ruleAtSlot(i);
         if (!r || r->tipo != IL_SENSOR) continue;
         if (!ruleCoversZone(*r, zoneId)) continue;
         v.bloqueada = true; v.ruleId = r->id;

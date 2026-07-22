@@ -26,6 +26,8 @@ class InterlockTable {
     bool removeById(uint8_t id);
     const InterlockRule *byId(uint8_t id) const;
     const InterlockRule *ruleAt(size_t index) const; // index-ésima ocupada
+    // Acesso por slot físico (0..MAX-1), não por ocupação. nullptr se slot vazio.
+    const InterlockRule *ruleAtSlot(size_t slot) const;
     size_t count() const;
     size_t serialize(uint8_t *buf, size_t cap) const;
     bool deserialize(const uint8_t *buf, size_t n); // falha => tabela vazia
