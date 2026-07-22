@@ -35,6 +35,9 @@ static const char *GW_PROGRAMS_PATH = "/prefs/irrigation-programs.dat";
 static const char *GW_PROGRAMS_TMP = "/prefs/irrigation-programs.tmp";
 static const char *GW_MIRROR_PATH = "/prefs/irrigation-mirror.dat";
 static const char *GW_MIRROR_TMP = "/prefs/irrigation-mirror.tmp";
+// Fase 6b: tabela de intertravamentos (arquivo separado — não mistura com o estado do scheduler).
+static const char *GW_INTERLOCKS_PATH = "/prefs/irrigation_interlocks.dat";
+static const char *GW_INTERLOCKS_TMP = "/prefs/irrigation_interlocks.tmp";
 
 // Cooldown de reconciliação de epoch por nó (30 s)
 static constexpr uint32_t EPOCH_COOLDOWN_MS = 30000;
@@ -239,6 +242,7 @@ IrrigationModule::IrrigationModule()
     if ((IrrigationRole)settings.role == IrrigationRole::GATEWAY) {
         loadAllowlist();
         loadGatewayState();
+        loadInterlocks(); // Fase 6b: carrega regras de intertravamento salvas
     }
     // §8.9: carrega o mini-log sobrevivente de reboot e registra o boot.
     loadAuditLog();
@@ -1306,6 +1310,26 @@ bool IrrigationModule::saveGatewayState()
 }
 
 // ---------------------------------------------------------------------------
+// Fase 6b: persistência da tabela de intertravamentos (arquivo separado).
+// ---------------------------------------------------------------------------
+
+bool IrrigationModule::loadInterlocks()
+{
+    size_t n = 0;
+    uint8_t buf[6 + InterlockTable::MAX * 48]; // margem folgada para serialização futura
+    if (!stagedRead(GW_INTERLOCKS_PATH, buf, sizeof(buf), n))
+        return false; // arquivo ausente na primeira inicialização — ok, tabela vazia
+    return gateway.interlocks.deserialize(buf, n);
+}
+
+bool IrrigationModule::saveInterlocks()
+{
+    uint8_t buf[6 + InterlockTable::MAX * 48];
+    size_t n = gateway.interlocks.serialize(buf, sizeof(buf));
+    return stagedWrite(GW_INTERLOCKS_TMP, GW_INTERLOCKS_PATH, buf, n);
+}
+
+// ---------------------------------------------------------------------------
 // Gateway engine — handlers e tick (Task 6, decisões 1–6)
 // ---------------------------------------------------------------------------
 
@@ -1593,6 +1617,47 @@ bool IrrigationModule::portalSetCoords(const IrrigationWeb::PortalCoords &c)
 // Decisão §2: loop principal do gateway — scheduler, espelho, retries, silêncio.
 void IrrigationModule::gwTick()
 {
+    // --- Fase 6b: motor de intertravamentos — avaliação 1×/tick, antes do scheduler ---
+    {
+        // Monta snapshot de sensores a partir do cache de telemetria das estações.
+        SensorSnapshot snaps[StationTelemetryCache::MAX * IrrigationProto::HB_MAX_SENSORS];
+        size_t ns = 0;
+        for (size_t i = 0; i < StationTelemetryCache::MAX; i++) {
+            const StationTelemetry *t = gateway.telemetry.entryAt(i);
+            if (!t || !t->node)
+                continue;
+            for (uint8_t k = 0; k < t->sensorCount && k < IrrigationProto::HB_MAX_SENSORS; k++)
+                snaps[ns++] = SensorSnapshot{t->node, t->sensors[k].id, true,
+                                             t->sensors[k].valueCenti != 0, (int32_t)t->sensors[k].valueCenti};
+        }
+        // Avalia regras; cap == 0 = sem limite de simultaneidade.
+        uint8_t cap = gateway.interlockEngine.evaluate(gateway.interlocks, snaps, ns);
+        gateway.openGate.setCap(cap);
+
+        // fechar_e_bloquear: fecha zona na BORDA DE SUBIDA (evita spam rádio por tick).
+        // interlockClosedMask é um bitmap de 256 bits indexado por zoneId.
+        for (size_t i = 0; i < gateway.zones.count(); i++) {
+            const Zone *z = gateway.zones.zoneAt(i);
+            if (!z)
+                continue;
+            ZoneVerdict v = gateway.interlockEngine.zoneVerdict(z->id);
+            uint8_t byteIdx = z->id >> 3;
+            uint8_t bitMask = (uint8_t)(1u << (z->id & 0x07));
+            bool jaFechada = (interlockClosedMask[byteIdx] & bitMask) != 0;
+            if (v.deveFechar) {
+                if (!jaFechada) {
+                    // Borda de subida: envia FECHAR e registra auditoria.
+                    gwSendValveCmd(z->node, z->index, z->tipo, 0, 0, z->id, 1);
+                    auditEvent(AuditOrigin::INTERTRAVAMENTO, AuditAction::FECHAR, z->id, AuditResult::OK, z->node);
+                    interlockClosedMask[byteIdx] |= bitMask;
+                }
+            } else {
+                // Intertravamento desarmado: libera para reabrir.
+                interlockClosedMask[byteIdx] &= (uint8_t)(~bitMask);
+            }
+        }
+    }
+
     // --- Scheduler (programa/cronograma) ---
     // RTC-OPTIONAL: se não há RTC válido, idle com LOG_WARN 1×/h.
     uint32_t epochLocal = 0;

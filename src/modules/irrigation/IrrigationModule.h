@@ -134,6 +134,8 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     bool saveAllowlist();
     bool loadGatewayState();
     bool saveGatewayState(); // persiste stations, zones, programs, mirror
+    bool loadInterlocks();   // Fase 6b: carrega tabela de intertravamentos do flash
+    bool saveInterlocks();   // Fase 6b: persiste tabela de intertravamentos (staged-write)
     IrrigationSettings mergeRemoteConfig(const IrrigationSettings &fresh, uint32_t newEpoch) const;
     void activateSettings(const IrrigationSettings &merged);
     void sendAck(uint32_t to, uint32_t ackedSeq, uint8_t status, uint8_t reason);
@@ -158,6 +160,9 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     PortalSession portal; // ciclo de vida do AP do captive portal (Fase 5b)
     // Gateway aggregate — only meaningful when role == GATEWAY (Task 6, decisão §1).
     IrrigationGateway gateway;
+    // Fase 6b: bitmask de zonas já fechadas por intertravamento (borda de subida).
+    // Indexado por zoneId (0..255); usa array compacto de 32 bytes (256 bits).
+    uint8_t interlockClosedMask[32] = {0};
     // Cooldowns de reconciliação de epoch indexados por nó (Fix 3: node-keyed, não por posição na allowlist).
     struct EpochCooldown {
         uint32_t node = 0;

@@ -5,7 +5,10 @@
 
 #include "modules/irrigation/CommandTracker.h"
 #include "modules/irrigation/GatewayTables.h"
+#include "modules/irrigation/InterlockEngine.h"
+#include "modules/irrigation/InterlockTable.h"
 #include "modules/irrigation/MirrorMode.h"
+#include "modules/irrigation/OpenGate.h"
 #include "modules/irrigation/ProgramScheduler.h"
 #include "modules/irrigation/StationMonitor.h"
 #include "modules/irrigation/StationTelemetryCache.h"
@@ -19,4 +22,8 @@ struct IrrigationGateway {
     AlertCenter alerts;
     MirrorMode mirror;
     StationTelemetryCache telemetry;
+    // Fase 6b: motor de intertravamentos e controle de abertura simultânea.
+    InterlockTable interlocks;
+    InterlockEngine interlockEngine;
+    OpenGate openGate;
 };
