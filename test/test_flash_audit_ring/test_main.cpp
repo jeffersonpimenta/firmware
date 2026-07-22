@@ -66,6 +66,33 @@ static void test_corrupt_header_formats()
     TEST_ASSERT_EQUAL_UINT32(0, ring.count());
 }
 
+static void test_csv_header_and_rows()
+{
+    MemStore s(FlashAuditRing::HEADER + 4 * FlashAuditRing::REC);
+    FlashAuditRing ring(s); ring.begin();
+    AuditRecord r; r.tsSecs = 100; r.origin = 1; r.action = 0; r.target = 3;
+    r.result = 0; r.node = 0xABCD; r.seq = 9;
+    ring.append(r);
+    char out[512];
+    size_t n = ring.toCsv(out, sizeof(out), 50);
+    TEST_ASSERT_GREATER_THAN(0, n);
+    out[n] = 0;
+    TEST_ASSERT_NOT_NULL(strstr(out, "ts,origem,acao,alvo,resultado,node,seq")); // cabeçalho
+    TEST_ASSERT_NOT_NULL(strstr(out, "100,"));
+}
+
+static void test_json_array()
+{
+    MemStore s(FlashAuditRing::HEADER + 4 * FlashAuditRing::REC);
+    FlashAuditRing ring(s); ring.begin();
+    ring.append(rec(42));
+    char out[512];
+    size_t n = ring.toJson(out, sizeof(out), 50);
+    out[n] = 0;
+    TEST_ASSERT_EQUAL_CHAR('[', out[0]);
+    TEST_ASSERT_NOT_NULL(strstr(out, "\"ts\":42"));
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -74,6 +101,8 @@ void setup()
     RUN_TEST(test_wrap_keeps_recent);
     RUN_TEST(test_persists_across_reopen);
     RUN_TEST(test_corrupt_header_formats);
+    RUN_TEST(test_csv_header_and_rows);
+    RUN_TEST(test_json_array);
     exit(UNITY_END());
 }
 void loop() {}

@@ -28,6 +28,11 @@ class FlashAuditRing {
     bool at(size_t i, AuditRecord &out) const; // i=0 = mais recente
     void clear();
 
+    // Escreve até `cap` bytes. Retorna bytes escritos (trunca no último registro
+    // que couber inteiro). `maxRecords` limita a quantos registros no máximo.
+    size_t toCsv(char *buf, size_t cap, size_t maxRecords) const;
+    size_t toJson(char *buf, size_t cap, size_t maxRecords) const;
+
   private:
     IByteStore &store;
     uint32_t head = 0;
