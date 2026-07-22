@@ -1897,6 +1897,11 @@ void IrrigationModule::handleGwHeartbeat(const meshtastic_MeshPacket &mp, const 
     tel.flags = hb.flags;
     tel.configEpoch = hb.configEpoch;
     tel.atMs = millis();
+    // Fase 6b (Task 11): copia bloco de sensores e bit tamper do heartbeat para o cache.
+    tel.sensorCount = hb.sensorCount;
+    for (uint8_t i = 0; i < hb.sensorCount && i < IrrigationProto::HB_MAX_SENSORS; i++)
+        tel.sensors[i] = hb.sensors[i];
+    tel.tamper = (hb.flags & IrrigationProto::HB_FLAG_TAMPER) != 0;
     gateway.telemetry.update(tel);
 }
 
