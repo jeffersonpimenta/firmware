@@ -1461,6 +1461,11 @@ bool IrrigationModule::gwRunCommand(const IrrigationWeb::WebCommand &c)
     if (c.kind == K::OPEN || c.kind == K::PULSE_TEST) {
         // Comando manual do painel: override explícito do operador — sem supressão de
         // espelho (diferente do gwTick, onde o scheduler cede a zona ao espelho).
+        // Fase 6b: bloqueia abertura manual se intertravamento está ativo para esta zona.
+        if (gateway.interlockEngine.zoneVerdict(z->id).bloqueada) {
+            auditEvent(AuditOrigin::PAINEL, AuditAction::CMD_REJEITADO, z->id, AuditResult::NACK, z->node);
+            return false;
+        }
         uint16_t dur = c.durationS;
         if (z->maxMin > 0 && dur > (uint16_t)(z->maxMin * 60))
             dur = (uint16_t)(z->maxMin * 60);
@@ -1527,6 +1532,11 @@ bool IrrigationModule::portalRunNetCommand(const IrrigationWeb::NetCommand &c)
         const StationEntry *st = gateway.stations.byNode(z->node);
         uint8_t attempts = (st && st->retries > 0) ? st->retries : 3;
         if (c.action == 1) {
+            // Fase 6b: bloqueia abertura via portal se intertravamento está ativo para esta zona.
+            if (gateway.interlockEngine.zoneVerdict(z->id).bloqueada) {
+                auditEvent(AuditOrigin::PORTAL_CAMPO, AuditAction::CMD_REJEITADO, z->id, AuditResult::NACK, z->node);
+                return false;
+            }
             uint16_t dur = c.durationS;
             if (z->maxMin > 0 && dur > (uint16_t)(z->maxMin * 60))
                 dur = (uint16_t)(z->maxMin * 60);
@@ -1691,15 +1701,39 @@ void IrrigationModule::gwTick()
                 // Retries: obtém da entrada de registro da estação (default 3).
                 const StationEntry *stEntry = gateway.stations.byNode(z->node);
                 uint8_t attempts = (stEntry && stEntry->retries > 0) ? stEntry->retries : 3;
-                gwSendValveCmd(z->node, z->index, z->tipo, 1, dur, a.zoneId, attempts);
+                // Fase 6b: verifica bloqueio por intertravamento antes de abrir.
+                ZoneVerdict sv = gateway.interlockEngine.zoneVerdict(a.zoneId);
+                if (sv.bloqueada) {
+                    auditEvent(AuditOrigin::INTERTRAVAMENTO, AuditAction::CMD_REJEITADO, a.zoneId,
+                               AuditResult::NACK, z->node);
+                    // Não abre; se a regra persistir, continuará bloqueado no próximo tick.
+                } else if (gateway.openGate.request(a.zoneId, dur) == OpenGate::Decision::ADMIT) {
+                    gwSendValveCmd(z->node, z->index, z->tipo, 1, dur, a.zoneId, attempts);
+                }
+                // HOLD: enfileirado com dur clampeado; dreno abaixo libera quando houver capacidade.
             } else { // CLOSE
                 // Mesma proteção: não feche o que o espelho mantém aberto (carryover F4 #1).
                 if (mirrorOwnsZoneOutput(gateway.mirror, z->fonteInput)) {
                     LOG_DEBUG("Irrigation GW: scheduler CLOSE zone=%u suprimido (espelho dono)", a.zoneId);
                     continue;
                 }
+                gateway.openGate.release(a.zoneId);
                 gwSendValveCmd(z->node, z->index, z->tipo, 0, 0, a.zoneId, 1);
             }
+        }
+    }
+
+    // --- Fase 6b: drena a fila de simultaneidade enquanto houver capacidade ---
+    {
+        OpenGate::Pending p;
+        while ((p = gateway.openGate.nextAdmittable()).zoneId != 0) {
+            const Zone *qz = gateway.zones.byId(p.zoneId);
+            if (!qz)
+                continue; // zona removida enquanto na fila
+            if (gateway.interlockEngine.zoneVerdict(p.zoneId).bloqueada)
+                continue; // bloqueou nesse meio-tempo — descarta da fila
+            gateway.openGate.request(p.zoneId, p.durationS); // registra a abertura no slot
+            gwSendValveCmd(qz->node, qz->index, qz->tipo, 1, p.durationS, p.zoneId, 1);
         }
     }
 
