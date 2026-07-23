@@ -365,19 +365,12 @@ static void hInterlocksPost(HTTPRequest *req, HTTPResponse *res)
         sendParseErrors(res, pr);
         return;
     }
-    // Acessa a tabela mutável via gwState() — cast via referência não-const do module.
-    // O módulo expõe gwState() como const; para mutações usamos diretamente o método
-    // de alto nível — mas interlocks não tem gwApply*, então acessamos via cast.
-    // Seguro: o handler roda na task HTTP com o módulo no mesmo contexto de execução.
-    IrrigationGateway &gw = const_cast<IrrigationGateway &>(irrigationModule->gwState());
-    if (!gw.interlocks.upsert(rule)) {
+    if (!irrigationModule->gwApplyInterlockUpsert(rule)) {
         sendJson(res, "{\"errors\":[\"tabela cheia\"]}", 400);
         return;
     }
-    irrigationModule->gwSaveInterlocks();
-    irrigationModule->gwRebuildLocalInterlocks();
     char out[3072];
-    size_t n = buildInterlocks(gw.interlocks, out, sizeof(out));
+    size_t n = buildInterlocks(irrigationModule->gwState().interlocks, out, sizeof(out));
     if (!n) {
         res->setStatusCode(500);
         return;
@@ -400,15 +393,12 @@ static void hInterlocksDelete(HTTPRequest *req, HTTPResponse *res)
         sendParseErrors(res, pr);
         return;
     }
-    IrrigationGateway &gw = const_cast<IrrigationGateway &>(irrigationModule->gwState());
-    if (!gw.interlocks.removeById(id)) {
+    if (!irrigationModule->gwApplyInterlockDelete(id)) {
         sendJson(res, "{\"errors\":[\"regra inexistente\"]}", 400);
         return;
     }
-    irrigationModule->gwSaveInterlocks();
-    irrigationModule->gwRebuildLocalInterlocks();
     char out[3072];
-    size_t n = buildInterlocks(gw.interlocks, out, sizeof(out));
+    size_t n = buildInterlocks(irrigationModule->gwState().interlocks, out, sizeof(out));
     if (!n) {
         res->setStatusCode(500);
         return;
@@ -480,12 +470,10 @@ static void hSensorsName(HTTPRequest *req, HTTPResponse *res)
         sendParseErrors(res, pr);
         return;
     }
-    IrrigationGateway &gw = const_cast<IrrigationGateway &>(irrigationModule->gwState());
-    if (!gw.sensorNames.set(node, idx, name)) {
+    if (!irrigationModule->gwApplySensorName(node, idx, name)) {
         sendJson(res, "{\"errors\":[\"tabela de nomes cheia\"]}", 400);
         return;
     }
-    irrigationModule->gwSaveSensorNames();
     sendJson(res, "{\"ok\":true}");
 }
 

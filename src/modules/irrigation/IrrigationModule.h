@@ -79,9 +79,11 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     // Fase 6b, Task 14b: remonta e empurra regras locais de intertravamento para cada estação.
     // Deve ser chamado após loadInterlocks()+loadGatewayState() (init) e após CRUD de interlocks (Task 18).
     void gwRebuildLocalInterlocks(); // GATEWAY-only
-    // Fase 6b Task 18: acessores públicos para os endpoints de intertravamentos/sensores/manutenção.
-    bool gwSaveInterlocks();                           // chama saveInterlocks() privado
-    bool gwSaveSensorNames();                          // chama saveSensorNames() privado
+    // Fase 6b Task 18: métodos de alto nível para os endpoints de intertravamentos/sensores/manutenção.
+    // Espelham o padrão gwApplyZone*/gwApplyProgram*: mutam, persistem e retornam false se falhar.
+    bool gwApplyInterlockUpsert(const InterlockRule &r); // upsert + saveInterlocks() + gwRebuildLocalInterlocks()
+    bool gwApplyInterlockDelete(uint8_t id);             // removeById + saveInterlocks() + gwRebuildLocalInterlocks()
+    bool gwApplySensorName(uint32_t node, uint8_t sensorIdx, const char *name); // set + saveSensorNames()
     void gwOpenMaintWindow(uint32_t node, uint16_t minutes); // chama gwSendMaintWindow() privado
     // Acesso de leitura ao log de auditoria flash do gateway (Task 16). GATEWAY-only.
     const FlashAuditRing &auditFlashRef() const { return auditFlash; }

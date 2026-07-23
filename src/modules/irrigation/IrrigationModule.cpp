@@ -1613,14 +1613,29 @@ bool IrrigationModule::gwIsGateway() const
     return settings.role == (uint8_t)IrrigationRole::GATEWAY;
 }
 
-// --- Fase 6b Task 18: acessores públicos para os endpoints de intertravamentos/sensores/manutenção ---
-bool IrrigationModule::gwSaveInterlocks()
+// --- Fase 6b Task 18: gwApply* para intertravamentos/sensores (remove const_cast dos endpoints) ---
+bool IrrigationModule::gwApplyInterlockUpsert(const InterlockRule &r)
 {
-    return saveInterlocks();
+    if (!gateway.interlocks.upsert(r))
+        return false;
+    saveInterlocks();
+    gwRebuildLocalInterlocks();
+    return true;
 }
-bool IrrigationModule::gwSaveSensorNames()
+bool IrrigationModule::gwApplyInterlockDelete(uint8_t id)
 {
-    return saveSensorNames();
+    if (!gateway.interlocks.removeById(id))
+        return false;
+    saveInterlocks();
+    gwRebuildLocalInterlocks();
+    return true;
+}
+bool IrrigationModule::gwApplySensorName(uint32_t node, uint8_t sensorIdx, const char *name)
+{
+    if (!gateway.sensorNames.set(node, sensorIdx, name))
+        return false;
+    saveSensorNames();
+    return true;
 }
 void IrrigationModule::gwOpenMaintWindow(uint32_t node, uint16_t minutes)
 {
