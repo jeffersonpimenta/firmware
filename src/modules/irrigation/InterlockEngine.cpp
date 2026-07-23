@@ -73,7 +73,7 @@ LocalReplicaOut evalLocalInterlocks(const IrrigationSettings::LocalInterlock *ru
     LocalReplicaOut out;
     for (size_t i = 0; i < nRules; i++) {
         const auto &r = rules[i];
-        if (r.saidasMask == 0) { if (latched) latched[i] = false; continue; } // inativo
+        if (r.saidasValvMask == 0 && r.saidasGpoMask == 0) { if (latched) latched[i] = false; continue; } // inativo
         const IrrigationProto::SensorReading *rd = nullptr;
         for (size_t k = 0; k < nReadings; k++) if (readings[k].id == r.sensorIdx) { rd = &readings[k]; break; }
         if (!rd) { if (latched) latched[i] = false; continue; }
@@ -81,8 +81,12 @@ LocalReplicaOut evalLocalInterlocks(const IrrigationSettings::LocalInterlock *ru
         bool fire = evalCondition(r.condicao, active, rd->valueCenti,
                                   r.valorCenti, r.histereseCenti, latched[i]);
         if (fire) {
-            out.bloquearMask |= r.saidasMask;
-            if (r.acao == ACAO_FECHAR_E_BLOQUEAR) out.fecharMask |= r.saidasMask;
+            out.bloquearValvMask |= r.saidasValvMask;
+            out.bloquearGpoMask  |= r.saidasGpoMask;
+            if (r.acao == ACAO_FECHAR_E_BLOQUEAR) {
+                out.fecharValvMask |= r.saidasValvMask;
+                out.fecharGpoMask  |= r.saidasGpoMask;
+            }
         }
     }
     return out;

@@ -56,8 +56,10 @@ class InterlockEngine {
 };
 
 struct LocalReplicaOut {
-    uint8_t fecharMask = 0;   // saídas a fechar+bloquear agora
-    uint8_t bloquearMask = 0; // saídas com abertura bloqueada
+    uint8_t fecharValvMask = 0;   // válvulas a fechar+bloquear
+    uint8_t bloquearValvMask = 0; // válvulas com abertura bloqueada
+    uint8_t fecharGpoMask = 0;    // GPOs a fechar+bloquear
+    uint8_t bloquearGpoMask = 0;  // GPOs com abertura bloqueada
 };
 
 // Avalia as regras locais. `readings`/`nReadings`: leituras do SensorSampler local

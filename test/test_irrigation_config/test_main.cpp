@@ -290,7 +290,8 @@ static void test_v4_blob_migrates_to_v5()
     TEST_ASSERT_EQUAL_UINT8(3, out.numValves);
     TEST_ASSERT_EQUAL_INT8(34, out.sensores[0].pino);
     TEST_ASSERT_EQUAL_UINT8(0, out.localInterlocks[0].sensorIdx);
-    TEST_ASSERT_EQUAL_UINT8(0, out.localInterlocks[0].saidasMask); // inativo
+    TEST_ASSERT_EQUAL_UINT8(0, out.localInterlocks[0].saidasValvMask); // inativo
+    TEST_ASSERT_EQUAL_UINT8(0, out.localInterlocks[0].saidasGpoMask);
 }
 
 void setup()

@@ -73,13 +73,15 @@ struct IrrigationSettings {
     // v5 (Fase 6b): réplica local de intertravamentos (§8.10).
     static constexpr uint8_t MAX_LOCAL_INTERLOCKS = 4;
     struct LocalInterlock {
-        uint8_t sensorIdx = 0;      // 0..3 (sensor local)
-        uint8_t condicao = 0;       // InterlockCond (0=ATIVO,1=INATIVO,2=MENOR_QUE,3=MAIOR_QUE)
-        uint8_t acao = 0;           // InterlockAcao (0=BLOQUEAR_ABERTURA,1=FECHAR_E_BLOQUEAR)
-        uint8_t saidasMask = 0;     // bits = índices de válvula/GPO locais; 0 = slot inativo
+        uint8_t sensorIdx = 0;        // 0..3 (sensor local)
+        uint8_t condicao = 0;         // InterlockCond (0=ATIVO,1=INATIVO,2=MENOR_QUE,3=MAIOR_QUE)
+        uint8_t acao = 0;             // InterlockAcao (0=BLOQUEAR_ABERTURA,1=FECHAR_E_BLOQUEAR)
+        uint8_t saidasValvMask = 0;   // bits = índices de válvula locais a fechar+bloquear
         int32_t valorCenti = 0;
         uint16_t histereseCenti = 0;
-        uint16_t pad = 0;           // completa 12 B
+        uint8_t saidasGpoMask = 0;    // bits = índices de GPO locais a fechar+bloquear
+        uint8_t pad = 0;
+        // slot inativo quando saidasValvMask==0 && saidasGpoMask==0
     };
     LocalInterlock localInterlocks[MAX_LOCAL_INTERLOCKS];
 };
