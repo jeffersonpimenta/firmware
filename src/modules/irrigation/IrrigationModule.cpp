@@ -242,7 +242,8 @@ IrrigationModule::IrrigationModule()
     if ((IrrigationRole)settings.role == IrrigationRole::GATEWAY) {
         loadAllowlist();
         loadGatewayState();
-        loadInterlocks(); // Fase 6b: carrega regras de intertravamento salvas
+        loadInterlocks();            // Fase 6b: carrega regras de intertravamento salvas
+        gwRebuildLocalInterlocks();  // Fase 6b Task 14b: monta réplicas locais v5 e empurra via epoch
     }
     // §8.9: carrega o mini-log sobrevivente de reboot e registra o boot.
     loadAuditLog();
@@ -1327,6 +1328,121 @@ bool IrrigationModule::saveInterlocks()
     uint8_t buf[6 + InterlockTable::MAX * 48];
     size_t n = gateway.interlocks.serialize(buf, sizeof(buf));
     return stagedWrite(GW_INTERLOCKS_TMP, GW_INTERLOCKS_PATH, buf, n);
+}
+
+// ---------------------------------------------------------------------------
+// Fase 6b, Task 14b: reconstrói e empurra regras locais de intertravamento
+// para cada estação conhecida. Deve ser chamado no init (após loadInterlocks +
+// loadGatewayState) e após mutações na tabela de interlocks (Task 18).
+//
+// Epoch idiom: o gateway nunca "inventa" um epoch novo; ele usa
+//   entry->desiredEpoch + 1
+// para sinalizar que o blob foi modificado pelo gateway, superando o epoch
+// que a estação já conhece. O guard de memcmp garante que reboots sem
+// mudança real não causam epoch-bump nem churn de push.
+// ---------------------------------------------------------------------------
+void IrrigationModule::gwRebuildLocalInterlocks()
+{
+    bool anyChanged = false;
+
+    for (size_t si = 0; si < gateway.stations.count(); si++) {
+        // Acessa a entrada mutável (por índice de ocupação).
+        // nodeAt() retorna const; precisamos do ponteiro mutável via mutableByNode.
+        const StationEntry *centry = gateway.stations.nodeAt(si);
+        if (!centry || centry->node == 0)
+            continue;
+        StationEntry *entry = gateway.stations.mutableByNode(centry->node);
+        if (!entry)
+            continue;
+
+        // Só faz sentido modificar entradas que já receberam blob válido (desiredEpoch != 0).
+        // Se desiredEpoch == 0 a entrada ainda não tem blob e não deve ser tocada (§5.4).
+        if (entry->desiredEpoch == 0)
+            continue;
+
+        // 1. Carrega a config desejada atual do blob.
+        IrrigationSettings s;
+        if (!migrateIrrigationSettings(entry->blob, sizeof(entry->blob), s))
+            continue;
+
+        // 2. Guarda o estado anterior dos slots locais para comparação final.
+        IrrigationSettings::LocalInterlock oldRules[IrrigationSettings::MAX_LOCAL_INTERLOCKS];
+        memcpy(oldRules, s.localInterlocks, sizeof(oldRules));
+
+        // 3. Zera os slots (serão recomputados a seguir).
+        for (auto &li : s.localInterlocks)
+            li = {};
+
+        // 4. Percorre todas as regras de intertravamento do gateway e calcula
+        //    as máscaras de saída locais para esta estação.
+        uint8_t nextSlot = 0;
+        for (size_t ri = 0; ri < InterlockTable::MAX && nextSlot < IrrigationSettings::MAX_LOCAL_INTERLOCKS; ri++) {
+            const InterlockRule *r = gateway.interlocks.ruleAtSlot(ri);
+            if (!r || r->id == 0)
+                continue; // slot vazio
+            if (r->tipo != IL_SENSOR)
+                continue; // só regras de sensor geram réplica local
+            if (r->node != entry->node)
+                continue; // regra pertence a outra estação
+
+            // Calcula quais saídas desta estação são cobertas pela regra.
+            uint8_t valvMask = 0, gpoMask = 0;
+            for (size_t zi = 0; zi < gateway.zones.count(); zi++) {
+                const Zone *z = gateway.zones.zoneAt(zi);
+                if (!z || z->node != entry->node)
+                    continue;
+                bool coberta = r->todas;
+                if (!coberta) {
+                    for (uint8_t k = 0; k < 8; k++) {
+                        if (r->zoneIds[k] == 0)
+                            break;
+                        if (r->zoneIds[k] == z->id) {
+                            coberta = true;
+                            break;
+                        }
+                    }
+                }
+                if (!coberta)
+                    continue;
+                if (z->tipo == 1)
+                    gpoMask |= (uint8_t)(1u << (z->index & 7));
+                else
+                    valvMask |= (uint8_t)(1u << (z->index & 7));
+            }
+
+            // Se a regra não afeta nenhuma saída local desta estação, pula.
+            if (!valvMask && !gpoMask)
+                continue;
+
+            // Preenche o próximo slot livre.
+            IrrigationSettings::LocalInterlock &li = s.localInterlocks[nextSlot++];
+            li.sensorIdx       = r->sensorIdx;
+            li.condicao        = r->condicao;
+            li.acao            = r->acao;
+            li.saidasValvMask  = valvMask;
+            li.valorCenti      = r->valorCenti;
+            li.histereseCenti  = r->histereseCenti;
+            li.saidasGpoMask   = gpoMask;
+            li.pad             = 0;
+        }
+
+        // 5. Verifica se algo mudou (guard contra boot-churn).
+        if (memcmp(oldRules, s.localInterlocks, sizeof(oldRules)) == 0)
+            continue; // sem mudança: não toca o epoch nem o blob
+
+        // 6. Escreve o blob de volta (version e magic vêm intactos do migrate→v5).
+        //    Epoch sobe em +1 para sinalizar ao mecanismo de reconciliação que o
+        //    gateway quer empurrar esta config atualizada para a estação.
+        memcpy(entry->blob, &s, sizeof(s));
+        entry->desiredEpoch += 1;
+        anyChanged = true;
+        LOG_INFO("Irrigation GW: rebuilt local interlocks for node=0x%08x (%u slots), epoch→%u",
+                 entry->node, nextSlot, entry->desiredEpoch);
+    }
+
+    // 7. Persiste o estado do gateway uma única vez se qualquer estação mudou.
+    if (anyChanged)
+        saveGatewayState();
 }
 
 // ---------------------------------------------------------------------------

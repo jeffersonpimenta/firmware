@@ -74,6 +74,9 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     bool gwApplyProgramToggle(uint8_t id, bool enabled);
     bool gwApplyProgramDelete(uint8_t id);
     bool gwRunCommand(const IrrigationWeb::WebCommand &c);
+    // Fase 6b, Task 14b: remonta e empurra regras locais de intertravamento para cada estação.
+    // Deve ser chamado após loadInterlocks()+loadGatewayState() (init) e após CRUD de interlocks (Task 18).
+    void gwRebuildLocalInterlocks(); // GATEWAY-only
 
     // --- Serviço do portal de campo (todos os papéis). Chamados pela cola HTTP (IrrigationPortalEndpoints). ---
     void portalFillNodeState(IrrigationWeb::NodeStateCtx &out) const;
