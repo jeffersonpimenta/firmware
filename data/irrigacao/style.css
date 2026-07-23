@@ -633,3 +633,156 @@ body {
   opacity: 0.6;
   cursor: default;
 }
+
+/* ===== Fase 6b — Sensores ===== */
+.sens-hdr {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.sens-hdr .name {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.sens-hdr .sub {
+  flex: 1;
+}
+
+.sens-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.sens-table th,
+.sens-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 6px 6px;
+  text-align: left;
+  font-size: 12.5px;
+}
+
+.sens-table th {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 11px;
+}
+
+.sens-table th:first-child,
+.sens-table td:first-child {
+  width: 28px;
+  color: var(--muted);
+}
+
+.sn-input {
+  width: 100%;
+  min-width: 90px;
+}
+
+/* ===== Fase 6b — Intertravamentos ===== */
+.itl-card {
+  padding: 12px 14px;
+}
+
+.itl-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.itl-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.itl-info .name {
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 3px;
+}
+
+.itl-info .sub {
+  line-height: 1.35;
+}
+
+/* ===== Fase 6b — Log de auditoria ===== */
+.log-filters {
+  margin-bottom: 10px;
+}
+
+.log-export-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.log-export-row .btn {
+  flex: 1;
+  text-align: center;
+  text-decoration: none;
+  padding: 8px 10px;
+}
+
+.log-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-stat);
+  background: var(--card);
+}
+
+.log-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.log-table th,
+.log-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 6px 8px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.log-table th {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 11px;
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+}
+
+.log-table tr:last-child td {
+  border-bottom: none;
+}
+
+.log-ts {
+  color: var(--muted);
+}
+
+/* ===== Fase 6b — Tamper / manutenção ===== */
+.maint-sub {
+  margin: 2px 0 10px;
+}
+
+.maint-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.maint-fld {
+  flex: 0 0 auto;
+  width: 96px;
+}
+
+.maint-min {
+  width: 100%;
+}
+
+.maint-row .btn {
+  flex: 1;
+}
