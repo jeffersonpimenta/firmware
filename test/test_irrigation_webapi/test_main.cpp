@@ -413,6 +413,36 @@ static void test_parseInterlockUpsert_todas_comZonas()
     TEST_ASSERT_EQUAL_UINT8(0, out.zoneIds[0]); // array vazio
 }
 
+// zonas[] com 10 elementos: o guard zCount<8 deve descartar os dois últimos.
+static void test_parseInterlockUpsert_zonasOverflowGuard()
+{
+    const char *j =
+        "{\"id\":1,\"tipo\":0,\"node\":1,\"sensor\":0,\"condicao\":0,"
+        "\"valor\":0,\"histerese\":0,\"acao\":0,"
+        "\"zonas\":[1,2,3,4,5,6,7,8,9,10],\"todas\":false,\"mensagem\":\"\",\"maxAbertas\":0}";
+    InterlockRule out = {};
+    ParseResult pr = parseInterlockUpsert(j, strlen(j), out);
+    TEST_ASSERT_TRUE(pr.ok);
+    // Os 8 primeiros devem ter chegado intactos
+    TEST_ASSERT_EQUAL_UINT8(1, out.zoneIds[0]);
+    TEST_ASSERT_EQUAL_UINT8(8, out.zoneIds[7]);
+    // O 9º slot seria zoneIds[8], mas o array tem só 8 entradas; validamos
+    // indiretamente: os 8 slots preenchidos cobrem 1..8, nada além.
+}
+
+// "zonas" ausente: parse deve ter ok e zoneIds[0]==0 (lista vazia).
+static void test_parseInterlockUpsert_zonasAusente()
+{
+    const char *j =
+        "{\"id\":2,\"tipo\":1,\"node\":0,\"sensor\":0,\"condicao\":0,"
+        "\"valor\":0,\"histerese\":0,\"acao\":0,"
+        "\"todas\":false,\"mensagem\":\"\",\"maxAbertas\":2}";
+    InterlockRule out = {};
+    ParseResult pr = parseInterlockUpsert(j, strlen(j), out);
+    TEST_ASSERT_TRUE(pr.ok);
+    TEST_ASSERT_EQUAL_UINT8(0, out.zoneIds[0]); // lista vazia — nenhum id foi escrito
+}
+
 // ── parseInterlockDelete ─────────────────────────────────────────────────────
 
 static void test_parseInterlockDelete_ok()
@@ -505,6 +535,17 @@ static void test_parseMaintWindow_clampMaxMinutes()
     uint32_t node = 0;
     uint16_t minutes = 0;
     TEST_ASSERT_FALSE(parseMaintWindow(j, strlen(j), node, minutes).ok);
+}
+
+static void test_parseMaintWindow_maxBoundaryAccepted()
+{
+    // minutes == 1440 é o limite máximo inclusivo
+    const char *j = "{\"node\":123,\"minutes\":1440}";
+    uint32_t node = 0;
+    uint16_t minutes = 0;
+    ParseResult pr = parseMaintWindow(j, strlen(j), node, minutes);
+    TEST_ASSERT_TRUE(pr.ok);
+    TEST_ASSERT_EQUAL_UINT16(1440, minutes);
 }
 
 // ── parseSensorName ──────────────────────────────────────────────────────────
@@ -610,6 +651,8 @@ void setup()
     RUN_TEST(test_parseInterlockUpsert_ok);
     RUN_TEST(test_parseInterlockUpsert_rejectsBadId);
     RUN_TEST(test_parseInterlockUpsert_todas_comZonas);
+    RUN_TEST(test_parseInterlockUpsert_zonasOverflowGuard);
+    RUN_TEST(test_parseInterlockUpsert_zonasAusente);
     RUN_TEST(test_parseInterlockDelete_ok);
     RUN_TEST(test_parseInterlockDelete_rejectsBadId);
     RUN_TEST(test_buildSensorsGateway_basic);
@@ -617,6 +660,7 @@ void setup()
     RUN_TEST(test_parseMaintWindow_ok);
     RUN_TEST(test_parseMaintWindow_zero_ok);
     RUN_TEST(test_parseMaintWindow_clampMaxMinutes);
+    RUN_TEST(test_parseMaintWindow_maxBoundaryAccepted);
     RUN_TEST(test_parseSensorName_ok);
     RUN_TEST(test_parseSensorName_truncatesLongName);
     RUN_TEST(test_parseSensorName_rejectsBadSensor);
