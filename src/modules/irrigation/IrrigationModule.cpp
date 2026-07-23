@@ -1473,6 +1473,7 @@ bool IrrigationModule::gwRunCommand(const IrrigationWeb::WebCommand &c)
         return true;
     }
     if (c.kind == K::CLOSE) {
+        gateway.openGate.release(z->id); // balanceia a contagem de simultaneidade (no-op se não estava aberta)
         gwSendValveCmd(z->node, z->index, z->tipo, 0, 0, z->id, 1);
         return true;
     }
@@ -1542,6 +1543,7 @@ bool IrrigationModule::portalRunNetCommand(const IrrigationWeb::NetCommand &c)
                 dur = (uint16_t)(z->maxMin * 60);
             gwSendValveCmd(z->node, z->index, z->tipo, 1, dur, z->id, attempts);
         } else {
+            gateway.openGate.release(z->id); // balanceia a contagem de simultaneidade (no-op se não estava aberta)
             gwSendValveCmd(z->node, z->index, z->tipo, 0, 0, z->id, 1);
         }
         // §8.9: audita comando de rede via portal (gateway aplica localmente).
@@ -1730,8 +1732,10 @@ void IrrigationModule::gwTick()
             const Zone *qz = gateway.zones.byId(p.zoneId);
             if (!qz)
                 continue; // zona removida enquanto na fila
-            if (gateway.interlockEngine.zoneVerdict(p.zoneId).bloqueada)
+            if (gateway.interlockEngine.zoneVerdict(p.zoneId).bloqueada) {
+                auditEvent(AuditOrigin::INTERTRAVAMENTO, AuditAction::CMD_REJEITADO, p.zoneId, AuditResult::NACK, qz->node);
                 continue; // bloqueou nesse meio-tempo — descarta da fila
+            }
             gateway.openGate.request(p.zoneId, p.durationS); // registra a abertura no slot
             gwSendValveCmd(qz->node, qz->index, qz->tipo, 1, p.durationS, p.zoneId, 1);
         }
