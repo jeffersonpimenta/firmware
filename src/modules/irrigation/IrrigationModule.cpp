@@ -244,6 +244,9 @@ IrrigationModule::IrrigationModule()
         loadGatewayState();
         loadInterlocks();            // Fase 6b: carrega regras de intertravamento salvas
         gwRebuildLocalInterlocks();  // Fase 6b Task 14b: monta réplicas locais v5 e empurra via epoch
+        // Fase 6b Task 16: inicializa o log de auditoria persistente em flash do gateway.
+        auditFlashStore.ensureAllocated();
+        auditFlash.begin();
     }
     // §8.9: carrega o mini-log sobrevivente de reboot e registra o boot.
     loadAuditLog();
@@ -1219,6 +1222,10 @@ void IrrigationModule::auditEvent(AuditOrigin o, AuditAction a, uint8_t target, 
     r.seq = seq;
     audit.append(r);
     auditDirty = true;
+    // Fase 6b Task 16: persiste no log de flash do gateway (meses de histórico).
+    // O FlashAuditRing grava header a cada append — não passa pelo flush de 60s.
+    if ((IrrigationRole)settings.role == IrrigationRole::GATEWAY)
+        auditFlash.append(r);
 }
 
 bool IrrigationModule::loadAuditLog()

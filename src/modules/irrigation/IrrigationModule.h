@@ -16,6 +16,7 @@
 #include "modules/irrigation/GpoController.h"
 #include "modules/irrigation/ValveController.h"
 #include "modules/irrigation/SensorSampler.h"
+#include "modules/irrigation/LittleFsByteStore.h"
 
 // Forward-decl da cola web (definida em IrrigationWebApi.h, incluída só no .cpp).
 namespace IrrigationWeb
@@ -105,6 +106,13 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     void auditEvent(AuditOrigin o, AuditAction a, uint8_t target, AuditResult res, uint32_t node = 0, uint32_t seq = 0);
     bool loadAuditLog();
     bool saveAuditLog();
+
+    // Fase 6b Task 16: log de auditoria persistente em flash no gateway (~5 meses, 256 KB).
+    // Somente usado quando role == GATEWAY; inicializado em loadGatewayState().
+    static constexpr size_t AUDIT_FLASH_CAP = 16384; // slots
+    static constexpr size_t AUDIT_FLASH_SIZE = FlashAuditRing::HEADER + AUDIT_FLASH_CAP * FlashAuditRing::REC;
+    LittleFsByteStore auditFlashStore{"/prefs/irrigation_audit.dat", AUDIT_FLASH_SIZE};
+    FlashAuditRing auditFlash{auditFlashStore};
 
     void handleCmdValvula(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
     void handleCmdGpo(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
