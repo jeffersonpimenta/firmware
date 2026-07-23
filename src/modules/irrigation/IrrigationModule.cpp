@@ -346,6 +346,13 @@ ProcessMessage IrrigationModule::handleReceived(const meshtastic_MeshPacket &mp)
         else
             LOG_DEBUG("Irrigation: REMOTE_CMD from 0x%08x ignored (role=%d)", mp.from, settings.role);
         break;
+    case MSG_CMD_MAINT:
+        // Estação recebe janela de manutenção do tamper enviada pelo gateway (Fase 6b Task 15).
+        if ((IrrigationRole)settings.role == IrrigationRole::ESTACAO)
+            handleCmdMaint(mp, h);
+        else
+            LOG_DEBUG("Irrigation: CMD_MAINT from 0x%08x ignored (role=%d)", mp.from, settings.role);
+        break;
     default:
         LOG_DEBUG("Irrigation: unhandled type %d from 0x%08x", h.type, mp.from);
         break;
@@ -457,6 +464,39 @@ void IrrigationModule::handleCmdGpo(const meshtastic_MeshPacket &mp, const Heade
                cmd.gpoId, cmdOk ? AuditResult::OK : AuditResult::NACK, mp.from, h.seq);
 }
 
+void IrrigationModule::handleCmdMaint(const meshtastic_MeshPacket &mp, const Header &h)
+{
+    // Apenas o gateway vinculado pode abrir janela de manutenção (mesma regra dos outros comandos).
+    if (!senderAuthorized(mp.from)) {
+        LOG_WARN("Irrigation: CMD_MAINT não autorizado de 0x%08x", mp.from);
+        sendAck(mp.from, h.seq, ACK_NACK, REASON_UNAUTHORIZED);
+        auditEvent(AuditOrigin::PAINEL, AuditAction::CMD_REJEITADO, REASON_UNAUTHORIZED, AuditResult::NACK, mp.from, h.seq);
+        return;
+    }
+    // Anti-replay: seq repetido descartado em silêncio.
+    if (!seqTable.checkAndUpdate(mp.from, h.seq)) {
+        LOG_WARN("Irrigation: CMD_MAINT seq repetido %u de 0x%08x", h.seq, mp.from);
+        return;
+    }
+    CmdMaint cmd;
+    if (!decodeCmdMaint(mp.decoded.payload.bytes, mp.decoded.payload.size, cmd)) {
+        sendAck(mp.from, h.seq, ACK_NACK, REASON_BAD_PAYLOAD);
+        auditEvent(AuditOrigin::PAINEL, AuditAction::CMD_REJEITADO, REASON_BAD_PAYLOAD, AuditResult::NACK, mp.from, h.seq);
+        return;
+    }
+    // Aplica janela de manutenção: 0 minutos = fechar imediatamente.
+    if (cmd.durationMin == 0) {
+        tamperMaintUntilMs = 0;
+        LOG_INFO("Irrigation: janela de manutenção do tamper fechada por 0x%08x", mp.from);
+    } else {
+        tamperMaintUntilMs = millis() + (uint32_t)cmd.durationMin * 60000UL;
+        LOG_INFO("Irrigation: janela de manutenção do tamper aberta por %u min (por 0x%08x)", cmd.durationMin, mp.from);
+    }
+    sendAck(mp.from, h.seq, ACK_OK, REASON_NONE);
+    // §8.9: audita abertura/fechamento de janela de manutenção (ação TAMPER + origem PAINEL).
+    auditEvent(AuditOrigin::PAINEL, AuditAction::TAMPER, cmd.durationMin > 0 ? 1 : 0, AuditResult::OK, mp.from, h.seq);
+}
+
 void IrrigationModule::sendAck(uint32_t to, uint32_t ackedSeq, uint8_t status, uint8_t reason)
 {
     Ack ack = {};
@@ -547,10 +587,11 @@ void IrrigationModule::tickTamper(uint32_t nowMs)
 
     bool novoEstado = ativo;
     tamperActive = novoEstado;
-    // §8.9: tamper sempre auditado (mesmo quando EVENTO suprimido pela janela do portal — §8.12).
+    // §8.9: tamper sempre auditado (mesmo quando EVENTO suprimido pela janela do portal ou manutenção — §8.12).
     auditEvent(AuditOrigin::SISTEMA, AuditAction::TAMPER, tamperActive ? 1 : 0, AuditResult::OK);
-    // Janela de manutenção automática: portal aberto suprime o EVENTO (§8.12); estado segue no heartbeat.
-    if (!portal.apShouldBeUp())
+    // Portal aberto OU janela de manutenção ativa suprimem o EVENTO (§8.12); estado segue no heartbeat.
+    bool suprimido = portal.apShouldBeUp() || (tamperMaintUntilMs != 0 && millis() < tamperMaintUntilMs);
+    if (!suprimido)
         sendEvento(IrrigationProto::EV_TAMPER, tamperActive ? 1 : 0);
 }
 
@@ -1506,6 +1547,24 @@ void IrrigationModule::gwSendValveCmd(uint32_t node, uint8_t index, uint8_t tipo
     service->sendToMesh(p, RX_SRC_LOCAL, false);
     gateway.tracker.track(txSeq, node, zoneId, action, durationS, attempts, millis());
     LOG_DEBUG("Irrigation GW: sent cmd zone=%u node=0x%08x action=%u dur=%u", zoneId, node, action, durationS);
+}
+
+// Fase 6b Task 15: envia MSG_CMD_MAINT a uma estação para abrir/fechar janela de manutenção do tamper.
+// minutes == 0 fecha a janela imediatamente. Task 18 chamará este helper do endpoint.
+void IrrigationModule::gwSendMaintWindow(uint32_t node, uint16_t minutes)
+{
+    CmdMaint cmd = {};
+    cmd.durationMin = minutes;
+    meshtastic_MeshPacket *p = allocDataPacket();
+    p->to = node;
+    p->decoded.payload.size =
+        (uint16_t)encodeCmdMaint(p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), ++txSeq, cmd);
+    if (!p->decoded.payload.size) {
+        packetPool.release(p);
+        return;
+    }
+    service->sendToMesh(p, RX_SRC_LOCAL, false);
+    LOG_INFO("Irrigation GW: CMD_MAINT enviado para 0x%08x (%u min)", node, minutes);
 }
 
 // Fonte única de hora local do gateway (mesma que o scheduler consome no gwTick).

@@ -350,6 +350,20 @@ static void test_evento_tamper_roundtrip()
     TEST_ASSERT_EQUAL_UINT32(1, out.arg);
 }
 
+static void test_cmd_maint_roundtrip()
+{
+    using namespace IrrigationProto;
+    uint8_t buf[64];
+    CmdMaint m{15}; // 15 min
+    size_t n = encodeCmdMaint(buf, sizeof(buf), 42, m);
+    TEST_ASSERT_GREATER_THAN(0, n);
+    Header h; TEST_ASSERT_TRUE(decodeHeader(buf, n, h));
+    TEST_ASSERT_EQUAL_UINT8(MSG_CMD_MAINT, h.type);
+    TEST_ASSERT_EQUAL_UINT32(42, h.seq);
+    CmdMaint out; TEST_ASSERT_TRUE(decodeCmdMaint(buf, n, out));
+    TEST_ASSERT_EQUAL_UINT16(15, out.durationMin);
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -377,6 +391,7 @@ void setup()
     RUN_TEST(test_heartbeat_legacy_payload_decodes_zero_sensors);
     RUN_TEST(test_heartbeat_sensor_count_overflow_rejected);
     RUN_TEST(test_evento_tamper_roundtrip);
+    RUN_TEST(test_cmd_maint_roundtrip);
     exit(UNITY_END());
 }
 

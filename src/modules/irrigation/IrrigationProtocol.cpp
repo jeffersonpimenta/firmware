@@ -352,4 +352,19 @@ bool decodeRemoteCmd(const uint8_t *buf, size_t len, RemoteCmd &out)
     return r.ok;
 }
 
+size_t encodeCmdMaint(uint8_t *buf, size_t len, uint32_t seq, const CmdMaint &m)
+{
+    Writer w{buf, len};
+    writeHeader(w, MSG_CMD_MAINT, seq);
+    w.u16(m.durationMin);
+    return w.ok ? w.pos : 0;
+}
+
+bool decodeCmdMaint(const uint8_t *buf, size_t len, CmdMaint &out)
+{
+    Reader r = bodyReader(buf, len);
+    out.durationMin = r.u16();
+    return r.ok;
+}
+
 } // namespace IrrigationProto

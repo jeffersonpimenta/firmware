@@ -108,6 +108,7 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
 
     void handleCmdValvula(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
     void handleCmdGpo(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
+    void handleCmdMaint(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
     void handleSetConfig(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
     void handleGetConfig(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
     // Pairing handlers — no senderAuthorized check; physical window + button is the authorization (spec §6).
@@ -124,6 +125,7 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     bool computeLocalSecs(uint32_t &out) const;
     void gwSendValveCmd(uint32_t node, uint8_t index, uint8_t tipo, uint8_t action, uint16_t durationS, uint8_t zoneId,
                         uint8_t attempts); // decisão §1
+    void gwSendMaintWindow(uint32_t node, uint16_t minutes); // Fase 6b Task 15: janela de manutenção do tamper
     void gwReconcileEpoch(uint32_t node, uint32_t remoteEpoch);
     void commitPairing();
     void factoryReset();
@@ -193,6 +195,9 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     bool tamperRawLast = false;
     uint32_t tamperRawSinceMs = 0;
     bool tamperInit = false;
+    // Janela de manutenção do tamper (Fase 6b Task 15): suprime EV_TAMPER até este instante.
+    // 0 = janela fechada. Combinado com portal.apShouldBeUp() por OR.
+    uint32_t tamperMaintUntilMs = 0;
 };
 
 extern IrrigationModule *irrigationModule;

@@ -25,6 +25,7 @@ enum MsgType : uint8_t {
     MSG_PING_SURVEY = 10,
     MSG_RESYNC_SEQ = 11,
     MSG_REMOTE_CMD = 12,
+    MSG_CMD_MAINT = 13, // janela de manutenção do tamper (panel → gateway → estação)
 };
 
 enum AckStatus : uint8_t { ACK_OK = 0, ACK_NACK = 1 };
@@ -73,6 +74,10 @@ struct RemoteCmd {
     uint8_t zoneId;    // id de zona no gateway (1..255)
     uint8_t action;    // 0 = fechar, 1 = abrir
     uint16_t durationS;
+};
+
+struct CmdMaint {
+    uint16_t durationMin; // 0 = fechar janela agora
 };
 
 struct Ack {
@@ -155,6 +160,7 @@ size_t encodePairAnnounce(uint8_t *buf, size_t len, uint32_t seq, const PairAnno
 size_t encodePairGrant(uint8_t *buf, size_t len, uint32_t seq, const PairGrant &m);
 size_t encodeEvento(uint8_t *buf, size_t len, uint32_t seq, const Evento &m);
 size_t encodeRemoteCmd(uint8_t *buf, size_t len, uint32_t seq, const RemoteCmd &m);
+size_t encodeCmdMaint(uint8_t *buf, size_t len, uint32_t seq, const CmdMaint &m);
 
 // decodeHeader primeiro; depois o decode do corpo conforme header.type.
 bool decodeHeader(const uint8_t *buf, size_t len, Header &out);
@@ -167,6 +173,7 @@ bool decodePairAnnounce(const uint8_t *buf, size_t len, PairAnnounce &out);
 bool decodePairGrant(const uint8_t *buf, size_t len, PairGrant &out);
 bool decodeEvento(const uint8_t *buf, size_t len, Evento &out);
 bool decodeRemoteCmd(const uint8_t *buf, size_t len, RemoteCmd &out);
+bool decodeCmdMaint(const uint8_t *buf, size_t len, CmdMaint &out);
 
 uint32_t crc32(const uint8_t *data, size_t len);
 
