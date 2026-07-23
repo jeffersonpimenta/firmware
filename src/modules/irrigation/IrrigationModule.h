@@ -183,6 +183,11 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     // considerados reconhecidos pelo overview. ACK_ALERT seta = millis().
     uint32_t lastAckAllMs = 0;
     SensorSampler sampler;
+    // Fase 6b Task 14c: estado da réplica local de intertravamento (estação).
+    // Latch por regra (>= MAX_LOCAL_INTERLOCKS entradas); prev-mask p/ borda de subida.
+    bool localInterlockLatch[IrrigationSettings::MAX_LOCAL_INTERLOCKS] = {false};
+    uint8_t localFecharValvPrev = 0;
+    uint8_t localFecharGpoPrev = 0;
     // Tamper (§8.12): debounce próprio, fora dos 4 slots de sensor.
     bool tamperActive = false;
     bool tamperRawLast = false;

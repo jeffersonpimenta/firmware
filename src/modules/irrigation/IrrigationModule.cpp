@@ -775,6 +775,37 @@ int32_t IrrigationModule::runOnce()
 
     sampler.tick(millis(), sensorReader);
     tickTamper(millis());
+
+    // Fase 6b Task 14c: réplica local de intertravamento — fecha saídas SEM rádio.
+    // Avalia todas as regras localInterlocks (preenchidas pelo gateway via SET_CONFIG)
+    // e fecha na BORDA DE SUBIDA (bit 0→1) para não re-pulsar pontes H latching.
+    {
+        IrrigationProto::SensorReading rd[IrrigationSettings::MAX_SENSORS];
+        size_t nrd = sampler.readings(rd);
+        LocalReplicaOut lr = evalLocalInterlocks(settings.localInterlocks,
+                                                 IrrigationSettings::MAX_LOCAL_INTERLOCKS,
+                                                 rd, nrd,
+                                                 localInterlockLatch);
+        // Válvulas: fecha apenas as que passaram de 0→1 neste tick.
+        uint8_t valvRising = lr.fecharValvMask & ~localFecharValvPrev;
+        for (uint8_t i = 0; i < ValveController::MAX_VALVES; i++) {
+            if (valvRising & (1u << i)) {
+                valves.close(i);
+                auditEvent(AuditOrigin::INTERTRAVAMENTO, AuditAction::FECHAR, i, AuditResult::OK);
+            }
+        }
+        // GPOs: desliga apenas os que passaram de 0→1 neste tick (action 0 = off).
+        uint8_t gpoRising = lr.fecharGpoMask & ~localFecharGpoPrev;
+        for (uint8_t i = 0; i < GpoController::MAX_GPO; i++) {
+            if (gpoRising & (1u << i)) {
+                gpos.command(i, 0, 0, millis());
+                auditEvent(AuditOrigin::INTERTRAVAMENTO, AuditAction::GPO_OFF, i, AuditResult::OK);
+            }
+        }
+        localFecharValvPrev = lr.fecharValvMask;
+        localFecharGpoPrev  = lr.fecharGpoMask;
+    }
+
     if (sampler.earlyHeartbeatDue(millis()))
         sendHeartbeat(); // mudança significativa de sensor: reporte antecipado (rate-limited no sampler)
 
@@ -2152,6 +2183,7 @@ void IrrigationModule::handleGwSetConfig(const meshtastic_MeshPacket &mp, const 
     if (reasm.blobLen() <= sizeof(StationEntry::blob)) {
         gateway.stations.adoptConfig(mp.from, reasm.blob(), reasm.blobLen(), reasm.epoch());
         saveGatewayState(); // persiste após mutação (decisão §5)
+        gwRebuildLocalInterlocks(); // Fase 6b Task 14c: re-injeta regras locais após adoptConfig sobrescrever o blob
 
         Alert a;
         a.type = AlertType::CONFIG_ADOPTED;
