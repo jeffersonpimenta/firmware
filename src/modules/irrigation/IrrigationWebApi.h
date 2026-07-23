@@ -1,5 +1,7 @@
 #pragma once
 #include "modules/irrigation/GatewayTables.h"
+#include "modules/irrigation/InterlockTable.h"
+#include "modules/irrigation/IrrigationProtocol.h"
 #include "modules/irrigation/ProgramScheduler.h"
 #include <cstddef>
 #include <cstdint>
@@ -116,5 +118,44 @@ struct WebCommand {
     uint32_t node = 0;
 };
 ParseResult parseCommand(const char *json, size_t len, WebCommand &out);
+
+// ── Fase 6b — intertravamentos ───────────────────────────────────────────────
+
+size_t buildInterlocks(const InterlockTable &tbl, char *buf, size_t cap);
+ParseResult parseInterlockUpsert(const char *json, size_t len, InterlockRule &out);
+ParseResult parseInterlockDelete(const char *json, size_t len, uint8_t &outId);
+
+// ── Fase 6b — sensores do gateway ────────────────────────────────────────────
+
+// Item de sensor individual para exibição no painel.
+struct GwSensorItem {
+    uint8_t idx;           // 0..HB_MAX_SENSORS-1
+    uint8_t tipo;          // tipo de sensor (campo raw do protocolo)
+    int16_t valueCenti;    // valor em centésimos da unidade
+    const char *name;      // ponteiro p/ nome — "" = sem nome configurado
+};
+
+// Vista de uma estação com seus sensores, pronta para serialização.
+struct GwStationSensors {
+    uint32_t node;
+    const char *stationName; // "" = sem nome
+    bool tamper;
+    uint8_t count;           // quantos itens válidos em `itens`
+    GwSensorItem itens[IrrigationProto::HB_MAX_SENSORS];
+};
+
+// Serializa array de estações com sensores.
+// JSON: [{node,nome,tamper,sensores:[{idx,tipo,valor,nome},...]}]
+size_t buildSensorsGateway(const GwStationSensors *views, size_t n, char *buf, size_t cap);
+
+// ── Fase 6b — janela de manutenção / nomes de sensor ─────────────────────────
+
+// Parse {node, minutes}. minutes validado em 0..1440.
+ParseResult parseMaintWindow(const char *json, size_t len, uint32_t &outNode, uint16_t &outMinutes);
+
+// Parse {node, sensor, nome}. sensor validado em 0..3; nome truncado a nameCap-1.
+ParseResult parseSensorName(const char *json, size_t len,
+                            uint32_t &outNode, uint8_t &outIdx,
+                            char *outName, size_t nameCap);
 
 } // namespace IrrigationWeb

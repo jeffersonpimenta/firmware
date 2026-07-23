@@ -387,4 +387,198 @@ ParseResult parseCommand(const char *json, size_t len, WebCommand &out)
     return r;
 }
 
+// ── Fase 6b — buildInterlocks ─────────────────────────────────────────────────
+
+size_t buildInterlocks(const InterlockTable &tbl, char *buf, size_t cap)
+{
+    JsonWriter w(buf, cap);
+    w.beginArray();
+    for (size_t i = 0; i < tbl.count(); i++) {
+        const InterlockRule *r = tbl.ruleAt(i);
+        if (!r) break;
+        w.beginObject();
+        w.keyNum("id", r->id);
+        w.keyNum("tipo", r->tipo);
+        w.keyNum("node", (int64_t)(uint32_t)r->node); // uint32 → emite sem sinal
+        w.keyNum("sensor", r->sensorIdx);
+        w.keyNum("condicao", r->condicao);
+        w.keyNum("valor", r->valorCenti);
+        w.keyNum("histerese", r->histereseCenti);
+        w.keyNum("acao", r->acao);
+        // array de zonas: emite apenas os ids não-zero
+        w.key("zonas");
+        w.beginArray();
+        for (uint8_t z = 0; z < 8 && r->zoneIds[z] != 0; z++) {
+            w.num(r->zoneIds[z]);
+        }
+        w.endArray();
+        w.keyBool("todas", r->todas);
+        w.keyStr("mensagem", r->mensagem);
+        w.keyNum("maxAbertas", r->maxAbertas);
+        w.endObject();
+    }
+    w.endArray();
+    return w.done();
+}
+
+// ── Fase 6b — parseInterlockUpsert ──────────────────────────────────────────
+
+ParseResult parseInterlockUpsert(const char *json, size_t len, InterlockRule &out)
+{
+    ParseResult r;
+    JsonReader rd(json, len);
+    int64_t id = 0, tipo = 0, node = 0, sensor = 0, cond = 0;
+    int64_t valor = 0, hist = 0, acao = 0, maxAb = 0;
+    bool todas = false;
+    char mensagem[24] = {0};
+
+    if (!rd.getInt("id", id) || id < 1 || id > 255) r.fail("id invalido (1..255)");
+    rd.getInt("tipo", tipo);
+    rd.getInt("node", node);
+    rd.getInt("sensor", sensor);
+    rd.getInt("condicao", cond);
+    rd.getInt("valor", valor);
+    rd.getInt("histerese", hist);
+    rd.getInt("acao", acao);
+    rd.getBool("todas", todas);
+    rd.getInt("maxAbertas", maxAb);
+    rd.getStr("mensagem", mensagem, sizeof(mensagem));
+
+    // Lê array "zonas" replicando a técnica de parseProgramUpsert.
+    const char *sp = strstr(json, "\"zonas\"");
+    const char *arr = sp ? strchr(sp, '[') : nullptr;
+    const char *arrEnd = arr ? strchr(arr, ']') : nullptr;
+    uint8_t zoneIds[8] = {0};
+    uint8_t zCount = 0;
+    if (arr && arrEnd) {
+        const char *o = arr + 1; // pula '['
+        while (o < arrEnd) {
+            // avança até dígito
+            while (o < arrEnd && (*o < '0' || *o > '9')) o++;
+            if (o >= arrEnd) break;
+            JsonReader sr(o - 1, (size_t)(arrEnd - o + 2)); // slice contendo o número
+            // lê número diretamente via strtoll-like: o aponta pro dígito
+            int64_t zid = 0;
+            const char *p2 = o;
+            bool anyD = false;
+            char tok[8]; size_t ti = 0;
+            while (p2 < arrEnd && *p2 >= '0' && *p2 <= '9' && ti + 1 < sizeof(tok)) {
+                tok[ti++] = *p2++;
+                anyD = true;
+            }
+            if (anyD) {
+                tok[ti] = '\0';
+                char *tend = nullptr;
+                zid = strtoll(tok, &tend, 10);
+                if (tend != tok && zid > 0 && zCount < 8) {
+                    zoneIds[zCount++] = (uint8_t)zid;
+                }
+            }
+            o = p2;
+            // avança até próxima vírgula ou fim
+            while (o < arrEnd && *o != ',') o++;
+            if (o < arrEnd) o++; // pula ','
+        }
+    }
+
+    if (!r.ok) return r;
+
+    out = InterlockRule{};
+    out.id = (uint8_t)id;
+    out.tipo = (uint8_t)tipo;
+    out.node = (uint32_t)node;
+    out.sensorIdx = (uint8_t)sensor;
+    out.condicao = (uint8_t)cond;
+    out.valorCenti = (int32_t)valor;
+    out.histereseCenti = (uint16_t)hist;
+    out.acao = (uint8_t)acao;
+    out.todas = todas;
+    out.maxAbertas = (uint8_t)maxAb;
+    snprintf(out.mensagem, sizeof(out.mensagem), "%s", mensagem);
+    for (uint8_t z = 0; z < 8; z++) out.zoneIds[z] = (z < zCount) ? zoneIds[z] : 0;
+    return r;
+}
+
+// ── Fase 6b — parseInterlockDelete ──────────────────────────────────────────
+
+ParseResult parseInterlockDelete(const char *json, size_t len, uint8_t &outId)
+{
+    ParseResult r;
+    JsonReader rd(json, len);
+    int64_t id = 0;
+    if (!rd.getInt("id", id) || id < 1 || id > 255) { r.fail("id invalido (1..255)"); return r; }
+    outId = (uint8_t)id;
+    return r;
+}
+
+// ── Fase 6b — buildSensorsGateway ────────────────────────────────────────────
+
+size_t buildSensorsGateway(const GwStationSensors *views, size_t n, char *buf, size_t cap)
+{
+    JsonWriter w(buf, cap);
+    w.beginArray();
+    for (size_t i = 0; i < n; i++) {
+        const GwStationSensors &st = views[i];
+        w.beginObject();
+        w.keyNum("node", (int64_t)(uint32_t)st.node);
+        w.keyStr("nome", st.stationName ? st.stationName : "");
+        w.keyBool("tamper", st.tamper);
+        w.key("sensores");
+        w.beginArray();
+        for (uint8_t k = 0; k < st.count && k < IrrigationProto::HB_MAX_SENSORS; k++) {
+            const GwSensorItem &it = st.itens[k];
+            w.beginObject();
+            w.keyNum("idx", it.idx);
+            w.keyNum("tipo", it.tipo);
+            w.keyNum("valor", it.valueCenti);
+            w.keyStr("nome", it.name ? it.name : "");
+            w.endObject();
+        }
+        w.endArray();
+        w.endObject();
+    }
+    w.endArray();
+    return w.done();
+}
+
+// ── Fase 6b — parseMaintWindow ────────────────────────────────────────────────
+
+ParseResult parseMaintWindow(const char *json, size_t len, uint32_t &outNode, uint16_t &outMinutes)
+{
+    ParseResult r;
+    JsonReader rd(json, len);
+    int64_t node = 0, minutes = -1;
+    if (!rd.getInt("node", node) || node == 0) r.fail("node ausente/zero");
+    if (!rd.getInt("minutes", minutes) || minutes < 0 || minutes > 1440) r.fail("minutes fora de 0..1440");
+    if (!r.ok) return r;
+    outNode = (uint32_t)node;
+    outMinutes = (uint16_t)minutes;
+    return r;
+}
+
+// ── Fase 6b — parseSensorName ─────────────────────────────────────────────────
+
+ParseResult parseSensorName(const char *json, size_t len,
+                            uint32_t &outNode, uint8_t &outIdx,
+                            char *outName, size_t nameCap)
+{
+    ParseResult r;
+    JsonReader rd(json, len);
+    int64_t node = 0, sensor = 0;
+    char nome[64] = {0};
+    if (!rd.getInt("node", node) || node == 0) r.fail("node ausente/zero");
+    if (!rd.getInt("sensor", sensor) || sensor < 0 || sensor > 3) r.fail("sensor fora de 0..3");
+    if (!rd.getStr("nome", nome, sizeof(nome))) r.fail("nome ausente");
+    if (!r.ok) return r;
+    outNode = (uint32_t)node;
+    outIdx = (uint8_t)sensor;
+    if (nameCap > 0) {
+        size_t src = strlen(nome);
+        size_t cpy = src < nameCap - 1 ? src : nameCap - 1;
+        memcpy(outName, nome, cpy);
+        outName[cpy] = '\0';
+    }
+    return r;
+}
+
 } // namespace IrrigationWeb

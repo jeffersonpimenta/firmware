@@ -1,6 +1,7 @@
 #include "Arduino.h"
 #include "TestUtil.h"
 #include "modules/irrigation/GatewayTables.h"
+#include "modules/irrigation/InterlockTable.h"
 #include "modules/irrigation/IrrigationWebApi.h"
 #include "modules/irrigation/ProgramScheduler.h"
 #include <string.h>
@@ -292,6 +293,292 @@ static void test_parseCommand_kinds()
     TEST_ASSERT_FALSE(parseCommand(jbad, strlen(jbad), c).ok); // zoneId 0
 }
 
+// ── buildInterlocks ──────────────────────────────────────────────────────────
+
+static void test_buildInterlocks_basic()
+{
+    InterlockTable tbl;
+    InterlockRule r = {};
+    r.id = 1;
+    r.tipo = IL_SENSOR;
+    r.node = 2712847316u; // uint32 grande
+    r.sensorIdx = 2;
+    r.condicao = COND_MAIOR_QUE;
+    r.valorCenti = 5000;
+    r.histereseCenti = 200;
+    r.acao = ACAO_FECHAR_E_BLOQUEAR;
+    r.zoneIds[0] = 3;
+    r.zoneIds[1] = 7;
+    r.zoneIds[2] = 0; // fim
+    r.todas = false;
+    snprintf(r.mensagem, sizeof(r.mensagem), "Chuva forte");
+    r.maxAbertas = 0;
+    TEST_ASSERT_TRUE(tbl.upsert(r));
+
+    char buf[1024];
+    size_t n = buildInterlocks(tbl, buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_TRUE(contains(buf, "\"id\":1"));
+    TEST_ASSERT_TRUE(contains(buf, "\"tipo\":0"));
+    TEST_ASSERT_TRUE(contains(buf, "\"node\":2712847316"));
+    TEST_ASSERT_TRUE(contains(buf, "\"sensor\":2"));
+    TEST_ASSERT_TRUE(contains(buf, "\"condicao\":3")); // COND_MAIOR_QUE=3
+    TEST_ASSERT_TRUE(contains(buf, "\"valor\":5000"));
+    TEST_ASSERT_TRUE(contains(buf, "\"histerese\":200"));
+    TEST_ASSERT_TRUE(contains(buf, "\"acao\":1")); // ACAO_FECHAR_E_BLOQUEAR=1
+    TEST_ASSERT_TRUE(contains(buf, "\"zonas\":[3,7]"));
+    TEST_ASSERT_TRUE(contains(buf, "\"todas\":false"));
+    TEST_ASSERT_TRUE(contains(buf, "\"mensagem\":\"Chuva forte\""));
+    TEST_ASSERT_TRUE(contains(buf, "\"maxAbertas\":0"));
+}
+
+static void test_buildInterlocks_todas_semZonas()
+{
+    InterlockTable tbl;
+    InterlockRule r = {};
+    r.id = 5;
+    r.tipo = IL_SIMULTANEIDADE;
+    r.todas = true;
+    r.maxAbertas = 2;
+    // zoneIds todos zerados → zonas:[]
+    TEST_ASSERT_TRUE(tbl.upsert(r));
+
+    char buf[512];
+    size_t n = buildInterlocks(tbl, buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_TRUE(contains(buf, "\"tipo\":1")); // IL_SIMULTANEIDADE
+    TEST_ASSERT_TRUE(contains(buf, "\"zonas\":[]"));
+    TEST_ASSERT_TRUE(contains(buf, "\"todas\":true"));
+    TEST_ASSERT_TRUE(contains(buf, "\"maxAbertas\":2"));
+}
+
+static void test_buildInterlocks_empty()
+{
+    InterlockTable tbl; // sem regras
+    char buf[64];
+    size_t n = buildInterlocks(tbl, buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_EQUAL_STRING("[]", buf);
+}
+
+// ── parseInterlockUpsert ─────────────────────────────────────────────────────
+
+static void test_parseInterlockUpsert_ok()
+{
+    const char *j =
+        "{\"id\":3,\"tipo\":0,\"node\":2712847316,\"sensor\":1,\"condicao\":2,"
+        "\"valor\":3500,\"histerese\":100,\"acao\":0,"
+        "\"zonas\":[2,5,9],\"todas\":false,\"mensagem\":\"Seco\",\"maxAbertas\":0}";
+    InterlockRule out = {};
+    ParseResult r = parseInterlockUpsert(j, strlen(j), out);
+    TEST_ASSERT_TRUE(r.ok);
+    TEST_ASSERT_EQUAL_UINT8(3, out.id);
+    TEST_ASSERT_EQUAL_UINT8(0, out.tipo); // IL_SENSOR
+    TEST_ASSERT_EQUAL_HEX32(2712847316u, out.node);
+    TEST_ASSERT_EQUAL_UINT8(1, out.sensorIdx);
+    TEST_ASSERT_EQUAL_UINT8(2, out.condicao); // COND_MENOR_QUE
+    TEST_ASSERT_EQUAL_INT32(3500, out.valorCenti);
+    TEST_ASSERT_EQUAL_UINT16(100, out.histereseCenti);
+    TEST_ASSERT_EQUAL_UINT8(0, out.acao); // ACAO_BLOQUEAR_ABERTURA
+    TEST_ASSERT_EQUAL_UINT8(2, out.zoneIds[0]);
+    TEST_ASSERT_EQUAL_UINT8(5, out.zoneIds[1]);
+    TEST_ASSERT_EQUAL_UINT8(9, out.zoneIds[2]);
+    TEST_ASSERT_EQUAL_UINT8(0, out.zoneIds[3]); // terminador
+    TEST_ASSERT_FALSE(out.todas);
+    TEST_ASSERT_EQUAL_STRING("Seco", out.mensagem);
+    TEST_ASSERT_EQUAL_UINT8(0, out.maxAbertas);
+}
+
+static void test_parseInterlockUpsert_rejectsBadId()
+{
+    InterlockRule out = {};
+    const char *j0 = "{\"id\":0,\"tipo\":0,\"node\":1,\"sensor\":0,\"condicao\":0,"
+                     "\"valor\":0,\"histerese\":0,\"acao\":0,\"zonas\":[],\"todas\":false,"
+                     "\"mensagem\":\"\",\"maxAbertas\":0}";
+    TEST_ASSERT_FALSE(parseInterlockUpsert(j0, strlen(j0), out).ok); // id=0 inválido
+}
+
+static void test_parseInterlockUpsert_todas_comZonas()
+{
+    const char *j =
+        "{\"id\":10,\"tipo\":1,\"node\":0,\"sensor\":0,\"condicao\":0,"
+        "\"valor\":0,\"histerese\":0,\"acao\":0,"
+        "\"zonas\":[],\"todas\":true,\"mensagem\":\"\",\"maxAbertas\":3}";
+    InterlockRule out = {};
+    ParseResult r = parseInterlockUpsert(j, strlen(j), out);
+    TEST_ASSERT_TRUE(r.ok);
+    TEST_ASSERT_EQUAL_UINT8(10, out.id);
+    TEST_ASSERT_TRUE(out.todas);
+    TEST_ASSERT_EQUAL_UINT8(3, out.maxAbertas);
+    TEST_ASSERT_EQUAL_UINT8(0, out.zoneIds[0]); // array vazio
+}
+
+// ── parseInterlockDelete ─────────────────────────────────────────────────────
+
+static void test_parseInterlockDelete_ok()
+{
+    uint8_t id = 0;
+    const char *j = "{\"id\":42}";
+    TEST_ASSERT_TRUE(parseInterlockDelete(j, strlen(j), id).ok);
+    TEST_ASSERT_EQUAL_UINT8(42, id);
+}
+
+static void test_parseInterlockDelete_rejectsBadId()
+{
+    uint8_t id = 0;
+    const char *j = "{\"id\":0}";
+    TEST_ASSERT_FALSE(parseInterlockDelete(j, strlen(j), id).ok);
+    const char *j256 = "{\"id\":256}"; // > uint8 range para validação de id
+    // 256 como int64 → cast para uint8 = 0; deve rejeitar via id<1||id>255
+    TEST_ASSERT_FALSE(parseInterlockDelete(j256, strlen(j256), id).ok);
+}
+
+// ── buildSensorsGateway ──────────────────────────────────────────────────────
+
+static void test_buildSensorsGateway_basic()
+{
+    GwStationSensors st[2] = {};
+    st[0].node = 0xAABBCCDD;
+    st[0].stationName = "Pasto Norte";
+    st[0].tamper = true;
+    st[0].count = 2;
+    st[0].itens[0] = {0, 1, 2500, "Umidade"};
+    st[0].itens[1] = {1, 0, 0, ""}; // sem nome
+
+    st[1].node = 0x11223344;
+    st[1].stationName = "";
+    st[1].tamper = false;
+    st[1].count = 1;
+    st[1].itens[0] = {3, 2, -100, "Temp"};
+
+    char buf[2048];
+    size_t n = buildSensorsGateway(st, 2, buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    // estação 0
+    TEST_ASSERT_TRUE(contains(buf, "\"node\":2864434397")); // 0xAABBCCDD
+    TEST_ASSERT_TRUE(contains(buf, "\"nome\":\"Pasto Norte\""));
+    TEST_ASSERT_TRUE(contains(buf, "\"tamper\":true"));
+    TEST_ASSERT_TRUE(contains(buf, "\"sensores\":["));
+    TEST_ASSERT_TRUE(contains(buf, "\"idx\":0"));
+    TEST_ASSERT_TRUE(contains(buf, "\"tipo\":1"));
+    TEST_ASSERT_TRUE(contains(buf, "\"valor\":2500"));
+    TEST_ASSERT_TRUE(contains(buf, "\"nome\":\"Umidade\""));
+    // estação 1
+    TEST_ASSERT_TRUE(contains(buf, "\"tamper\":false"));
+    TEST_ASSERT_TRUE(contains(buf, "\"valor\":-100"));
+    TEST_ASSERT_TRUE(contains(buf, "\"nome\":\"Temp\""));
+}
+
+static void test_buildSensorsGateway_empty()
+{
+    char buf[32];
+    size_t n = buildSensorsGateway(nullptr, 0, buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_EQUAL_STRING("[]", buf);
+}
+
+// ── parseMaintWindow ─────────────────────────────────────────────────────────
+
+static void test_parseMaintWindow_ok()
+{
+    const char *j = "{\"node\":12345,\"minutes\":30}";
+    uint32_t node = 0;
+    uint16_t minutes = 0;
+    TEST_ASSERT_TRUE(parseMaintWindow(j, strlen(j), node, minutes).ok);
+    TEST_ASSERT_EQUAL_HEX32(12345u, node);
+    TEST_ASSERT_EQUAL_UINT16(30, minutes);
+}
+
+static void test_parseMaintWindow_zero_ok()
+{
+    const char *j = "{\"node\":1,\"minutes\":0}";
+    uint32_t node = 0;
+    uint16_t minutes = 99;
+    TEST_ASSERT_TRUE(parseMaintWindow(j, strlen(j), node, minutes).ok);
+    TEST_ASSERT_EQUAL_UINT16(0, minutes);
+}
+
+static void test_parseMaintWindow_clampMaxMinutes()
+{
+    // minutes > 1440 deve falhar
+    const char *j = "{\"node\":1,\"minutes\":1441}";
+    uint32_t node = 0;
+    uint16_t minutes = 0;
+    TEST_ASSERT_FALSE(parseMaintWindow(j, strlen(j), node, minutes).ok);
+}
+
+// ── parseSensorName ──────────────────────────────────────────────────────────
+
+static void test_parseSensorName_ok()
+{
+    const char *j = "{\"node\":2712847316,\"sensor\":2,\"nome\":\"Umidade\"}";
+    uint32_t node = 0;
+    uint8_t idx = 0;
+    char name[16] = {0};
+    ParseResult r = parseSensorName(j, strlen(j), node, idx, name, sizeof(name));
+    TEST_ASSERT_TRUE(r.ok);
+    TEST_ASSERT_EQUAL_HEX32(2712847316u, node);
+    TEST_ASSERT_EQUAL_UINT8(2, idx);
+    TEST_ASSERT_EQUAL_STRING("Umidade", name);
+}
+
+static void test_parseSensorName_truncatesLongName()
+{
+    // "AbcdefghijklmnopÇ" tem > 15 chars úteis
+    const char *j = "{\"node\":1,\"sensor\":0,\"nome\":\"AbcdefghijklmnopX\"}";
+    uint32_t node = 0;
+    uint8_t idx = 0;
+    char name[16] = {0};
+    ParseResult r = parseSensorName(j, strlen(j), node, idx, name, sizeof(name));
+    TEST_ASSERT_TRUE(r.ok);
+    TEST_ASSERT_EQUAL_UINT8(15, strlen(name)); // cap-1 = 15
+    TEST_ASSERT_EQUAL_UINT8('\0', name[15]);   // NUL terminador
+}
+
+static void test_parseSensorName_rejectsBadSensor()
+{
+    const char *j = "{\"node\":1,\"sensor\":4,\"nome\":\"X\"}"; // sensor>3 inválido
+    uint32_t node = 0;
+    uint8_t idx = 0;
+    char name[16] = {0};
+    TEST_ASSERT_FALSE(parseSensorName(j, strlen(j), node, idx, name, sizeof(name)).ok);
+}
+
+// ── round-trip: buildInterlocks → conteúdo verificável ───────────────────────
+
+static void test_buildInterlocks_roundtripFields()
+{
+    InterlockTable tbl;
+    InterlockRule r = {};
+    r.id = 7;
+    r.tipo = IL_SENSOR;
+    r.node = 0xDEADBEEFu;
+    r.sensorIdx = 3;
+    r.condicao = COND_ATIVO;
+    r.valorCenti = 0;
+    r.histereseCenti = 0;
+    r.acao = ACAO_BLOQUEAR_ABERTURA;
+    r.zoneIds[0] = 1;
+    r.zoneIds[1] = 2;
+    r.zoneIds[2] = 3;
+    r.zoneIds[3] = 4;
+    r.zoneIds[4] = 0;
+    r.todas = false;
+    snprintf(r.mensagem, sizeof(r.mensagem), "Tamper det.");
+    r.maxAbertas = 1;
+    TEST_ASSERT_TRUE(tbl.upsert(r));
+
+    char buf[1024];
+    size_t n = buildInterlocks(tbl, buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_TRUE(contains(buf, "\"id\":7"));
+    TEST_ASSERT_TRUE(contains(buf, "\"node\":3735928559")); // 0xDEADBEEF
+    TEST_ASSERT_TRUE(contains(buf, "\"sensor\":3"));
+    TEST_ASSERT_TRUE(contains(buf, "\"mensagem\":\"Tamper det.\""));
+    TEST_ASSERT_TRUE(contains(buf, "\"zonas\":[1,2,3,4]"));
+    TEST_ASSERT_TRUE(contains(buf, "\"maxAbertas\":1"));
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -316,6 +603,24 @@ void setup()
     RUN_TEST(test_jsonReader_respectsLen);
     RUN_TEST(test_parseProgramToggle_ok);
     RUN_TEST(test_parseCommand_kinds);
+    // Fase 6b — Task 17
+    RUN_TEST(test_buildInterlocks_basic);
+    RUN_TEST(test_buildInterlocks_todas_semZonas);
+    RUN_TEST(test_buildInterlocks_empty);
+    RUN_TEST(test_parseInterlockUpsert_ok);
+    RUN_TEST(test_parseInterlockUpsert_rejectsBadId);
+    RUN_TEST(test_parseInterlockUpsert_todas_comZonas);
+    RUN_TEST(test_parseInterlockDelete_ok);
+    RUN_TEST(test_parseInterlockDelete_rejectsBadId);
+    RUN_TEST(test_buildSensorsGateway_basic);
+    RUN_TEST(test_buildSensorsGateway_empty);
+    RUN_TEST(test_parseMaintWindow_ok);
+    RUN_TEST(test_parseMaintWindow_zero_ok);
+    RUN_TEST(test_parseMaintWindow_clampMaxMinutes);
+    RUN_TEST(test_parseSensorName_ok);
+    RUN_TEST(test_parseSensorName_truncatesLongName);
+    RUN_TEST(test_parseSensorName_rejectsBadSensor);
+    RUN_TEST(test_buildInterlocks_roundtripFields);
     exit(UNITY_END());
 }
 
