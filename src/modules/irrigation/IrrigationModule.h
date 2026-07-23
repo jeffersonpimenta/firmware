@@ -4,6 +4,7 @@
 #include "modules/irrigation/Allowlist.h"
 #include "modules/irrigation/AuditLog.h"
 #include "modules/irrigation/ButtonGesture.h"
+#include "modules/irrigation/FlashAuditRing.h"
 #include "modules/irrigation/FragmentReassembler.h"
 #include "modules/irrigation/IrrigationGateway.h"
 #include "modules/irrigation/IrrigationProtocol.h"
@@ -78,6 +79,12 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     // Fase 6b, Task 14b: remonta e empurra regras locais de intertravamento para cada estação.
     // Deve ser chamado após loadInterlocks()+loadGatewayState() (init) e após CRUD de interlocks (Task 18).
     void gwRebuildLocalInterlocks(); // GATEWAY-only
+    // Fase 6b Task 18: acessores públicos para os endpoints de intertravamentos/sensores/manutenção.
+    bool gwSaveInterlocks();                           // chama saveInterlocks() privado
+    bool gwSaveSensorNames();                          // chama saveSensorNames() privado
+    void gwOpenMaintWindow(uint32_t node, uint16_t minutes); // chama gwSendMaintWindow() privado
+    // Acesso de leitura ao log de auditoria flash do gateway (Task 16). GATEWAY-only.
+    const FlashAuditRing &auditFlashRef() const { return auditFlash; }
 
     // --- Serviço do portal de campo (todos os papéis). Chamados pela cola HTTP (IrrigationPortalEndpoints). ---
     void portalFillNodeState(IrrigationWeb::NodeStateCtx &out) const;
@@ -147,8 +154,10 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     bool saveAllowlist();
     bool loadGatewayState();
     bool saveGatewayState(); // persiste stations, zones, programs, mirror
-    bool loadInterlocks();   // Fase 6b: carrega tabela de intertravamentos do flash
-    bool saveInterlocks();   // Fase 6b: persiste tabela de intertravamentos (staged-write)
+    bool loadInterlocks();      // Fase 6b: carrega tabela de intertravamentos do flash
+    bool saveInterlocks();      // Fase 6b: persiste tabela de intertravamentos (staged-write)
+    bool loadSensorNames();     // Fase 6b Task 18: carrega nomes de sensores do flash
+    bool saveSensorNames();     // Fase 6b Task 18: persiste nomes de sensores (staged-write)
     IrrigationSettings mergeRemoteConfig(const IrrigationSettings &fresh, uint32_t newEpoch) const;
     void activateSettings(const IrrigationSettings &merged);
     void sendAck(uint32_t to, uint32_t ackedSeq, uint8_t status, uint8_t reason);

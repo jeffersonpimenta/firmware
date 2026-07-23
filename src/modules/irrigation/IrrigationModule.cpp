@@ -38,6 +38,9 @@ static const char *GW_MIRROR_TMP = "/prefs/irrigation-mirror.tmp";
 // Fase 6b: tabela de intertravamentos (arquivo separado — não mistura com o estado do scheduler).
 static const char *GW_INTERLOCKS_PATH = "/prefs/irrigation_interlocks.dat";
 static const char *GW_INTERLOCKS_TMP = "/prefs/irrigation_interlocks.tmp";
+// Fase 6b Task 18: nomes de sensores configurados pelo operador via painel.
+static const char *GW_SENSORNAMES_PATH = "/prefs/irrigation_sensornames.dat";
+static const char *GW_SENSORNAMES_TMP = "/prefs/irrigation_sensornames.tmp";
 
 // Cooldown de reconciliação de epoch por nó (30 s)
 static constexpr uint32_t EPOCH_COOLDOWN_MS = 30000;
@@ -243,6 +246,7 @@ IrrigationModule::IrrigationModule()
         loadAllowlist();
         loadGatewayState();
         loadInterlocks();            // Fase 6b: carrega regras de intertravamento salvas
+        loadSensorNames();           // Fase 6b Task 18: carrega nomes de sensores salvos
         gwRebuildLocalInterlocks();  // Fase 6b Task 14b: monta réplicas locais v5 e empurra via epoch
         // Fase 6b Task 16: inicializa o log de auditoria persistente em flash do gateway.
         auditFlashStore.ensureAllocated();
@@ -1410,6 +1414,27 @@ bool IrrigationModule::saveInterlocks()
 }
 
 // ---------------------------------------------------------------------------
+// Fase 6b Task 18: persistência de nomes de sensores (arquivo separado).
+// Espelha loadInterlocks/saveInterlocks EXATAMENTE.
+// ---------------------------------------------------------------------------
+
+bool IrrigationModule::loadSensorNames()
+{
+    size_t n = 0;
+    uint8_t buf[4 + 2 + SensorNameTable::MAX * sizeof(SensorName) + 4]; // magic+count+MAX×entry+crc
+    if (!stagedRead(GW_SENSORNAMES_PATH, buf, sizeof(buf), n))
+        return false; // arquivo ausente na primeira inicialização — ok, tabela vazia
+    return gateway.sensorNames.deserialize(buf, n);
+}
+
+bool IrrigationModule::saveSensorNames()
+{
+    uint8_t buf[4 + 2 + SensorNameTable::MAX * sizeof(SensorName) + 4];
+    size_t n = gateway.sensorNames.serialize(buf, sizeof(buf));
+    return stagedWrite(GW_SENSORNAMES_TMP, GW_SENSORNAMES_PATH, buf, n);
+}
+
+// ---------------------------------------------------------------------------
 // Fase 6b, Task 14b: reconstrói e empurra regras locais de intertravamento
 // para cada estação conhecida. Deve ser chamado no init (após loadInterlocks +
 // loadGatewayState) e após mutações na tabela de interlocks (Task 18).
@@ -1586,6 +1611,20 @@ bool IrrigationModule::computeLocalSecs(uint32_t &out) const
 bool IrrigationModule::gwIsGateway() const
 {
     return settings.role == (uint8_t)IrrigationRole::GATEWAY;
+}
+
+// --- Fase 6b Task 18: acessores públicos para os endpoints de intertravamentos/sensores/manutenção ---
+bool IrrigationModule::gwSaveInterlocks()
+{
+    return saveInterlocks();
+}
+bool IrrigationModule::gwSaveSensorNames()
+{
+    return saveSensorNames();
+}
+void IrrigationModule::gwOpenMaintWindow(uint32_t node, uint16_t minutes)
+{
+    gwSendMaintWindow(node, minutes);
 }
 
 bool IrrigationModule::gwHasRtc() const

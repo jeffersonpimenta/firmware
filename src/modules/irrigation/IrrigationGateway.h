@@ -10,6 +10,7 @@
 #include "modules/irrigation/MirrorMode.h"
 #include "modules/irrigation/OpenGate.h"
 #include "modules/irrigation/ProgramScheduler.h"
+#include "modules/irrigation/SensorNameTable.h"
 #include "modules/irrigation/StationMonitor.h"
 #include "modules/irrigation/StationTelemetryCache.h"
 
@@ -26,4 +27,6 @@ struct IrrigationGateway {
     InterlockTable interlocks;
     InterlockEngine interlockEngine;
     OpenGate openGate;
+    // Fase 6b Task 18: nomes de sensores configurados pelo operador via painel.
+    SensorNameTable sensorNames;
 };

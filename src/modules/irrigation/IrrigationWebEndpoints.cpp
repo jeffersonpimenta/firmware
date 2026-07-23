@@ -5,6 +5,8 @@
 #include "modules/irrigation/IrrigationWebApi.h"
 
 #include <Arduino.h> // millis()
+#include <cstdlib>   // malloc/free (hAudit aloca ~16 KB no heap)
+#include <string>    // std::string (getQueryParameter)
 
 // Mesma sequência de include do esp32_https_server usada por ContentHandler.cpp:
 // "#undef str" antes dos headers do servidor (workaround gcc bug 57824).
@@ -324,6 +326,244 @@ static void hCommand(HTTPRequest *req, HTTPResponse *res)
 }
 
 // ---------------------------------------------------------------------------
+// Fase 6b Task 18: intertravamentos, sensores, log de auditoria, manutenção
+// NOTA: estes handlers ficam dentro do mesmo guard MESHTASTIC_EXCLUDE_WEBSERVER
+// que os demais endpoints — mas o bloco abaixo só compila em ARCH_ESP32 com
+// webserver habilitado (condição idêntica a ContentHandler.cpp). As implementações
+// são CI-only e não exercitadas pelo native test suite.
+// ---------------------------------------------------------------------------
+
+// GET /api/irrigation/interlocks — lista regras de intertravamento
+static void hInterlocksGet(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!gwReady()) {
+        res->setStatusCode(404);
+        return;
+    }
+    char buf[3072];
+    size_t n = buildInterlocks(irrigationModule->gwState().interlocks, buf, sizeof(buf));
+    if (!n) {
+        res->setStatusCode(500);
+        return;
+    }
+    sendJson(res, buf);
+}
+
+// POST /api/irrigation/interlocks — upsert de uma regra
+static void hInterlocksPost(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!gwReady()) {
+        res->setStatusCode(404);
+        return;
+    }
+    char body[512];
+    size_t nb = readBody(req, body, sizeof(body));
+    InterlockRule rule;
+    ParseResult pr = parseInterlockUpsert(body, nb, rule);
+    if (!pr.ok) {
+        sendParseErrors(res, pr);
+        return;
+    }
+    // Acessa a tabela mutável via gwState() — cast via referência não-const do module.
+    // O módulo expõe gwState() como const; para mutações usamos diretamente o método
+    // de alto nível — mas interlocks não tem gwApply*, então acessamos via cast.
+    // Seguro: o handler roda na task HTTP com o módulo no mesmo contexto de execução.
+    IrrigationGateway &gw = const_cast<IrrigationGateway &>(irrigationModule->gwState());
+    if (!gw.interlocks.upsert(rule)) {
+        sendJson(res, "{\"errors\":[\"tabela cheia\"]}", 400);
+        return;
+    }
+    irrigationModule->gwSaveInterlocks();
+    irrigationModule->gwRebuildLocalInterlocks();
+    char out[3072];
+    size_t n = buildInterlocks(gw.interlocks, out, sizeof(out));
+    if (!n) {
+        res->setStatusCode(500);
+        return;
+    }
+    sendJson(res, out);
+}
+
+// POST /api/irrigation/interlocks/delete — remove uma regra por id
+static void hInterlocksDelete(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!gwReady()) {
+        res->setStatusCode(404);
+        return;
+    }
+    char body[256];
+    size_t nb = readBody(req, body, sizeof(body));
+    uint8_t id = 0;
+    ParseResult pr = parseInterlockDelete(body, nb, id);
+    if (!pr.ok) {
+        sendParseErrors(res, pr);
+        return;
+    }
+    IrrigationGateway &gw = const_cast<IrrigationGateway &>(irrigationModule->gwState());
+    if (!gw.interlocks.removeById(id)) {
+        sendJson(res, "{\"errors\":[\"regra inexistente\"]}", 400);
+        return;
+    }
+    irrigationModule->gwSaveInterlocks();
+    irrigationModule->gwRebuildLocalInterlocks();
+    char out[3072];
+    size_t n = buildInterlocks(gw.interlocks, out, sizeof(out));
+    if (!n) {
+        res->setStatusCode(500);
+        return;
+    }
+    sendJson(res, out);
+}
+
+// GET /api/irrigation/sensors — leitura de sensores de todas as estações
+static void hSensorsGet(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!gwReady()) {
+        res->setStatusCode(404);
+        return;
+    }
+    const IrrigationGateway &g = irrigationModule->gwState();
+
+    GwStationSensors views[StationTelemetryCache::MAX];
+    size_t nViews = 0;
+
+    for (size_t i = 0; i < StationTelemetryCache::MAX && nViews < StationTelemetryCache::MAX; i++) {
+        const StationTelemetry *t = g.telemetry.entryAt(i);
+        if (!t || !t->node)
+            continue;
+
+        GwStationSensors &v = views[nViews++];
+        v.node = t->node;
+        v.tamper = t->tamper;
+
+        // Nome da estação via StationRegistry; "" se não registrada
+        const StationEntry *st = g.stations.byNode(t->node);
+        v.stationName = (st && st->name[0]) ? st->name : "";
+
+        // Monta itens de sensor
+        v.count = 0;
+        for (uint8_t k = 0; k < t->sensorCount && k < IrrigationProto::HB_MAX_SENSORS; k++) {
+            GwSensorItem &item = v.itens[v.count++];
+            item.idx = t->sensors[k].id;
+            item.tipo = t->sensors[k].tipo;
+            item.valueCenti = t->sensors[k].valueCenti;
+            const char *nm = g.sensorNames.get(t->node, t->sensors[k].id);
+            item.name = nm ? nm : "";
+        }
+    }
+
+    char buf[4096];
+    size_t n = buildSensorsGateway(views, nViews, buf, sizeof(buf));
+    if (!n) {
+        res->setStatusCode(500);
+        return;
+    }
+    sendJson(res, buf);
+}
+
+// POST /api/irrigation/sensors/name — define nome de um sensor de uma estação
+static void hSensorsName(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!gwReady()) {
+        res->setStatusCode(404);
+        return;
+    }
+    char body[256];
+    size_t nb = readBody(req, body, sizeof(body));
+    uint32_t node = 0;
+    uint8_t idx = 0;
+    char name[17]; // max 16 chars + NUL
+    ParseResult pr = parseSensorName(body, nb, node, idx, name, sizeof(name));
+    if (!pr.ok) {
+        sendParseErrors(res, pr);
+        return;
+    }
+    IrrigationGateway &gw = const_cast<IrrigationGateway &>(irrigationModule->gwState());
+    if (!gw.sensorNames.set(node, idx, name)) {
+        sendJson(res, "{\"errors\":[\"tabela de nomes cheia\"]}", 400);
+        return;
+    }
+    irrigationModule->gwSaveSensorNames();
+    sendJson(res, "{\"ok\":true}");
+}
+
+// GET /api/irrigation/audit — log de auditoria flash do gateway (JSON ou CSV)
+// Parâmetros de query: fmt=json|csv  n=<maxRecords> (padrão 500)
+static void hAudit(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!gwReady()) {
+        res->setStatusCode(404);
+        return;
+    }
+    // Lê parâmetros de query: fmt e n
+    ResourceParameters *params = req->getParams();
+    std::string fmtVal;
+    bool wantCsv = false;
+    if (params->getQueryParameter("fmt", fmtVal) && fmtVal == "csv")
+        wantCsv = true;
+
+    size_t maxRecords = 500;
+    std::string nVal;
+    if (params->getQueryParameter("n", nVal)) {
+        int parsed = 0;
+        for (char c : nVal)
+            if (c >= '0' && c <= '9')
+                parsed = parsed * 10 + (c - '0');
+        if (parsed > 0)
+            maxRecords = (size_t)parsed;
+    }
+
+    // Log de ~16 KB no heap para não explodir o stack da task HTTP.
+    // Espelha o idioma de hLog em IrrigationPortalEndpoints.cpp.
+    const size_t cap = 16384;
+    char *buf = (char *)malloc(cap);
+    if (!buf) {
+        res->setStatusCode(500);
+        return;
+    }
+
+    size_t n = 0;
+    if (wantCsv)
+        n = irrigationModule->auditFlashRef().toCsv(buf, cap, maxRecords);  // CI-only
+    else
+        n = irrigationModule->auditFlashRef().toJson(buf, cap, maxRecords); // CI-only
+
+    if (!n) {
+        free(buf);
+        res->setStatusCode(500);
+        return;
+    }
+
+    res->setStatusCode(200);
+    res->setHeader("Content-Type", wantCsv ? "text/csv" : "application/json");
+    res->setHeader("Access-Control-Allow-Origin", "*");
+    res->print(buf);
+    free(buf);
+}
+
+// POST /api/irrigation/maint — abre/fecha janela de manutenção de tamper numa estação
+static void hMaint(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!gwReady()) {
+        res->setStatusCode(404);
+        return;
+    }
+    char body[256];
+    size_t nb = readBody(req, body, sizeof(body));
+    uint32_t node = 0;
+    uint16_t minutes = 0;
+    ParseResult pr = parseMaintWindow(body, nb, node, minutes);
+    if (!pr.ok) {
+        sendParseErrors(res, pr);
+        return;
+    }
+    irrigationModule->gwOpenMaintWindow(node, minutes);
+    sendJson(res, "{\"ok\":true}");
+}
+
+// ---------------------------------------------------------------------------
 // Registro
 // ---------------------------------------------------------------------------
 
@@ -339,6 +579,14 @@ void registerIrrigationHandlers(HTTPServer *server)
     server->registerNode(new ResourceNode("/api/irrigation/programs/toggle", "POST", &hProgramsToggle));
     server->registerNode(new ResourceNode("/api/irrigation/programs/delete", "POST", &hProgramsDelete));
     server->registerNode(new ResourceNode("/api/irrigation/command", "POST", &hCommand));
+    // Fase 6b Task 18: intertravamentos, sensores, log de auditoria, manutenção
+    server->registerNode(new ResourceNode("/api/irrigation/interlocks", "GET", &hInterlocksGet));
+    server->registerNode(new ResourceNode("/api/irrigation/interlocks", "POST", &hInterlocksPost));
+    server->registerNode(new ResourceNode("/api/irrigation/interlocks/delete", "POST", &hInterlocksDelete));
+    server->registerNode(new ResourceNode("/api/irrigation/sensors", "GET", &hSensorsGet));
+    server->registerNode(new ResourceNode("/api/irrigation/sensors/name", "POST", &hSensorsName));
+    server->registerNode(new ResourceNode("/api/irrigation/audit", "GET", &hAudit));
+    server->registerNode(new ResourceNode("/api/irrigation/maint", "POST", &hMaint));
 }
 
 #endif
