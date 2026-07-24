@@ -2064,6 +2064,11 @@ void IrrigationModule::gwTick()
             const StationEntry *st = gateway.stations.byNode(em.node);
             uint8_t attempts = (st && st->retries > 0) ? st->retries : 3;
             uint32_t seq = gwSendValveCmd(em.node, em.index, em.tipo, em.action, em.durationS, em.zoneId, attempts);
+            if (seq == 0) {
+                // encode/alloc falhou: tick() já armou pend.inUse=true; limpa para que o próximo tick reemita
+                gateway.groupEngine.onCmdFailed(em.node, em.zoneId, em.action);
+                continue;
+            }
             gateway.groupEngine.noteSent(em.node, em.zoneId, em.action, seq);
             auditEvent(AuditOrigin::GRUPO_HIDRAULICO, em.action ? AuditAction::ABRIR : AuditAction::FECHAR,
                        em.zoneId, AuditResult::OK, em.node);
