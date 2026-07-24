@@ -50,6 +50,8 @@ class HydraulicGroupEngine {
     // Observabilidade p/ testes.
     State stateOf(uint8_t groupId) const;
     bool pumpOn(uint8_t groupId) const;
+    uint8_t currentZone(uint8_t groupId) const;        // rt.curZone; 0 = nenhuma / groupId inválido
+    uint8_t openConfirmedCount(uint8_t groupId) const; // zonas-membro confirmadas abertas
 
   private:
     struct ZoneRt {

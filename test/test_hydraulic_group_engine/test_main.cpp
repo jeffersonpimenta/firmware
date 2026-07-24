@@ -383,6 +383,38 @@ static void test_nack_bomba_nao_liga()
     TEST_ASSERT_FALSE(e.pumpOn(1)); // continua sem bomba
 }
 
+static void test_getters_currentZone_openCount()
+{
+    // Fixture: 1 grupo, 2 zonas (ids 3 e 4), minOpen=1, sem bomba.
+    static const uint32_t N2 = 0x11223344;
+    ZoneTable z;
+    Zone v3; v3.id = 3; v3.node = N2; v3.tipo = 0; v3.index = 0; v3.maxMin = 120; z.upsert(v3);
+    Zone v4; v4.id = 4; v4.node = N2; v4.tipo = 0; v4.index = 1; v4.maxMin = 120; z.upsert(v4);
+    HydraulicGroup g;
+    g.id = 1; g.bombaZoneId = 0;
+    g.zoneIds[0] = 3; g.zoneIds[1] = 4; g.zoneCount = 2;
+    g.minOpen = 1; g.maxOpen = 2; g.transicao = 0;
+    g.overlapS = 0; g.startAfterOpenS = 0; g.stopBeforeCloseS = 0;
+    g.minRunMin = 0; g.maxStartsHour = 0;
+    HydraulicGroupTable t; t.upsert(g);
+    HydraulicGroupEngine eng; eng.reset();
+
+    // Ocioso: getters retornam zero.
+    TEST_ASSERT_EQUAL_UINT8(0, eng.currentZone(1));
+    TEST_ASSERT_EQUAL_UINT8(0, eng.openConfirmedCount(1));
+    TEST_ASSERT_EQUAL_UINT8(0, eng.currentZone(0));   // groupId inválido
+    TEST_ASSERT_EQUAL_UINT8(0, eng.currentZone(9));   // groupId inválido
+
+    // Deseja abrir z3; drena tick e confirma via observeActual.
+    GroupEmit emits[8];
+    eng.setDesired(1, 3, true, 60);
+    eng.tick(t, z, 1000, emits, 8);
+    eng.observeActual(1, 3, true);
+    eng.tick(t, z, 2000, emits, 8);
+
+    TEST_ASSERT_EQUAL_UINT8(1, eng.openConfirmedCount(1));
+}
+
 // Bug 4: falha de PARTIDA da bomba não deve laçar re-abrindo válvula; aborta e fecha tudo.
 static void test_pump_start_falha_fecha_tudo()
 {
@@ -442,6 +474,7 @@ void setup()
     RUN_TEST(test_reboot_reconcilia_desliga_bomba);
     RUN_TEST(test_nack_bomba_nao_liga);
     RUN_TEST(test_pump_start_falha_fecha_tudo);
+    RUN_TEST(test_getters_currentZone_openCount);
     exit(UNITY_END());
 }
 void loop() {}

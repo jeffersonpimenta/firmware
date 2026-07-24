@@ -219,6 +219,25 @@ bool HydraulicGroupEngine::pumpOn(uint8_t groupId) const
     return rt[groupId - 1].pump;
 }
 
+uint8_t HydraulicGroupEngine::currentZone(uint8_t groupId) const
+{
+    if (groupId < 1 || groupId > MAX_GROUPS)
+        return 0;
+    return rt[groupId - 1].curZone;
+}
+
+uint8_t HydraulicGroupEngine::openConfirmedCount(uint8_t groupId) const
+{
+    if (groupId < 1 || groupId > MAX_GROUPS)
+        return 0;
+    const GroupRt &g = rt[groupId - 1];
+    uint8_t n = 0;
+    for (size_t i = 0; i < MAX_ZONES; i++)
+        if (g.zones[i].zoneId != 0 && g.zones[i].confirmed)
+            n++;
+    return n;
+}
+
 uint8_t HydraulicGroupEngine::pruneStarts(GroupRt &g, uint32_t nowMs) const
 {
     uint8_t w = 0;
