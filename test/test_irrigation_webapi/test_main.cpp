@@ -783,6 +783,60 @@ static void test_validateGroupZones_rejectsPumpAsMember()
     TEST_ASSERT_FALSE(validateGroupZones(g, zones, err, sizeof(err)));
 }
 
+// ── Fase 7b — buildGroups / groupStateLabel / buildGroupsStatus ───────────────
+
+static void test_buildGroups_basic()
+{
+    HydraulicGroupTable tbl;
+    HydraulicGroup g{};
+    g.id = 1; snprintf(g.name, sizeof(g.name), "Norte");
+    g.bombaZoneId = 9; g.zoneCount = 2; g.zoneIds[0] = 3; g.zoneIds[1] = 4;
+    g.minOpen = 2; g.maxOpen = 3; g.transicao = 1;
+    tbl.upsert(g);
+
+    char buf[1024];
+    size_t n = buildGroups(tbl, buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_TRUE(contains(buf, "\"id\":1"));
+    TEST_ASSERT_TRUE(contains(buf, "\"nome\":\"Norte\""));
+    TEST_ASSERT_TRUE(contains(buf, "\"bombaZoneId\":9"));
+    TEST_ASSERT_TRUE(contains(buf, "\"zonas\":[3,4]"));
+    TEST_ASSERT_TRUE(contains(buf, "\"minOpen\":2"));
+    TEST_ASSERT_TRUE(contains(buf, "\"maxOpen\":3"));
+    TEST_ASSERT_TRUE(contains(buf, "\"transicao\":1"));
+}
+
+static void test_buildGroups_empty()
+{
+    HydraulicGroupTable tbl;
+    char buf[64];
+    size_t n = buildGroups(tbl, buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_EQUAL_STRING("[]", buf);
+}
+
+static void test_groupStateLabel_map()
+{
+    TEST_ASSERT_EQUAL_STRING("ocioso", groupStateLabel(0));   // IDLE
+    TEST_ASSERT_EQUAL_STRING("rodando", groupStateLabel(4));  // RUNNING
+    TEST_ASSERT_EQUAL_STRING("transicao", groupStateLabel(6)); // X_OVERLAP
+    TEST_ASSERT_EQUAL_STRING("adiado", groupStateLabel(11));  // DEFERRED
+}
+
+static void test_buildGroupsStatus_basic()
+{
+    GroupStatusView v{};
+    v.id = 1; v.name = "Norte"; v.state = 4 /*RUNNING*/; v.pump = true; v.curZone = 4; v.openCount = 2;
+    char buf[512];
+    size_t n = buildGroupsStatus(&v, 1, buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_TRUE(contains(buf, "\"id\":1"));
+    TEST_ASSERT_TRUE(contains(buf, "\"estado\":\"rodando\""));
+    TEST_ASSERT_TRUE(contains(buf, "\"bomba\":true"));
+    TEST_ASSERT_TRUE(contains(buf, "\"zonaCorrente\":4"));
+    TEST_ASSERT_TRUE(contains(buf, "\"abertas\":2"));
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -844,6 +898,10 @@ void setup()
     RUN_TEST(test_validateGroupZones_rejectsMirrorMember);
     RUN_TEST(test_validateGroupZones_rejectsMissingMember);
     RUN_TEST(test_validateGroupZones_rejectsPumpAsMember);
+    RUN_TEST(test_buildGroups_basic);
+    RUN_TEST(test_buildGroups_empty);
+    RUN_TEST(test_groupStateLabel_map);
+    RUN_TEST(test_buildGroupsStatus_basic);
     exit(UNITY_END());
 }
 

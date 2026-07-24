@@ -169,4 +169,17 @@ ParseResult parseGroupCommand(const char *json, size_t len, uint8_t &outId, bool
 // Validação semântica (precisa da ZoneTable). true=ok; senão preenche err (>=48 bytes).
 bool validateGroupZones(const HydraulicGroup &g, const ZoneTable &zones, char *err, size_t errCap);
 
+const char *groupStateLabel(uint8_t state);
+size_t buildGroups(const HydraulicGroupTable &tbl, char *buf, size_t cap);
+
+struct GroupStatusView {
+    uint8_t id = 0;
+    const char *name = "";
+    uint8_t state = 0;     // HydraulicGroupEngine::State
+    bool pump = false;
+    uint8_t curZone = 0;
+    uint8_t openCount = 0;
+};
+size_t buildGroupsStatus(const GroupStatusView *views, size_t n, char *buf, size_t cap);
+
 } // namespace IrrigationWeb

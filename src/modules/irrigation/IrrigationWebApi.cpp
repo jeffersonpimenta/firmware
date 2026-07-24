@@ -723,4 +723,73 @@ bool validateGroupZones(const HydraulicGroup &g, const ZoneTable &zones, char *e
     return true;
 }
 
+// ── Fase 7b — groupStateLabel / buildGroups / buildGroupsStatus ───────────────
+
+const char *groupStateLabel(uint8_t state)
+{
+    switch (state) {
+    case 0: return "ocioso";              // IDLE
+    case 1: return "abrindo";             // OPENING
+    case 2: return "aguardando_partida";  // START_WAIT
+    case 3: return "partindo_bomba";      // PUMP_WAIT_ACK
+    case 4: return "rodando";             // RUNNING
+    case 5:                               // X_OPEN_WAIT
+    case 6:                               // X_OVERLAP
+    case 7: return "transicao";           // X_CLOSE_WAIT
+    case 8: return "parando_bomba";       // PUMP_OFF_WAIT
+    case 9: return "drenando";            // DRAIN
+    case 10: return "fechando";           // CLOSE_LAST_WAIT
+    case 11: return "adiado";             // DEFERRED
+    default: return "desconhecido";
+    }
+}
+
+size_t buildGroups(const HydraulicGroupTable &tbl, char *buf, size_t cap)
+{
+    JsonWriter w(buf, cap);
+    w.beginArray();
+    for (size_t i = 0; i < tbl.count(); i++) {
+        const HydraulicGroup *g = tbl.groupAt(i);
+        if (!g) break;
+        w.beginObject();
+        w.keyNum("id", g->id);
+        w.keyStr("nome", g->name);
+        w.keyNum("bombaZoneId", g->bombaZoneId);
+        w.key("zonas");
+        w.beginArray();
+        for (uint8_t z = 0; z < g->zoneCount && z < 8; z++) w.num(g->zoneIds[z]);
+        w.endArray();
+        w.keyNum("minOpen", g->minOpen);
+        w.keyNum("maxOpen", g->maxOpen);
+        w.keyNum("transicao", g->transicao);
+        w.keyNum("overlapS", g->overlapS);
+        w.keyNum("startAfterOpenS", g->startAfterOpenS);
+        w.keyNum("stopBeforeCloseS", g->stopBeforeCloseS);
+        w.keyNum("minRunMin", g->minRunMin);
+        w.keyNum("maxStartsHour", g->maxStartsHour);
+        w.endObject();
+    }
+    w.endArray();
+    return w.done();
+}
+
+size_t buildGroupsStatus(const GroupStatusView *views, size_t n, char *buf, size_t cap)
+{
+    JsonWriter w(buf, cap);
+    w.beginArray();
+    for (size_t i = 0; i < n; i++) {
+        const GroupStatusView &v = views[i];
+        w.beginObject();
+        w.keyNum("id", v.id);
+        w.keyStr("nome", v.name ? v.name : "");
+        w.keyStr("estado", groupStateLabel(v.state));
+        w.keyBool("bomba", v.pump);
+        w.keyNum("zonaCorrente", v.curZone);
+        w.keyNum("abertas", v.openCount);
+        w.endObject();
+    }
+    w.endArray();
+    return w.done();
+}
+
 } // namespace IrrigationWeb
