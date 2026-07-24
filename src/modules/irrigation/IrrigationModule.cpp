@@ -1952,8 +1952,16 @@ void IrrigationModule::gwTick()
             bool jaFechada = (interlockClosedMask[byteIdx] & bitMask) != 0;
             if (v.deveFechar) {
                 if (!jaFechada) {
-                    // Borda de subida: envia FECHAR e registra auditoria.
-                    gwSendValveCmd(z->node, z->index, z->tipo, 0, 0, z->id, 1);
+                    // Fase 7a: zona de grupo hidráulico é fechada PELO MOTOR (sequência bomba-off
+                    // -> válvula, ordem hidráulica correta). Fechar direto na estação faria o motor
+                    // reabri-la no próximo tick (wanted ainda true), quicando o intertravamento.
+                    const HydraulicGroup *hg = gateway.groups.byZone(z->id);
+                    if (hg) {
+                        gateway.groupEngine.setDesired(hg->id, z->id, false, 0);
+                    } else {
+                        // Borda de subida: envia FECHAR direto (zona não agrupada).
+                        gwSendValveCmd(z->node, z->index, z->tipo, 0, 0, z->id, 1);
+                    }
                     auditEvent(AuditOrigin::INTERTRAVAMENTO, AuditAction::FECHAR, z->id, AuditResult::OK, z->node);
                     interlockClosedMask[byteIdx] |= bitMask;
                 }
@@ -2310,12 +2318,13 @@ void IrrigationModule::handleGwAck(const meshtastic_MeshPacket &mp, const Header
             a.atMs = millis();
             gateway.alerts.push(a);
         }
+        // Fase 7a: NACK é FALHA — o motor de grupos NÃO deve avançar como se tivesse ligado.
+        gateway.groupEngine.onNack(mp.from, ack.ackedSeq);
     } else {
         gateway.tracker.onAck(mp.from, ack.ackedSeq);
+        // Fase 7a: só o ACK OK avança o handshake do motor de grupos.
+        gateway.groupEngine.onAck(mp.from, ack.ackedSeq);
     }
-
-    // Fase 7a: motor de grupos vê todo ACK (OK ou NACK) p/ avançar seu handshake.
-    gateway.groupEngine.onAck(mp.from, ack.ackedSeq);
 
     // Reconciliação de epoch (mesma regra do HB — decisão §3).
     gwReconcileEpoch(mp.from, ack.configEpoch);

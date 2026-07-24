@@ -118,6 +118,7 @@ void HydraulicGroupEngine::onAck(uint32_t node, uint32_t ackedSeq)
         case State::PUMP_WAIT_ACK:
             g.pump = true;
             g.state = State::RUNNING;
+            g.reachedRunning = true; // RUNNING estabelecido com bomba on: habilita reconcile (§8.13)
             break;
         case State::X_OPEN_WAIT:
             g.state = State::X_OVERLAP;
@@ -136,10 +137,28 @@ void HydraulicGroupEngine::onAck(uint32_t node, uint32_t ackedSeq)
         case State::CLOSE_LAST_WAIT:
             g.state = State::IDLE;
             g.curZone = 0;
+            g.reachedRunning = false; // ciclo encerrado
             break;
         default:
             break;
         }
+        return;
+    }
+}
+
+// NACK: a estação REJEITOU o comando (safe mode, bateria baixa, rate limit). É uma FALHA,
+// não um sucesso — encaminha para o mesmo tratamento de onCmdFailed. Localiza o pend por
+// (node, seq), captura zoneId/action e delega a onCmdFailed(node, zoneId, action), que
+// re-encontra o mesmo pend (casa por node+zoneId+action) e o limpa. A dupla-busca é segura:
+// entre onNack e onCmdFailed nada mais mexe no pend.
+void HydraulicGroupEngine::onNack(uint32_t node, uint32_t ackedSeq)
+{
+    for (size_t i = 0; i < MAX_GROUPS; i++) {
+        GroupRt &g = rt[i];
+        if (!g.pend.inUse || g.pend.node != node || g.pend.seq != ackedSeq)
+            continue;
+        uint8_t zoneId = g.pend.zoneId, action = g.pend.action;
+        onCmdFailed(node, zoneId, action);
         return;
     }
 }
@@ -324,6 +343,19 @@ size_t HydraulicGroupEngine::tick(const HydraulicGroupTable &tbl, const ZoneTabl
         }
         case State::RUNNING: {
             if (g.openFailPending) {
+                // A partida da bomba em si falhou (PUMP_WAIT_ACK nunca completou -> g.pump==false):
+                // não há bomba a proteger e não dá p/ "renovar a corrente" (não há corrente com bomba).
+                // Aborta o ciclo com segurança: cancela o desejo e vai a DRAIN fechar as válvulas.
+                if (g.openFailZone == cfg->bombaZoneId && cfg->bombaZoneId != 0) {
+                    pushAlert(groupId, GA_OPEN_FAIL_PUMPOFF, g.openFailZone);
+                    g.openFailPending = false;
+                    for (auto &zz : g.zones)
+                        if (zz.zoneId)
+                            zz.wanted = false; // ninguém mais desejado: DRAIN fecha as confirmadas
+                    g.waitStartMs = nowMs; // âncora do DRAIN (parar_antes_de_fechar_s)
+                    g.state = State::DRAIN; // g.pump já é false: sem parada de bomba a fazer
+                    break;
+                }
                 ZoneRt *cur = findZone(g, g.curZone);
                 bool nearDeadline = cur && cur->localExpiresMs != 0 &&
                                     (int32_t)(cur->localExpiresMs - nowMs) < (int32_t)RENEW_MARGIN_MS;
@@ -375,7 +407,8 @@ size_t HydraulicGroupEngine::tick(const HydraulicGroupTable &tbl, const ZoneTabl
             // ordenada (GA_REBOOT_RECONCILE) — cobre estação reiniciando com válvula fechada.
             if (g.reconcileCheck) {
                 g.reconcileCheck = false;
-                if (g.pump && cfg->bombaZoneId != 0 && confirmedCount(g) < (size_t)cfg->minOpen) {
+                if (g.reachedRunning && g.pump && cfg->bombaZoneId != 0 &&
+                    confirmedCount(g) < (size_t)cfg->minOpen) {
                     if (resolve(zones, cfg->bombaZoneId, e)) {
                         e.action = 0;
                         g.pend = {true, e.node, 0, cfg->bombaZoneId, 0};
@@ -479,6 +512,7 @@ size_t HydraulicGroupEngine::tick(const HydraulicGroupTable &tbl, const ZoneTabl
             if (!last) {
                 g.state = State::IDLE;
                 g.curZone = 0;
+                g.reachedRunning = false; // ciclo encerrado
                 break;
             }
             if (!resolve(zones, last->zoneId, e))

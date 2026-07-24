@@ -353,6 +353,78 @@ static void test_reboot_reconcilia_desliga_bomba()
     TEST_ASSERT_TRUE(got);
 }
 
+// Bug 1: NACK (estação rejeitou o comando) NÃO deve avançar o motor como se a bomba tivesse ligado.
+static void test_nack_bomba_nao_liga()
+{
+    ZoneTable z; seedZones(z);
+    HydraulicGroupTable t; t.upsert(grp());
+    HydraulicGroupEngine e; e.reset();
+
+    // abre V1 (ack), leva o grupo a PUMP_WAIT_ACK.
+    e.setDesired(1, 1, true, 600);
+    tick1(e, t, z, 1000); e.noteSent(NODE, 1, 1, 501); e.onAck(NODE, 501);
+    GroupEmit pump = tick1(e, t, z, 6000); // emite a bomba
+    TEST_ASSERT_EQUAL_UINT8(9, pump.zoneId);
+    TEST_ASSERT_EQUAL_UINT8(1, pump.action);
+    TEST_ASSERT_EQUAL(State::PUMP_WAIT_ACK, e.stateOf(1));
+    e.noteSent(NODE, 9, 1, 502);
+
+    // NACK na abertura da bomba: a bomba NÃO ligou.
+    e.onNack(NODE, 502);
+    TEST_ASSERT_FALSE(e.pumpOn(1)); // a bomba não veio ligada
+    // onCmdFailed de open estaciona em RUNNING+openFailPending (pump=false); o próximo tick
+    // aborta (Bug 4). O que NÃO pode acontecer é o estado falso "RUNNING com bomba ligada".
+    TEST_ASSERT_FALSE(e.stateOf(1) == State::RUNNING && e.pumpOn(1));
+
+    // NACK == falha de open da bomba -> mesmo tratamento de onCmdFailed: openFailPending.
+    // O próximo tick (Bug 4) aborta com segurança em vez de fingir que a bomba está ligada.
+    GroupEmit out[4];
+    e.tick(t, z, 6000, out, 4);
+    TEST_ASSERT_FALSE(e.pumpOn(1)); // continua sem bomba
+}
+
+// Bug 4: falha de PARTIDA da bomba não deve laçar re-abrindo válvula; aborta e fecha tudo.
+static void test_pump_start_falha_fecha_tudo()
+{
+    ZoneTable z; seedZones(z);
+    HydraulicGroup g = grp();
+    g.minOpen = 1;
+    HydraulicGroupTable t; t.upsert(g);
+    HydraulicGroupEngine e; e.reset();
+
+    // abre V1 (ack); tick emite a bomba.
+    e.setDesired(1, 1, true, 600);
+    tick1(e, t, z, 1000); e.noteSent(NODE, 1, 1, 1); e.onAck(NODE, 1);
+    GroupEmit pump = tick1(e, t, z, 6000);
+    TEST_ASSERT_EQUAL_UINT8(9, pump.zoneId);
+    e.noteSent(NODE, 9, 1, 2);
+
+    // a partida da bomba FALHA (esgotou retries): openFailPending com openFailZone == bomba.
+    e.onCmdFailed(NODE, 9, 1);
+    TEST_ASSERT_FALSE(e.pumpOn(1));
+
+    // tick: NÃO re-abre V1 como "renovação"; aborta -> DRAIN e alerta GA_OPEN_FAIL_PUMPOFF.
+    GroupEmit out[4];
+    size_t n = e.tick(t, z, 6000, out, 4);
+    for (size_t i = 0; i < n; i++) {
+        // nada re-aberto: não pode emitir abrir V1.
+        TEST_ASSERT_FALSE(out[i].zoneId == 1 && out[i].action == 1);
+    }
+    TEST_ASSERT_FALSE(e.pumpOn(1));
+    State st = e.stateOf(1);
+    TEST_ASSERT_TRUE(st == State::DRAIN || st == State::CLOSE_LAST_WAIT || st == State::IDLE);
+
+    HydraulicGroupEngine::GroupAlert al; bool got = false;
+    while (e.takeAlert(al)) if (al.code == HydraulicGroupEngine::GA_OPEN_FAIL_PUMPOFF) got = true;
+    TEST_ASSERT_TRUE(got);
+
+    // segue fechando V1 (drena parar_antes_de_fechar_s = 8 s, depois fecha a última).
+    GroupEmit clast = tick1(e, t, z, 20000);
+    TEST_ASSERT_EQUAL_UINT8(1, clast.zoneId);
+    TEST_ASSERT_EQUAL_UINT8(0, clast.action);
+    TEST_ASSERT_FALSE(e.pumpOn(1)); // bomba nunca ligou
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -368,6 +440,8 @@ void setup()
     RUN_TEST(test_max_partidas_defer);
     RUN_TEST(test_grupo_sem_bomba);
     RUN_TEST(test_reboot_reconcilia_desliga_bomba);
+    RUN_TEST(test_nack_bomba_nao_liga);
+    RUN_TEST(test_pump_start_falha_fecha_tudo);
     exit(UNITY_END());
 }
 void loop() {}

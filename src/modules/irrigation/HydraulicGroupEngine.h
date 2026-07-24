@@ -42,6 +42,7 @@ class HydraulicGroupEngine {
                 GroupEmit *out, size_t cap);
     void noteSent(uint32_t node, uint8_t zoneId, uint8_t action, uint32_t seq);
     void onAck(uint32_t node, uint32_t ackedSeq);
+    void onNack(uint32_t node, uint32_t ackedSeq);
     void onCmdFailed(uint32_t node, uint8_t zoneId, uint8_t action);
     void observeActual(uint8_t groupId, uint8_t zoneId, bool open);
     bool takeAlert(GroupAlert &out);
@@ -76,6 +77,7 @@ class HydraulicGroupEngine {
         bool pumpNeedsRenew = false; // transição completou: renovar timer local da bomba (§4.2)
         bool openFailPending = false; // abrir-próxima falhou: o próximo tick decide renovar/desligar bomba
         bool reconcileCheck = false;  // observeActual sinalizou: tick verifica se actual-set caiu < minOpen
+        bool reachedRunning = false; // grupo já estabeleceu RUNNING com a bomba ligada (gate p/ reconcile)
         uint8_t openFailZone = 0;    // zona cuja abertura falhou (p/ alerta)
         PendCmd pend;                // 1 comando pendente por grupo (sequencial)
         ZoneRt zones[MAX_ZONES];
