@@ -581,4 +581,119 @@ ParseResult parseSensorName(const char *json, size_t len,
     return r;
 }
 
+// ── Fase 7b — grupos hidráulicos: parsers ────────────────────────────────────
+
+ParseResult parseGroupUpsert(const char *json, size_t len, HydraulicGroup &out)
+{
+    ParseResult r;
+    JsonReader rd(json, len);
+    int64_t id = -1, bomba = 0, minOpen = 1, maxOpen = 1, transicao = 0;
+    int64_t overlap = 10, startAfter = 5, stopBefore = 8, minRun = 5, maxStarts = 6;
+    char nome[16] = {0};
+
+    if (!rd.getInt("id", id) || id < 0 || id > (int64_t)HydraulicGroupTable::MAX)
+        r.fail("id invalido (0..8)");
+    rd.getStr("nome", nome, sizeof(nome));
+    rd.getInt("bombaZoneId", bomba);
+    rd.getInt("minOpen", minOpen);
+    rd.getInt("maxOpen", maxOpen);
+    rd.getInt("transicao", transicao);
+    rd.getInt("overlapS", overlap);
+    rd.getInt("startAfterOpenS", startAfter);
+    rd.getInt("stopBeforeCloseS", stopBefore);
+    rd.getInt("minRunMin", minRun);
+    rd.getInt("maxStartsHour", maxStarts);
+
+    // array "zonas" — mesma técnica de parseInterlockUpsert
+    const char *sp = strstr(json, "\"zonas\"");
+    const char *arr = sp ? strchr(sp, '[') : nullptr;
+    const char *arrEnd = arr ? strchr(arr, ']') : nullptr;
+    uint8_t zoneIds[8] = {0};
+    uint8_t zCount = 0;
+    if (arr && arrEnd) {
+        const char *o = arr + 1;
+        while (o < arrEnd) {
+            while (o < arrEnd && (*o < '0' || *o > '9')) o++;
+            if (o >= arrEnd) break;
+            char tok[8]; size_t ti = 0; const char *p2 = o; bool anyD = false;
+            while (p2 < arrEnd && *p2 >= '0' && *p2 <= '9' && ti + 1 < sizeof(tok)) {
+                tok[ti++] = *p2++; anyD = true;
+            }
+            if (anyD) {
+                tok[ti] = '\0';
+                char *tend = nullptr;
+                int64_t zid = strtoll(tok, &tend, 10);
+                if (tend != tok && zid > 0 && zCount < 8) zoneIds[zCount++] = (uint8_t)zid;
+            }
+            o = p2;
+            while (o < arrEnd && *o != ',') o++;
+            if (o < arrEnd) o++;
+        }
+    }
+
+    if (zCount < 1) r.fail("grupo sem zonas");
+    if (minOpen < 1) r.fail("minOpen >= 1");
+    if (maxOpen != 0 && maxOpen < minOpen) r.fail("maxOpen < minOpen");
+    if (transicao != 0 && transicao != 1) r.fail("transicao invalida");
+
+    if (!r.ok) return r;
+
+    out = HydraulicGroup{};
+    out.id = (uint8_t)id;
+    snprintf(out.name, sizeof(out.name), "%s", nome);
+    out.bombaZoneId = (uint8_t)bomba;
+    for (uint8_t z = 0; z < 8; z++) out.zoneIds[z] = (z < zCount) ? zoneIds[z] : 0;
+    out.zoneCount = zCount;
+    out.minOpen = (uint8_t)minOpen;
+    out.maxOpen = (uint8_t)maxOpen;
+    out.transicao = (uint8_t)transicao;
+    out.overlapS = (uint16_t)overlap;
+    out.startAfterOpenS = (uint16_t)startAfter;
+    out.stopBeforeCloseS = (uint16_t)stopBefore;
+    out.minRunMin = (uint16_t)minRun;
+    out.maxStartsHour = (uint8_t)maxStarts;
+    return r;
+}
+
+ParseResult parseGroupDelete(const char *json, size_t len, uint8_t &outId)
+{
+    ParseResult r;
+    JsonReader rd(json, len);
+    int64_t id = 0;
+    if (!rd.getInt("id", id) || id < 1 || id > (int64_t)HydraulicGroupTable::MAX) {
+        r.fail("id invalido (1..8)");
+        return r;
+    }
+    outId = (uint8_t)id;
+    return r;
+}
+
+ParseResult parseGroupCommand(const char *json, size_t len, uint8_t &outId, bool &outOpen, uint16_t &outDurationS)
+{
+    ParseResult r;
+    JsonReader rd(json, len);
+    int64_t id = 0, dur = 0;
+    char acao[8] = {0};
+    if (!rd.getInt("id", id) || id < 1 || id > (int64_t)HydraulicGroupTable::MAX)
+        r.fail("id invalido (1..8)");
+    if (!rd.getStr("acao", acao, sizeof(acao)))
+        r.fail("acao ausente");
+    rd.getInt("durationS", dur);
+
+    bool open;
+    if (strcmp(acao, "abrir") == 0)
+        open = true;
+    else if (strcmp(acao, "fechar") == 0)
+        open = false;
+    else {
+        if (r.ok) r.fail("acao invalida (abrir|fechar)");
+        return r;
+    }
+    if (!r.ok) return r;
+    outId = (uint8_t)id;
+    outOpen = open;
+    outDurationS = (dur > 0 && dur <= 0xFFFF) ? (uint16_t)dur : 0;
+    return r;
+}
+
 } // namespace IrrigationWeb

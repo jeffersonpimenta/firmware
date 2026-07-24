@@ -1,6 +1,7 @@
 #include "Arduino.h"
 #include "TestUtil.h"
 #include "modules/irrigation/GatewayTables.h"
+#include "modules/irrigation/HydraulicGroupTable.h"
 #include "modules/irrigation/InterlockTable.h"
 #include "modules/irrigation/IrrigationWebApi.h"
 #include "modules/irrigation/ProgramScheduler.h"
@@ -620,6 +621,112 @@ static void test_buildInterlocks_roundtripFields()
     TEST_ASSERT_TRUE(contains(buf, "\"maxAbertas\":1"));
 }
 
+// ── Fase 7b — grupos hidráulicos ─────────────────────────────────────────────
+
+static void test_parseGroupUpsert_ok()
+{
+    const char *j = "{\"id\":1,\"nome\":\"Norte\",\"bombaZoneId\":9,\"zonas\":[3,4,5],"
+                    "\"minOpen\":2,\"maxOpen\":3,\"transicao\":1,\"overlapS\":10,"
+                    "\"startAfterOpenS\":5,\"stopBeforeCloseS\":8,\"minRunMin\":5,\"maxStartsHour\":6}";
+    HydraulicGroup out;
+    ParseResult r = parseGroupUpsert(j, strlen(j), out);
+    TEST_ASSERT_TRUE(r.ok);
+    TEST_ASSERT_EQUAL_UINT8(1, out.id);
+    TEST_ASSERT_EQUAL_STRING("Norte", out.name);
+    TEST_ASSERT_EQUAL_UINT8(9, out.bombaZoneId);
+    TEST_ASSERT_EQUAL_UINT8(3, out.zoneCount);
+    TEST_ASSERT_EQUAL_UINT8(3, out.zoneIds[0]);
+    TEST_ASSERT_EQUAL_UINT8(5, out.zoneIds[2]);
+    TEST_ASSERT_EQUAL_UINT8(2, out.minOpen);
+    TEST_ASSERT_EQUAL_UINT8(3, out.maxOpen);
+    TEST_ASSERT_EQUAL_UINT8(1, out.transicao);
+}
+
+static void test_parseGroupUpsert_idZeroAllowed()
+{
+    const char *j = "{\"id\":0,\"nome\":\"Nova\",\"zonas\":[2],\"minOpen\":1,\"maxOpen\":1}";
+    HydraulicGroup out;
+    ParseResult r = parseGroupUpsert(j, strlen(j), out);
+    TEST_ASSERT_TRUE(r.ok);          // id=0 = criar (servidor aloca)
+    TEST_ASSERT_EQUAL_UINT8(0, out.id);
+    TEST_ASSERT_EQUAL_UINT8(1, out.zoneCount);
+}
+
+static void test_parseGroupUpsert_rejectsMinGtMax()
+{
+    const char *j = "{\"id\":1,\"zonas\":[3],\"minOpen\":3,\"maxOpen\":2}";
+    HydraulicGroup out;
+    TEST_ASSERT_FALSE(parseGroupUpsert(j, strlen(j), out).ok);
+}
+
+static void test_parseGroupUpsert_maxZeroMeansNoCeiling()
+{
+    const char *j = "{\"id\":1,\"zonas\":[3,4],\"minOpen\":2,\"maxOpen\":0}";
+    HydraulicGroup out;
+    TEST_ASSERT_TRUE(parseGroupUpsert(j, strlen(j), out).ok); // maxOpen=0 = sem teto, válido
+}
+
+static void test_parseGroupUpsert_rejectsNoZones()
+{
+    const char *j = "{\"id\":1,\"zonas\":[],\"minOpen\":1,\"maxOpen\":1}";
+    HydraulicGroup out;
+    TEST_ASSERT_FALSE(parseGroupUpsert(j, strlen(j), out).ok);
+}
+
+static void test_parseGroupUpsert_zonasOverflowGuard()
+{
+    const char *j = "{\"id\":1,\"zonas\":[1,2,3,4,5,6,7,8,9,10],\"minOpen\":1,\"maxOpen\":8}";
+    HydraulicGroup out;
+    ParseResult r = parseGroupUpsert(j, strlen(j), out);
+    TEST_ASSERT_TRUE(r.ok);
+    TEST_ASSERT_EQUAL_UINT8(8, out.zoneCount); // trunca em 8, sem estourar
+}
+
+static void test_parseGroupDelete_ok()
+{
+    const char *j = "{\"id\":2}";
+    uint8_t id = 0;
+    TEST_ASSERT_TRUE(parseGroupDelete(j, strlen(j), id).ok);
+    TEST_ASSERT_EQUAL_UINT8(2, id);
+}
+
+static void test_parseGroupDelete_rejectsBadId()
+{
+    const char *j0 = "{\"id\":0}";
+    uint8_t id = 0;
+    TEST_ASSERT_FALSE(parseGroupDelete(j0, strlen(j0), id).ok);
+    const char *j9 = "{\"id\":9}";
+    TEST_ASSERT_FALSE(parseGroupDelete(j9, strlen(j9), id).ok);
+}
+
+static void test_parseGroupCommand_abrir()
+{
+    const char *j = "{\"id\":1,\"acao\":\"abrir\",\"durationS\":300}";
+    uint8_t id = 0; bool open = false; uint16_t dur = 0;
+    ParseResult r = parseGroupCommand(j, strlen(j), id, open, dur);
+    TEST_ASSERT_TRUE(r.ok);
+    TEST_ASSERT_EQUAL_UINT8(1, id);
+    TEST_ASSERT_TRUE(open);
+    TEST_ASSERT_EQUAL_UINT16(300, dur);
+}
+
+static void test_parseGroupCommand_fecharNoDur()
+{
+    const char *j = "{\"id\":2,\"acao\":\"fechar\"}";
+    uint8_t id = 0; bool open = true; uint16_t dur = 99;
+    ParseResult r = parseGroupCommand(j, strlen(j), id, open, dur);
+    TEST_ASSERT_TRUE(r.ok);
+    TEST_ASSERT_FALSE(open);
+    TEST_ASSERT_EQUAL_UINT16(0, dur); // omitido => 0
+}
+
+static void test_parseGroupCommand_rejectsBadAcao()
+{
+    const char *j = "{\"id\":1,\"acao\":\"xyz\"}";
+    uint8_t id = 0; bool open = false; uint16_t dur = 0;
+    TEST_ASSERT_FALSE(parseGroupCommand(j, strlen(j), id, open, dur).ok);
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -665,6 +772,18 @@ void setup()
     RUN_TEST(test_parseSensorName_truncatesLongName);
     RUN_TEST(test_parseSensorName_rejectsBadSensor);
     RUN_TEST(test_buildInterlocks_roundtripFields);
+    // Fase 7b — grupos hidráulicos
+    RUN_TEST(test_parseGroupUpsert_ok);
+    RUN_TEST(test_parseGroupUpsert_idZeroAllowed);
+    RUN_TEST(test_parseGroupUpsert_rejectsMinGtMax);
+    RUN_TEST(test_parseGroupUpsert_maxZeroMeansNoCeiling);
+    RUN_TEST(test_parseGroupUpsert_rejectsNoZones);
+    RUN_TEST(test_parseGroupUpsert_zonasOverflowGuard);
+    RUN_TEST(test_parseGroupDelete_ok);
+    RUN_TEST(test_parseGroupDelete_rejectsBadId);
+    RUN_TEST(test_parseGroupCommand_abrir);
+    RUN_TEST(test_parseGroupCommand_fecharNoDur);
+    RUN_TEST(test_parseGroupCommand_rejectsBadAcao);
     exit(UNITY_END());
 }
 

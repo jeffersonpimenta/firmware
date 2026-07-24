@@ -1,5 +1,6 @@
 #pragma once
 #include "modules/irrigation/GatewayTables.h"
+#include "modules/irrigation/HydraulicGroupTable.h"
 #include "modules/irrigation/InterlockTable.h"
 #include "modules/irrigation/IrrigationProtocol.h"
 #include "modules/irrigation/ProgramScheduler.h"
@@ -157,5 +158,12 @@ ParseResult parseMaintWindow(const char *json, size_t len, uint32_t &outNode, ui
 ParseResult parseSensorName(const char *json, size_t len,
                             uint32_t &outNode, uint8_t &outIdx,
                             char *outName, size_t nameCap);
+
+// ── Fase 7b — grupos hidráulicos ─────────────────────────────────────────────
+
+ParseResult parseGroupUpsert(const char *json, size_t len, HydraulicGroup &out);
+ParseResult parseGroupDelete(const char *json, size_t len, uint8_t &outId);
+// {id, acao:"abrir"|"fechar", durationS?}. durationS omitido => 0 (módulo aplica default).
+ParseResult parseGroupCommand(const char *json, size_t len, uint8_t &outId, bool &outOpen, uint16_t &outDurationS);
 
 } // namespace IrrigationWeb
