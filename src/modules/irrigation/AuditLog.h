@@ -5,7 +5,8 @@
 // §8.9 — origens/ações/resultados do log de auditoria.
 enum class AuditOrigin : uint8_t {
     SISTEMA = 0, CRONOGRAMA, PAINEL, PORTAL_CAMPO, BOTAO_FISICO,
-    ENTRADA_FISICA, INTERTRAVAMENTO, FAILSAFE_TIMER, SERVICO
+    ENTRADA_FISICA, INTERTRAVAMENTO, FAILSAFE_TIMER, SERVICO,
+    GRUPO_HIDRAULICO // = 9 (append-only ABI; rótulo JS no 7b)
 };
 // Valores são ABI persistida (log em flash) e contrato com os rótulos do JS (portal/app.js):
 // só APPEND no fim, nunca reordenar/remover. FACTORY_RESET (log é apagado no reset, não se

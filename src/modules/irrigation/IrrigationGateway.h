@@ -5,6 +5,8 @@
 
 #include "modules/irrigation/CommandTracker.h"
 #include "modules/irrigation/GatewayTables.h"
+#include "modules/irrigation/HydraulicGroupEngine.h"
+#include "modules/irrigation/HydraulicGroupTable.h"
 #include "modules/irrigation/InterlockEngine.h"
 #include "modules/irrigation/InterlockTable.h"
 #include "modules/irrigation/MirrorMode.h"
@@ -29,4 +31,7 @@ struct IrrigationGateway {
     OpenGate openGate;
     // Fase 6b Task 18: nomes de sensores configurados pelo operador via painel.
     SensorNameTable sensorNames;
+    // Fase 7a: grupos hidráulicos (bomba/válvula) — orquestração + config.
+    HydraulicGroupTable groups;
+    HydraulicGroupEngine groupEngine;
 };

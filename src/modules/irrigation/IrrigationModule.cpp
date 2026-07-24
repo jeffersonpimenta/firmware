@@ -41,6 +41,9 @@ static const char *GW_INTERLOCKS_TMP = "/prefs/irrigation_interlocks.tmp";
 // Fase 6b Task 18: nomes de sensores configurados pelo operador via painel.
 static const char *GW_SENSORNAMES_PATH = "/prefs/irrigation_sensornames.dat";
 static const char *GW_SENSORNAMES_TMP = "/prefs/irrigation_sensornames.tmp";
+// Fase 7a: grupos hidráulicos (bomba/válvula).
+static const char *GW_GRUPOS_PATH = "/prefs/irrigation_grupos.dat";
+static const char *GW_GRUPOS_TMP = "/prefs/irrigation_grupos.tmp";
 
 // Cooldown de reconciliação de epoch por nó (30 s)
 static constexpr uint32_t EPOCH_COOLDOWN_MS = 30000;
@@ -247,6 +250,7 @@ IrrigationModule::IrrigationModule()
         loadGatewayState();
         loadInterlocks();            // Fase 6b: carrega regras de intertravamento salvas
         loadSensorNames();           // Fase 6b Task 18: carrega nomes de sensores salvos
+        loadGroups();                // Fase 7a: carrega grupos hidráulicos salvos
         gwRebuildLocalInterlocks();  // Fase 6b Task 14b: monta réplicas locais v5 e empurra via epoch
         // Fase 6b Task 16: inicializa o log de auditoria persistente em flash do gateway.
         auditFlashStore.ensureAllocated();
@@ -1432,6 +1436,27 @@ bool IrrigationModule::saveSensorNames()
     uint8_t buf[4 + 2 + SensorNameTable::MAX * sizeof(SensorName) + 4];
     size_t n = gateway.sensorNames.serialize(buf, sizeof(buf));
     return stagedWrite(GW_SENSORNAMES_TMP, GW_SENSORNAMES_PATH, buf, n);
+}
+
+// ---------------------------------------------------------------------------
+// Fase 7a: persistência da tabela de grupos hidráulicos (arquivo separado).
+// Espelha loadInterlocks/saveInterlocks EXATAMENTE.
+// ---------------------------------------------------------------------------
+
+bool IrrigationModule::loadGroups()
+{
+    size_t n = 0;
+    uint8_t buf[6 + HydraulicGroupTable::MAX * 41 + 4]; // margem folgada (entry real 39 B)
+    if (!stagedRead(GW_GRUPOS_PATH, buf, sizeof(buf), n))
+        return false; // ausente na 1ª init — ok, tabela vazia
+    return gateway.groups.deserialize(buf, n);
+}
+
+bool IrrigationModule::saveGroups()
+{
+    uint8_t buf[6 + HydraulicGroupTable::MAX * 41 + 4];
+    size_t n = gateway.groups.serialize(buf, sizeof(buf));
+    return stagedWrite(GW_GRUPOS_TMP, GW_GRUPOS_PATH, buf, n);
 }
 
 // ---------------------------------------------------------------------------
