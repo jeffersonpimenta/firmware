@@ -142,6 +142,9 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     bool computeLocalSecs(uint32_t &out) const;
     uint32_t gwSendValveCmd(uint32_t node, uint8_t index, uint8_t tipo, uint8_t action, uint16_t durationS,
                             uint8_t zoneId, uint8_t attempts); // decisão §1 — retorna o txSeq usado (0 se falhou)
+    // Fase 7b: ponto único de decisão de roteamento de open/close de UMA zona.
+    // Zona de grupo hidráulico => motor (setDesired); zona livre => false (caminho atual).
+    bool routeZoneToGroup(uint8_t zoneId, bool open, uint16_t durationS);
     void gwSendMaintWindow(uint32_t node, uint16_t minutes); // Fase 6b Task 15: janela de manutenção do tamper
     void gwReconcileEpoch(uint32_t node, uint32_t remoteEpoch);
     void commitPairing();

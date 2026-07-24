@@ -1763,10 +1763,15 @@ bool IrrigationModule::gwRunCommand(const IrrigationWeb::WebCommand &c)
         uint16_t dur = c.durationS;
         if (z->maxMin > 0 && dur > (uint16_t)(z->maxMin * 60))
             dur = (uint16_t)(z->maxMin * 60);
+        // Fase 7b: zona de grupo vai pelo motor (bomba + coreografia), não válvula direta.
+        if (routeZoneToGroup(z->id, true, dur))
+            return true;
         gwSendValveCmd(z->node, z->index, z->tipo, 1, dur, z->id, attempts);
         return true;
     }
     if (c.kind == K::CLOSE) {
+        if (routeZoneToGroup(z->id, false, 0))
+            return true;
         gateway.openGate.release(z->id); // balanceia a contagem de simultaneidade (no-op se não estava aberta)
         gwSendValveCmd(z->node, z->index, z->tipo, 0, 0, z->id, 1);
         return true;
@@ -1835,8 +1840,16 @@ bool IrrigationModule::portalRunNetCommand(const IrrigationWeb::NetCommand &c)
             uint16_t dur = c.durationS;
             if (z->maxMin > 0 && dur > (uint16_t)(z->maxMin * 60))
                 dur = (uint16_t)(z->maxMin * 60);
+            if (routeZoneToGroup(z->id, true, dur)) {
+                auditEvent(AuditOrigin::PORTAL_CAMPO, AuditAction::ABRIR, c.zoneId, AuditResult::OK);
+                return true;
+            }
             gwSendValveCmd(z->node, z->index, z->tipo, 1, dur, z->id, attempts);
         } else {
+            if (routeZoneToGroup(z->id, false, 0)) {
+                auditEvent(AuditOrigin::PORTAL_CAMPO, AuditAction::FECHAR, c.zoneId, AuditResult::OK);
+                return true;
+            }
             gateway.openGate.release(z->id); // balanceia a contagem de simultaneidade (no-op se não estava aberta)
             gwSendValveCmd(z->node, z->index, z->tipo, 0, 0, z->id, 1);
         }
@@ -1920,6 +1933,26 @@ bool IrrigationModule::portalSetCoords(const IrrigationWeb::PortalCoords &c)
     return saveIrrigationSettings(settings);
 }
 
+bool IrrigationModule::routeZoneToGroup(uint8_t zoneId, bool open, uint16_t durationS)
+{
+    const HydraulicGroup *hg = gateway.groups.byZone(zoneId);
+    if (!hg)
+        return false; // zona livre — chamador segue caminho direto/OpenGate
+    if (open) {
+        // Intertravamento: zona bloqueada não entra no desejado (mesma política do scheduler).
+        if (gateway.interlockEngine.zoneVerdict(zoneId).bloqueada) {
+            const Zone *z = gateway.zones.byId(zoneId);
+            auditEvent(AuditOrigin::INTERTRAVAMENTO, AuditAction::CMD_REJEITADO, zoneId,
+                       AuditResult::NACK, z ? z->node : 0);
+        } else {
+            gateway.groupEngine.setDesired(hg->id, zoneId, true, durationS);
+        }
+    } else {
+        gateway.groupEngine.setDesired(hg->id, zoneId, false, 0);
+    }
+    return true;
+}
+
 // Decisão §2: loop principal do gateway — scheduler, espelho, retries, silêncio.
 void IrrigationModule::gwTick()
 {
@@ -1992,24 +2025,16 @@ void IrrigationModule::gwTick()
                 LOG_WARN("Irrigation GW: scheduler zone %u not found", a.zoneId);
                 continue;
             }
-            // --- Fase 7a: zonas de grupo hidráulico são orquestradas pelo motor, não pelo caminho direto ---
-            const HydraulicGroup *hg = gateway.groups.byZone(a.zoneId);
-            if (hg) {
-                if (a.type == SchedAction::Type::OPEN) {
-                    uint16_t dur = a.durationS;
-                    if (z->maxMin > 0 && dur > (uint16_t)(z->maxMin * 60))
-                        dur = (uint16_t)(z->maxMin * 60);
-                    // intertravamento: zona bloqueada não entra no desejado
-                    if (gateway.interlockEngine.zoneVerdict(a.zoneId).bloqueada) {
-                        auditEvent(AuditOrigin::INTERTRAVAMENTO, AuditAction::CMD_REJEITADO, a.zoneId,
-                                   AuditResult::NACK, z->node);
-                    } else {
-                        gateway.groupEngine.setDesired(hg->id, a.zoneId, true, dur);
-                    }
-                } else { // CLOSE
-                    gateway.groupEngine.setDesired(hg->id, a.zoneId, false, 0);
-                }
-                continue; // NÃO segue pelo caminho direto/openGate
+            // --- Fase 7a/7b: zonas de grupo são orquestradas pelo motor (roteamento único) ---
+            if (a.type == SchedAction::Type::OPEN) {
+                uint16_t durG = a.durationS;
+                if (z->maxMin > 0 && durG > (uint16_t)(z->maxMin * 60))
+                    durG = (uint16_t)(z->maxMin * 60);
+                if (routeZoneToGroup(a.zoneId, true, durG))
+                    continue;
+            } else { // CLOSE
+                if (routeZoneToGroup(a.zoneId, false, 0))
+                    continue;
             }
             if (a.type == SchedAction::Type::OPEN) {
                 // Bypass: se o espelho é dono desta zona, ele manda — suprime o OPEN.
