@@ -203,6 +203,51 @@ static void test_renova_bomba_na_transicao()
     TEST_ASSERT_EQUAL_UINT16(420, pr.durationS);
 }
 
+static void test_open_next_falha_renova_corrente()
+{
+    ZoneTable z; seedZones(z);
+    HydraulicGroupTable t; t.upsert(grp());
+    HydraulicGroupEngine e; e.reset();
+    // liga V1 (600 s) + bomba
+    e.setDesired(1, 1, true, 600);
+    tick1(e, t, z, 1000); e.noteSent(NODE, 1, 1, 1); e.onAck(NODE, 1);
+    tick1(e, t, z, 6000); e.noteSent(NODE, 9, 1, 2); e.onAck(NODE, 2);
+    // transição: abre V2 mas FALHA (sem ACK após retries)
+    e.setDesired(1, 1, false, 0);
+    e.setDesired(1, 2, true, 600);
+    GroupEmit o2 = tick1(e, t, z, 100000); e.noteSent(NODE, 2, 1, 3);
+    e.onCmdFailed(NODE, 2, 1);
+    // V1 aberta em t=1000 por 600 s -> expira ~601000ms; agora 100000 -> longe do prazo -> renova V1.
+    GroupEmit renov = tick1(e, t, z, 100000);
+    TEST_ASSERT_EQUAL_UINT8(1, renov.zoneId);
+    TEST_ASSERT_EQUAL_UINT8(1, renov.action);
+    HydraulicGroupEngine::GroupAlert al;
+    bool got = false;
+    while (e.takeAlert(al)) if (al.code == HydraulicGroupEngine::GA_OPEN_FAIL_RENEW) got = true;
+    TEST_ASSERT_TRUE(got);
+}
+
+static void test_open_next_falha_sem_renovar_desliga_bomba()
+{
+    ZoneTable z; seedZones(z);
+    HydraulicGroupTable t; t.upsert(grp());
+    HydraulicGroupEngine e; e.reset();
+    e.setDesired(1, 1, true, 30); // dur curta: 30 s
+    tick1(e, t, z, 1000); e.noteSent(NODE, 1, 1, 1); e.onAck(NODE, 1); // V1 expira ~31000ms
+    tick1(e, t, z, 6000); e.noteSent(NODE, 9, 1, 2); e.onAck(NODE, 2);
+    e.setDesired(1, 1, false, 0);
+    e.setDesired(1, 2, true, 600);
+    tick1(e, t, z, 25000); e.noteSent(NODE, 2, 1, 3);
+    e.onCmdFailed(NODE, 2, 1); // perto do prazo de V1 (31000)
+    GroupEmit poff = tick1(e, t, z, 30000);
+    TEST_ASSERT_EQUAL_UINT8(9, poff.zoneId); // desliga a bomba primeiro
+    TEST_ASSERT_EQUAL_UINT8(0, poff.action);
+    HydraulicGroupEngine::GroupAlert al;
+    bool got = false;
+    while (e.takeAlert(al)) if (al.code == HydraulicGroupEngine::GA_OPEN_FAIL_PUMPOFF) got = true;
+    TEST_ASSERT_TRUE(got);
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -211,6 +256,8 @@ void setup()
     RUN_TEST(test_fechar_antes_de_abrir);
     RUN_TEST(test_min_open_2);
     RUN_TEST(test_renova_bomba_na_transicao);
+    RUN_TEST(test_open_next_falha_renova_corrente);
+    RUN_TEST(test_open_next_falha_sem_renovar_desliga_bomba);
     exit(UNITY_END());
 }
 void loop() {}

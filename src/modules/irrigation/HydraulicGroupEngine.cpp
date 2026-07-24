@@ -143,7 +143,21 @@ void HydraulicGroupEngine::onAck(uint32_t node, uint32_t ackedSeq)
     }
 }
 
-void HydraulicGroupEngine::onCmdFailed(uint32_t, uint8_t, uint8_t) { /* Task 5/6 */ }
+void HydraulicGroupEngine::onCmdFailed(uint32_t node, uint8_t zoneId, uint8_t action)
+{
+    for (auto &g : rt) {
+        if (!g.pend.inUse || g.pend.node != node || g.pend.zoneId != zoneId || g.pend.action != action)
+            continue;
+        g.pend.inUse = false;
+        if (action == 1) {
+            g.openFailZone = zoneId;
+            g.openFailPending = true;
+            g.state = State::RUNNING;
+        }
+        // action == 0 (fechar falhou) -> Task 6
+        return;
+    }
+}
 void HydraulicGroupEngine::observeActual(uint8_t, uint8_t, bool) { /* Task 7 */ }
 
 HydraulicGroupEngine::State HydraulicGroupEngine::stateOf(uint8_t groupId) const
@@ -256,6 +270,39 @@ size_t HydraulicGroupEngine::tick(const HydraulicGroupTable &tbl, const ZoneTabl
             break;
         }
         case State::RUNNING: {
+            if (g.openFailPending) {
+                ZoneRt *cur = findZone(g, g.curZone);
+                bool nearDeadline = cur && cur->localExpiresMs != 0 &&
+                                    (int32_t)(cur->localExpiresMs - nowMs) < (int32_t)RENEW_MARGIN_MS;
+                if (nearDeadline && g.pump && cfg->bombaZoneId != 0) {
+                    // não dá p/ renovar a tempo -> desliga a bomba primeiro; a corrente fecha pelo timer local.
+                    if (!resolve(zones, cfg->bombaZoneId, e))
+                        break;
+                    e.action = 0;
+                    g.pend = {true, e.node, 0, cfg->bombaZoneId, 0};
+                    g.state = State::PUMP_OFF_WAIT;
+                    g.openFailPending = false;
+                    pushAlert(groupId, GA_OPEN_FAIL_PUMPOFF, g.openFailZone);
+                    out[emitted++] = e;
+                    break;
+                }
+                // renova a corrente: re-abre p/ reiniciar o timer local; retenta a próxima depois.
+                if (!resolve(zones, g.curZone, e))
+                    break;
+                e.action = 1;
+                e.durationS = cur ? cur->wantDurS : 600u;
+                g.pend = {true, e.node, 0, g.curZone, 1};
+                if (cur)
+                    cur->localExpiresMs = nowMs + (uint32_t)e.durationS * 1000;
+                g.openFailPending = false;
+                // IMPORTANTE: NÃO ir a OPENING/START_WAIT (re-dispararia a partida da bomba já ligada).
+                // Fica em RUNNING: o ACK do re-open (default case do onAck) só reconfirma a corrente;
+                // o próximo tick em RUNNING acha a próxima zona (ainda wanted+unconfirmed) e retenta.
+                g.state = State::RUNNING;
+                pushAlert(groupId, GA_OPEN_FAIL_RENEW, g.openFailZone);
+                out[emitted++] = e;
+                break;
+            }
             ZoneRt *w = firstWantedUnconfirmed();       // nova zona a abrir (transição)
             if (w) {
                 if (cfg->transicao == 1) { // fechar_antes_de_abrir

@@ -20,6 +20,7 @@ class HydraulicGroupEngine {
     static constexpr uint16_t PUMP_MARGIN_S = 120;
     static constexpr uint16_t PUMP_CEILING_S = 7200; // estação clampa em 120 min
     static constexpr uint32_t START_WINDOW_MS = 3600000u; // janela de max_partidas_hora
+    static constexpr uint32_t RENEW_MARGIN_MS = 10000; // margem p/ renovar timer local antes do prazo
 
     enum class State : uint8_t {
         IDLE, OPENING, START_WAIT, PUMP_WAIT_ACK, RUNNING,
@@ -72,6 +73,8 @@ class HydraulicGroupEngine {
         uint32_t startRing[8] = {0}; // timestamps de partida (max_partidas_hora)
         uint8_t  startCount = 0;     // partidas na janela corrente
         bool pumpNeedsRenew = false; // transição completou: renovar timer local da bomba (§4.2)
+        bool openFailPending = false; // abrir-próxima falhou: o próximo tick decide renovar/desligar bomba
+        uint8_t openFailZone = 0;    // zona cuja abertura falhou (p/ alerta)
         PendCmd pend;                // 1 comando pendente por grupo (sequencial)
         ZoneRt zones[MAX_ZONES];
     };
