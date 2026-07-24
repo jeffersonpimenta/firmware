@@ -143,6 +143,11 @@ void HydraulicGroupEngine::onAck(uint32_t node, uint32_t ackedSeq)
     }
 }
 
+// Casamento por (node, zoneId, action) e não por seq: uma zona-membro pertence a
+// no máximo UM grupo (HydraulicGroupTable::valid rejeita compartilhamento), então
+// (node, zoneId) identifica um único pend de válvula. Compartilhar a mesma zona de
+// BOMBA entre grupos é misconfig não suportada. seq não é exposto pelo CommandTracker
+// no caminho FAILED, por isso não é usado aqui (onAck usa seq porque o tem).
 void HydraulicGroupEngine::onCmdFailed(uint32_t node, uint8_t zoneId, uint8_t action)
 {
     for (auto &g : rt) {
@@ -276,8 +281,7 @@ size_t HydraulicGroupEngine::tick(const HydraulicGroupTable &tbl, const ZoneTabl
                                     (int32_t)(cur->localExpiresMs - nowMs) < (int32_t)RENEW_MARGIN_MS;
                 if (nearDeadline && g.pump && cfg->bombaZoneId != 0) {
                     // não dá p/ renovar a tempo -> desliga a bomba primeiro; a corrente fecha pelo timer local.
-                    if (!resolve(zones, cfg->bombaZoneId, e))
-                        break;
+                    if (!resolve(zones, cfg->bombaZoneId, e)) { g.openFailPending = false; pushAlert(groupId, GA_OPEN_FAIL_PUMPOFF, g.openFailZone); break; }
                     e.action = 0;
                     g.pend = {true, e.node, 0, cfg->bombaZoneId, 0};
                     g.state = State::PUMP_OFF_WAIT;
@@ -287,8 +291,10 @@ size_t HydraulicGroupEngine::tick(const HydraulicGroupTable &tbl, const ZoneTabl
                     break;
                 }
                 // renova a corrente: re-abre p/ reiniciar o timer local; retenta a próxima depois.
-                if (!resolve(zones, g.curZone, e))
-                    break;
+                // A cadência de retentativa da próxima zona é dada pelo ciclo do CommandTracker no glue
+                // (onCmdFailed só dispara após esgotar os retries ~24s) + o gate de 1 comando em voo por
+                // grupo. O engine não faz backoff próprio; não chamar tick em loop apertado sem esse ciclo.
+                if (!resolve(zones, g.curZone, e)) { g.openFailPending = false; pushAlert(groupId, GA_OPEN_FAIL_RENEW, g.openFailZone); break; }
                 e.action = 1;
                 e.durationS = cur ? cur->wantDurS : 600u;
                 g.pend = {true, e.node, 0, g.curZone, 1};

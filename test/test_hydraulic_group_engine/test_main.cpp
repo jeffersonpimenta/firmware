@@ -242,6 +242,7 @@ static void test_open_next_falha_sem_renovar_desliga_bomba()
     GroupEmit poff = tick1(e, t, z, 30000);
     TEST_ASSERT_EQUAL_UINT8(9, poff.zoneId); // desliga a bomba primeiro
     TEST_ASSERT_EQUAL_UINT8(0, poff.action);
+    TEST_ASSERT_EQUAL(State::PUMP_OFF_WAIT, e.stateOf(1));
     HydraulicGroupEngine::GroupAlert al;
     bool got = false;
     while (e.takeAlert(al)) if (al.code == HydraulicGroupEngine::GA_OPEN_FAIL_PUMPOFF) got = true;
