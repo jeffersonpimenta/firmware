@@ -138,8 +138,8 @@ static void test_fechar_antes_de_abrir()
     HydraulicGroupEngine e; e.reset();
 
     e.setDesired(1, 1, true, 600);
-    GroupEmit em = tick1(e, t, z, 1000); e.noteSent(NODE, 1, 1, 1); e.onAck(NODE, 1); // abre V1
-    GroupEmit pump = tick1(e, t, z, 6000); e.noteSent(NODE, 9, 1, 2); e.onAck(NODE, 2); // bomba
+    tick1(e, t, z, 1000); e.noteSent(NODE, 1, 1, 1); e.onAck(NODE, 1); // abre V1
+    tick1(e, t, z, 6000); e.noteSent(NODE, 9, 1, 2); e.onAck(NODE, 2); // bomba
     TEST_ASSERT_EQUAL(State::RUNNING, e.stateOf(1));
 
     // transição: fecha V1 ANTES de abrir V2 (sem overlap).
@@ -174,6 +174,10 @@ static void test_min_open_2()
     GroupEmit pump = tick1(e, t, z, 6000);
     TEST_ASSERT_EQUAL_UINT8(9, pump.zoneId);
     TEST_ASSERT_EQUAL_UINT8(1, pump.action);
+    e.noteSent(NODE, 9, 1, 3);
+    e.onAck(NODE, 3);
+    TEST_ASSERT_EQUAL(State::RUNNING, e.stateOf(1));
+    TEST_ASSERT_TRUE(e.pumpOn(1));
 }
 
 void setup()

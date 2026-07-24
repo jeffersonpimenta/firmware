@@ -214,9 +214,7 @@ size_t HydraulicGroupEngine::tick(const HydraulicGroupTable &tbl, const ZoneTabl
             // válvulas confirmadas, emite o próximo open e re-ancora o timer (emit-anchored).
             if (confirmedCount(g) < (size_t)cfg->minOpen) {
                 ZoneRt *w = firstWantedUnconfirmed();
-                if (!w) // nada mais a abrir: segue com o que tem (evita travar)
-                    ;
-                else {
+                if (w) {
                     if (!resolve(zones, w->zoneId, e))
                         break;
                     e.action = 1;
@@ -228,6 +226,7 @@ size_t HydraulicGroupEngine::tick(const HydraulicGroupTable &tbl, const ZoneTabl
                     out[emitted++] = e;
                     break;
                 }
+                // !w: nada mais a abrir — segue com o que tem (evita travar; cai no timer abaixo)
             }
             // Timer ancorado no INSTANTE DO EMIT do open (não no ACK): mede partida_apos_abrir_s
             // desde o envio do comando. Para ACK local rápido é equivalente; NÃO re-ancorar no onAck.
@@ -240,8 +239,11 @@ size_t HydraulicGroupEngine::tick(const HydraulicGroupTable &tbl, const ZoneTabl
             if (!resolve(zones, cfg->bombaZoneId, e))
                 break;
             e.action = 1;
-            ZoneRt *cur = findZone(g, g.curZone);
-            e.durationS = pumpDur((cur && cur->wantDurS) ? cur->wantDurS : 600u);
+            uint16_t maxDur = 0;
+            for (auto &zz : g.zones)
+                if (zz.zoneId && zz.confirmed && zz.wantDurS > maxDur)
+                    maxDur = zz.wantDurS;
+            e.durationS = pumpDur(maxDur ? maxDur : 600u);
             g.pend = {true, e.node, 0, cfg->bombaZoneId, 1};
             g.state = State::PUMP_WAIT_ACK;
             pushAlert(groupId, GA_PUMP_ON, cfg->bombaZoneId);
