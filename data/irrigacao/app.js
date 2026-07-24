@@ -1157,6 +1157,180 @@ async function renderTamper() {
   });
 }
 
+// ===== Grupos hidráulicos =====
+const GROUP_STATE_CLASS = {
+  ocioso: 'gray', abrindo: 'amber', aguardando_partida: 'amber', partindo_bomba: 'amber',
+  rodando: 'green', transicao: 'amber', parando_bomba: 'amber', drenando: 'amber',
+  fechando: 'amber', adiado: 'red', desconhecido: 'gray',
+};
+
+function groupStatusById(list, id) {
+  return (Array.isArray(list) ? list : []).find((s) => s && num(s.id) === num(id)) || {};
+}
+
+async function renderGrupos() {
+  const [groups, status, zones] = await Promise.all([
+    getJson('/groups'),
+    getJson('/groups/status').catch(() => []),
+    getJson('/zones').catch(() => []),
+  ]);
+  const rows = Array.isArray(groups) ? groups : [];
+  const st = Array.isArray(status) ? status : [];
+  const zs = Array.isArray(zones) ? zones : [];
+
+  const cards = rows.map((g) => {
+    g = g || {};
+    const s = groupStatusById(st, g.id);
+    const estado = s.estado || 'ocioso';
+    const cls = GROUP_STATE_CLASS[estado] || 'gray';
+    const bomba = s.bomba ? '<span class="chip green">bomba on</span>' : '<span class="chip gray">bomba off</span>';
+    const membros = Array.isArray(g.zonas) ? g.zonas.join(', ') : '';
+    return `<div class="card">
+      <div class="itl-row">
+        <div class="itl-info">
+          <div class="name">${esc(g.nome || ('Grupo ' + num(g.id)))}
+            <span class="chip ${cls}" data-gstate="${num(g.id)}">${esc(estado)}</span></div>
+          <div class="sub" data-gbomba="${num(g.id)}">${bomba} · abertas <span data-gopen="${num(g.id)}">${num(s.abertas)}</span></div>
+          <div class="sub">Bomba zona ${num(g.bombaZoneId)} · Zonas: ${esc(membros)} · min ${num(g.minOpen)}/max ${num(g.maxOpen)}</div>
+        </div>
+        <div class="zbtns">
+          <button class="btn outline sm" data-gopenbtn="${num(g.id)}">Abrir</button>
+          <button class="btn ghost sm" data-gclosebtn="${num(g.id)}">Fechar</button>
+          <button class="btn ghost sm" data-gedit="${num(g.id)}">Editar</button>
+          <button class="btn dangerline sm" data-gdel="${num(g.id)}">Excluir</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  view.innerHTML =
+    `<button class="btn dashed" data-gnew>+ Novo grupo</button>` +
+    (cards || '<div class="empty">Nenhum grupo hidráulico.</div>');
+
+  view.querySelector('[data-gnew]').addEventListener('click', () => groupForm(null, zs, rows));
+  view.querySelectorAll('[data-gedit]').forEach((b) => b.addEventListener('click', () => {
+    groupForm(rows.find((x) => x && num(x.id) === num(b.dataset.gedit)) || null, zs, rows);
+  }));
+  view.querySelectorAll('[data-gdel]').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm('Excluir este grupo?')) return;
+    const r = await postJson('/groups/delete', { id: num(b.dataset.gdel) });
+    if (r.ok) renderGrupos().catch(() => {});
+    else alert('Falha ao excluir: ' + ((r.body && Array.isArray(r.body.errors)) ? r.body.errors.join(', ') : 'erro'));
+  }));
+  view.querySelectorAll('[data-gopenbtn]').forEach((b) => b.addEventListener('click', async () => {
+    const r = await postJson('/groups/command', { id: num(b.dataset.gopenbtn), acao: 'abrir' });
+    if (!r.ok) alert('Falha: ' + ((r.body && Array.isArray(r.body.errors)) ? r.body.errors.join(', ') : 'erro'));
+  }));
+  view.querySelectorAll('[data-gclosebtn]').forEach((b) => b.addEventListener('click', async () => {
+    const r = await postJson('/groups/command', { id: num(b.dataset.gclosebtn), acao: 'fechar' });
+    if (!r.ok) alert('Falha: ' + ((r.body && Array.isArray(r.body.errors)) ? r.body.errors.join(', ') : 'erro'));
+  }));
+}
+
+// Atualiza só os badges/contadores ao vivo (não recria a lista; no-op se a aba/lista não está montada).
+async function pollGroupStatus() {
+  if (!document.querySelector('[data-gstate]')) return; // form aberto ou outra aba
+  const st = await getJson('/groups/status').catch(() => []);
+  (Array.isArray(st) ? st : []).forEach((s) => {
+    if (!s) return;
+    const badge = view.querySelector(`[data-gstate="${num(s.id)}"]`);
+    if (badge) {
+      const cls = GROUP_STATE_CLASS[s.estado] || 'gray';
+      badge.className = 'chip ' + cls;
+      badge.textContent = s.estado || 'ocioso';
+    }
+    const open = view.querySelector(`[data-gopen="${num(s.id)}"]`);
+    if (open) open.textContent = num(s.abertas);
+    const bombaWrap = view.querySelector(`[data-gbomba="${num(s.id)}"]`);
+    if (bombaWrap) {
+      bombaWrap.innerHTML = (s.bomba ? '<span class="chip green">bomba on</span>' : '<span class="chip gray">bomba off</span>') +
+        ` · abertas <span data-gopen="${num(s.id)}">${num(s.abertas)}</span>`;
+    }
+  });
+}
+
+function groupForm(group, zones, allGroups) {
+  const editing = !!group;
+  const zs = (Array.isArray(zones) ? zones : []).filter((z) => z && num(z.fonteInput ?? -1) < 0);
+  const st = group ? JSON.parse(JSON.stringify(group)) : {
+    id: 0, nome: '', bombaZoneId: 0, zonas: [], minOpen: 1, maxOpen: 1, transicao: 0,
+    overlapS: 10, startAfterOpenS: 5, stopBeforeCloseS: 8, minRunMin: 5, maxStartsHour: 6,
+  };
+  st.zonas = Array.isArray(st.zonas) ? st.zonas : [];
+
+  function render() {
+    const zoneChips = zs.map((z) => {
+      const on = st.zonas.includes(num(z.id));
+      return `<button class="chip ${on ? 'green' : 'gray'}" data-gz="${num(z.id)}">${num(z.id)}</button>`;
+    }).join(' ');
+    const bombaOpts = `<option value="0">— sem bomba —</option>` +
+      zs.map((z) => `<option value="${num(z.id)}" ${num(st.bombaZoneId) === num(z.id) ? 'selected' : ''}>zona ${num(z.id)}</option>`).join('');
+
+    view.innerHTML = `
+      <div class="form">
+        <label class="fld"><span class="flbl">Nome</span>
+          <input class="finput" id="g-nome" maxlength="15" value="${esc(st.nome || '')}"></label>
+        <label class="fld"><span class="flbl">Bomba (zona GPO)</span>
+          <select class="finput" id="g-bomba">${bombaOpts}</select></label>
+        <div class="fld"><span class="flbl">Zonas membro</span><div class="chips">${zoneChips || '<span class="sub">Sem zonas não-espelho.</span>'}</div></div>
+        <div class="frow">
+          <label class="fld"><span class="flbl">Mín. abertas</span><input class="finput" id="g-min" type="number" min="1" value="${num(st.minOpen)}"></label>
+          <label class="fld"><span class="flbl">Máx. abertas (0=sem teto)</span><input class="finput" id="g-max" type="number" min="0" value="${num(st.maxOpen)}"></label>
+        </div>
+        <label class="fld"><span class="flbl">Transição</span>
+          <select class="finput" id="g-trans">
+            <option value="0" ${num(st.transicao) === 0 ? 'selected' : ''}>abrir antes de fechar</option>
+            <option value="1" ${num(st.transicao) === 1 ? 'selected' : ''}>fechar antes de abrir</option>
+          </select></label>
+        <div class="frow">
+          <label class="fld"><span class="flbl">Sobrepos. (s)</span><input class="finput" id="g-ov" type="number" min="0" value="${num(st.overlapS)}"></label>
+          <label class="fld"><span class="flbl">Partida após abrir (s)</span><input class="finput" id="g-sa" type="number" min="0" value="${num(st.startAfterOpenS)}"></label>
+        </div>
+        <div class="frow">
+          <label class="fld"><span class="flbl">Parar antes fechar (s)</span><input class="finput" id="g-sb" type="number" min="0" value="${num(st.stopBeforeCloseS)}"></label>
+          <label class="fld"><span class="flbl">Func. mín. (min)</span><input class="finput" id="g-mr" type="number" min="0" value="${num(st.minRunMin)}"></label>
+        </div>
+        <label class="fld"><span class="flbl">Máx. partidas/hora</span><input class="finput" id="g-ms" type="number" min="0" value="${num(st.maxStartsHour)}"></label>
+        <div class="frow">
+          <button class="btn" data-gsave>${editing ? 'Salvar' : 'Criar'}</button>
+          <button class="btn ghost" data-gback>Cancelar</button>
+        </div>
+      </div>`;
+
+    view.querySelectorAll('[data-gz]').forEach((b) => b.addEventListener('click', () => {
+      const zid = num(b.dataset.gz);
+      const i = st.zonas.indexOf(zid);
+      if (i >= 0) st.zonas.splice(i, 1); else st.zonas.push(zid);
+      render();
+    }));
+    view.querySelector('[data-gback]').addEventListener('click', () => renderGrupos().catch(() => {}));
+    view.querySelector('[data-gsave]').addEventListener('click', save);
+  }
+
+  async function save() {
+    const body = {
+      id: num(st.id),
+      nome: view.querySelector('#g-nome').value.slice(0, 15),
+      bombaZoneId: num(view.querySelector('#g-bomba').value),
+      zonas: st.zonas,
+      minOpen: num(view.querySelector('#g-min').value),
+      maxOpen: num(view.querySelector('#g-max').value),
+      transicao: num(view.querySelector('#g-trans').value),
+      overlapS: num(view.querySelector('#g-ov').value),
+      startAfterOpenS: num(view.querySelector('#g-sa').value),
+      stopBeforeCloseS: num(view.querySelector('#g-sb').value),
+      minRunMin: num(view.querySelector('#g-mr').value),
+      maxStartsHour: num(view.querySelector('#g-ms').value),
+    };
+    if (!body.zonas.length) { alert('Selecione ao menos uma zona.'); return; }
+    const r = await postJson('/groups', body);
+    if (r.ok) renderGrupos().catch(() => {});
+    else alert('Falha: ' + ((r.body && Array.isArray(r.body.errors)) ? r.body.errors.join(', ') : 'erro'));
+  }
+
+  render();
+}
+
 // Mapa extensível: programs adicionado na Task 13.
 const RENDER = {
   overview: renderOverview,
@@ -1165,6 +1339,7 @@ const RENDER = {
   programs: renderPrograms,
   sensores: renderSensores,
   gpo: renderGpo,
+  grupos: renderGrupos,
   intertravamentos: renderIntertravamentos,
   auditlog: renderAuditLog,
   tamper: renderTamper,
@@ -1189,6 +1364,8 @@ async function show(tab) {
   }
   if (tab === 'overview' || tab === 'stations' || tab === 'sensores') {
     timer = setInterval(() => fn().catch(() => {}), 3000);
+  } else if (tab === 'grupos') {
+    timer = setInterval(() => pollGroupStatus().catch(() => {}), 3000);
   }
 }
 
