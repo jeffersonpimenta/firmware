@@ -75,6 +75,7 @@ class HydraulicGroupEngine {
         uint8_t  closeFailStreak = 0; // falhas consecutivas de fechamento
         bool pumpNeedsRenew = false; // transição completou: renovar timer local da bomba (§4.2)
         bool openFailPending = false; // abrir-próxima falhou: o próximo tick decide renovar/desligar bomba
+        bool reconcileCheck = false;  // observeActual sinalizou: tick verifica se actual-set caiu < minOpen
         uint8_t openFailZone = 0;    // zona cuja abertura falhou (p/ alerta)
         PendCmd pend;                // 1 comando pendente por grupo (sequencial)
         ZoneRt zones[MAX_ZONES];

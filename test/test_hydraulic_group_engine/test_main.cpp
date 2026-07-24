@@ -316,6 +316,43 @@ static void test_max_partidas_defer()
     TEST_ASSERT_TRUE(got);
 }
 
+static void test_grupo_sem_bomba()
+{
+    ZoneTable z; seedZones(z);
+    HydraulicGroup g = grp();
+    g.bombaZoneId = 0; g.minOpen = 1; g.maxOpen = 2; // simultaneidade pura
+    HydraulicGroupTable t; t.upsert(g);
+    HydraulicGroupEngine e; e.reset();
+    e.setDesired(1, 1, true, 600);
+    GroupEmit o1 = tick1(e, t, z, 1000); e.noteSent(NODE, 1, 1, 1); e.onAck(NODE, 1);
+    TEST_ASSERT_EQUAL_UINT8(1, o1.zoneId);
+    // sem bomba: nenhuma emissão de gpo de bomba; vai direto a RUNNING (sem esperar startAfterOpen).
+    tickNone(e, t, z, 6000);
+    TEST_ASSERT_EQUAL(State::RUNNING, e.stateOf(1));
+    TEST_ASSERT_FALSE(e.pumpOn(1));
+}
+
+static void test_reboot_reconcilia_desliga_bomba()
+{
+    ZoneTable z; seedZones(z);
+    HydraulicGroup g = grp();
+    g.minOpen = 1; g.maxOpen = 1;
+    HydraulicGroupTable t; t.upsert(g);
+    HydraulicGroupEngine e; e.reset();
+    e.setDesired(1, 1, true, 600);
+    tick1(e, t, z, 1000); e.noteSent(NODE, 1, 1, 1); e.onAck(NODE, 1);
+    tick1(e, t, z, 6000); e.noteSent(NODE, 9, 1, 2); e.onAck(NODE, 2);
+    TEST_ASSERT_TRUE(e.pumpOn(1));
+    // estação reinicia: V1 caiu fora da orquestração -> heartbeat revela fechada.
+    e.observeActual(1, 1, false); // actual-set cai < minOpen
+    GroupEmit poff = tick1(e, t, z, 50000);
+    TEST_ASSERT_EQUAL_UINT8(9, poff.zoneId);
+    TEST_ASSERT_EQUAL_UINT8(0, poff.action); // parada ordenada da bomba
+    HydraulicGroupEngine::GroupAlert al; bool got = false;
+    while (e.takeAlert(al)) if (al.code == HydraulicGroupEngine::GA_REBOOT_RECONCILE) got = true;
+    TEST_ASSERT_TRUE(got);
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -329,6 +366,8 @@ void setup()
     RUN_TEST(test_close_prev_falha_alerta);
     RUN_TEST(test_bridging_sem_nova_partida);
     RUN_TEST(test_max_partidas_defer);
+    RUN_TEST(test_grupo_sem_bomba);
+    RUN_TEST(test_reboot_reconcilia_desliga_bomba);
     exit(UNITY_END());
 }
 void loop() {}

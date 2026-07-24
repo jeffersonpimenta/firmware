@@ -173,7 +173,19 @@ void HydraulicGroupEngine::onCmdFailed(uint32_t node, uint8_t zoneId, uint8_t ac
         return;
     }
 }
-void HydraulicGroupEngine::observeActual(uint8_t, uint8_t, bool) { /* Task 7 */ }
+void HydraulicGroupEngine::observeActual(uint8_t groupId, uint8_t zoneId, bool open)
+{
+    if (groupId == 0 || groupId > MAX_GROUPS)
+        return;
+    GroupRt &g = rtOf(groupId);
+    ZoneRt *z = findZone(g, zoneId);
+    if (!z)
+        return;
+    z->confirmed = open;
+    if (!open)
+        z->localExpiresMs = 0;
+    g.reconcileCheck = true; // tick decide se o actual-set caiu abaixo de minOpen
+}
 
 HydraulicGroupEngine::State HydraulicGroupEngine::stateOf(uint8_t groupId) const
 {
@@ -285,14 +297,16 @@ size_t HydraulicGroupEngine::tick(const HydraulicGroupTable &tbl, const ZoneTabl
                 }
                 // !w: nada mais a abrir — segue com o que tem (evita travar; cai no timer abaixo)
             }
+            // §8.10 simultaneidade: grupo sem bomba vai direto a RUNNING assim que minOpen confirmadas.
+            // Não espera startAfterOpenS (não há bomba a proteger) e não emite GPO de bomba.
+            if (cfg->bombaZoneId == 0) {
+                g.state = State::RUNNING;
+                break;
+            }
             // Timer ancorado no INSTANTE DO EMIT do open (não no ACK): mede partida_apos_abrir_s
             // desde o envio do comando. Para ACK local rápido é equivalente; NÃO re-ancorar no onAck.
             if (nowMs - g.waitStartMs < (uint32_t)cfg->startAfterOpenS * 1000)
                 break;
-            if (cfg->bombaZoneId == 0) { // grupo sem bomba: vai direto p/ RUNNING
-                g.state = State::RUNNING;
-                break;
-            }
             if (!resolve(zones, cfg->bombaZoneId, e))
                 break;
             e.action = 1;
@@ -355,6 +369,22 @@ size_t HydraulicGroupEngine::tick(const HydraulicGroupTable &tbl, const ZoneTabl
                     out[emitted++] = e;
                 }
                 break;
+            }
+            // §8.13 reconciliação por heartbeat: observeActual sinalizou mudança de estado.
+            // Se o actual-set caiu abaixo de minOpen enquanto a bomba está ligada, faz parada
+            // ordenada (GA_REBOOT_RECONCILE) — cobre estação reiniciando com válvula fechada.
+            if (g.reconcileCheck) {
+                g.reconcileCheck = false;
+                if (g.pump && cfg->bombaZoneId != 0 && confirmedCount(g) < (size_t)cfg->minOpen) {
+                    if (resolve(zones, cfg->bombaZoneId, e)) {
+                        e.action = 0;
+                        g.pend = {true, e.node, 0, cfg->bombaZoneId, 0};
+                        g.state = State::PUMP_OFF_WAIT;
+                        out[emitted++] = e;
+                    }
+                    pushAlert(groupId, GA_REBOOT_RECONCILE, 0);
+                    break;
+                }
             }
             ZoneRt *w = firstWantedUnconfirmed();       // nova zona a abrir (transição)
             if (w) {
