@@ -552,6 +552,106 @@ static void hMaint(HTTPRequest *req, HTTPResponse *res)
 }
 
 // ---------------------------------------------------------------------------
+// Fase 7b: grupos hidráulicos
+// ---------------------------------------------------------------------------
+
+// GET /api/irrigation/groups — lista de config dos grupos
+static void hGroupsGet(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!gwReady()) { res->setStatusCode(404); return; }
+    char buf[2048];
+    size_t n = buildGroups(irrigationModule->gwState().groups, buf, sizeof(buf));
+    if (!n) { res->setStatusCode(500); return; }
+    sendJson(res, buf);
+}
+
+// GET /api/irrigation/groups/status — status ao vivo por grupo
+static void hGroupsStatus(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!gwReady()) { res->setStatusCode(404); return; }
+    const IrrigationGateway &g = irrigationModule->gwState();
+
+    GroupStatusView views[HydraulicGroupTable::MAX];
+    size_t nv = 0;
+    for (size_t i = 0; i < g.groups.count() && nv < HydraulicGroupTable::MAX; i++) {
+        const HydraulicGroup *grp = g.groups.groupAt(i);
+        if (!grp) continue;
+        GroupStatusView &v = views[nv++];
+        v.id = grp->id;
+        v.name = grp->name;
+        v.state = (uint8_t)g.groupEngine.stateOf(grp->id);
+        v.pump = g.groupEngine.pumpOn(grp->id);
+        v.curZone = g.groupEngine.currentZone(grp->id);
+        v.openCount = g.groupEngine.openConfirmedCount(grp->id);
+    }
+    char buf[2048];
+    size_t n = buildGroupsStatus(views, nv, buf, sizeof(buf));
+    if (!n) { res->setStatusCode(500); return; }
+    sendJson(res, buf);
+}
+
+// POST /api/irrigation/groups — upsert (id=0 => servidor aloca)
+static void hGroupsPost(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!gwReady()) { res->setStatusCode(404); return; }
+    char body[768];
+    size_t nb = readBody(req, body, sizeof(body));
+    HydraulicGroup grp;
+    ParseResult pr = parseGroupUpsert(body, nb, grp);
+    if (!pr.ok) { sendParseErrors(res, pr); return; }
+    char err[48] = {0};
+    if (!irrigationModule->gwApplyGroupUpsert(grp, err, sizeof(err))) {
+        char out[128];
+        JsonWriter w(out, sizeof(out));
+        w.beginObject(); w.key("errors"); w.beginArray(); w.str(err[0] ? err : "erro"); w.endArray(); w.endObject();
+        w.done();
+        sendJson(res, out, 400);
+        return;
+    }
+    char out[2048];
+    size_t n = buildGroups(irrigationModule->gwState().groups, out, sizeof(out));
+    if (!n) { res->setStatusCode(500); return; }
+    sendJson(res, out);
+}
+
+// POST /api/irrigation/groups/delete — remove por id
+static void hGroupsDelete(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!gwReady()) { res->setStatusCode(404); return; }
+    char body[128];
+    size_t nb = readBody(req, body, sizeof(body));
+    uint8_t id = 0;
+    ParseResult pr = parseGroupDelete(body, nb, id);
+    if (!pr.ok) { sendParseErrors(res, pr); return; }
+    if (!irrigationModule->gwApplyGroupDelete(id)) {
+        sendJson(res, "{\"errors\":[\"grupo inexistente\"]}", 400);
+        return;
+    }
+    char out[2048];
+    size_t n = buildGroups(irrigationModule->gwState().groups, out, sizeof(out));
+    if (!n) { res->setStatusCode(500); return; }
+    sendJson(res, out);
+}
+
+// POST /api/irrigation/groups/command — controle manual do grupo
+static void hGroupsCommand(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!gwReady()) { res->setStatusCode(404); return; }
+    char body[256];
+    size_t nb = readBody(req, body, sizeof(body));
+    uint8_t id = 0; bool open = false; uint16_t dur = 0;
+    ParseResult pr = parseGroupCommand(body, nb, id, open, dur);
+    if (!pr.ok) { sendParseErrors(res, pr); return; }
+    if (!irrigationModule->gwRunGroupCommand(id, open, dur)) {
+        sendJson(res, "{\"errors\":[\"grupo inexistente\"]}", 400);
+        return;
+    }
+    sendJson(res, "{\"ok\":true}");
+}
+
+// ---------------------------------------------------------------------------
 // Registro
 // ---------------------------------------------------------------------------
 
@@ -575,6 +675,12 @@ void registerIrrigationHandlers(HTTPServer *server)
     server->registerNode(new ResourceNode("/api/irrigation/sensors/name", "POST", &hSensorsName));
     server->registerNode(new ResourceNode("/api/irrigation/audit", "GET", &hAudit));
     server->registerNode(new ResourceNode("/api/irrigation/maint", "POST", &hMaint));
+    // Fase 7b: grupos hidráulicos
+    server->registerNode(new ResourceNode("/api/irrigation/groups", "GET", &hGroupsGet));
+    server->registerNode(new ResourceNode("/api/irrigation/groups/status", "GET", &hGroupsStatus));
+    server->registerNode(new ResourceNode("/api/irrigation/groups", "POST", &hGroupsPost));
+    server->registerNode(new ResourceNode("/api/irrigation/groups/delete", "POST", &hGroupsDelete));
+    server->registerNode(new ResourceNode("/api/irrigation/groups/command", "POST", &hGroupsCommand));
 }
 
 #endif
