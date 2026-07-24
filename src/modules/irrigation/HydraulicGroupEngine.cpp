@@ -126,6 +126,7 @@ void HydraulicGroupEngine::onAck(uint32_t node, uint32_t ackedSeq)
             g.state = State::RUNNING;
             g.curZone = g.nextZone;
             g.nextZone = 0;
+            g.pumpNeedsRenew = true; // transição completou: renovar timer local da bomba (§4.2)
             break;
         case State::PUMP_OFF_WAIT:
             g.pump = false;
@@ -204,6 +205,8 @@ size_t HydraulicGroupEngine::tick(const HydraulicGroupTable &tbl, const ZoneTabl
             e.durationS = w->wantDurS;
             g.pend = {true, e.node, 0, w->zoneId, 1};
             g.curZone = w->zoneId;
+            if (ZoneRt *zr = findZone(g, w->zoneId))
+                zr->localExpiresMs = nowMs + (uint32_t)e.durationS * 1000; // deadline local (Task 5)
             g.waitStartMs = nowMs; // âncora do START_WAIT (partida_apos_abrir_s)
             g.state = State::OPENING;
             out[emitted++] = e;
@@ -221,6 +224,8 @@ size_t HydraulicGroupEngine::tick(const HydraulicGroupTable &tbl, const ZoneTabl
                     e.durationS = w->wantDurS;
                     g.pend = {true, e.node, 0, w->zoneId, 1};
                     g.curZone = w->zoneId;
+                    if (ZoneRt *zr = findZone(g, w->zoneId))
+                        zr->localExpiresMs = nowMs + (uint32_t)e.durationS * 1000; // deadline local (Task 5)
                     g.waitStartMs = nowMs; // re-ancora START_WAIT no emit do próximo open
                     g.state = State::OPENING;
                     out[emitted++] = e;
@@ -273,6 +278,8 @@ size_t HydraulicGroupEngine::tick(const HydraulicGroupTable &tbl, const ZoneTabl
                 e.durationS = w->wantDurS;
                 g.pend = {true, e.node, 0, w->zoneId, 1};
                 g.nextZone = w->zoneId;
+                if (ZoneRt *zr = findZone(g, w->zoneId))
+                    zr->localExpiresMs = nowMs + (uint32_t)e.durationS * 1000; // deadline local (Task 5)
                 g.waitStartMs = nowMs;        // âncora do X_OVERLAP (sobreposicao_s)
                 g.state = State::X_OPEN_WAIT; // abrir_antes_de_fechar
                 out[emitted++] = e;
@@ -294,6 +301,22 @@ size_t HydraulicGroupEngine::tick(const HydraulicGroupTable &tbl, const ZoneTabl
                 }
                 break;
             }
+            // (3) steady: renova a bomba se uma transição acabou de completar (restaura timer local, §4.2).
+            if (g.pump && g.pumpNeedsRenew && cfg->bombaZoneId != 0) {
+                uint16_t maxDur = 0;
+                for (auto &zz : g.zones)
+                    if (zz.zoneId && zz.confirmed && zz.wantDurS > maxDur)
+                        maxDur = zz.wantDurS;
+                if (!resolve(zones, cfg->bombaZoneId, e))
+                    break;
+                e.action = 1;
+                e.durationS = pumpDur(maxDur ? maxDur : 600u);
+                g.pend = {true, e.node, 0, cfg->bombaZoneId, 1};
+                g.pumpNeedsRenew = false;
+                g.state = State::PUMP_WAIT_ACK; // ao ACK: pump segue true, volta a RUNNING (sem novo GA_PUMP_ON)
+                out[emitted++] = e;
+                break;
+            }
             break;
         }
         case State::X_OVERLAP: {
@@ -304,6 +327,7 @@ size_t HydraulicGroupEngine::tick(const HydraulicGroupTable &tbl, const ZoneTabl
                 g.state = State::RUNNING;
                 g.curZone = g.nextZone;
                 g.nextZone = 0;
+                g.pumpNeedsRenew = true; // transição completou: renovar timer local da bomba (§4.2)
                 break;
             }
             if (!resolve(zones, old->zoneId, e))

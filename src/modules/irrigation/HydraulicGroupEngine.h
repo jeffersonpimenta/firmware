@@ -71,6 +71,7 @@ class HydraulicGroupEngine {
         uint32_t lastStartMs = 0;    // última partida da bomba (bridging)
         uint32_t startRing[8] = {0}; // timestamps de partida (max_partidas_hora)
         uint8_t  startCount = 0;     // partidas na janela corrente
+        bool pumpNeedsRenew = false; // transição completou: renovar timer local da bomba (§4.2)
         PendCmd pend;                // 1 comando pendente por grupo (sequencial)
         ZoneRt zones[MAX_ZONES];
     };

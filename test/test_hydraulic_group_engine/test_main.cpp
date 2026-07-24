@@ -180,6 +180,29 @@ static void test_min_open_2()
     TEST_ASSERT_TRUE(e.pumpOn(1));
 }
 
+static void test_renova_bomba_na_transicao()
+{
+    ZoneTable z; seedZones(z);
+    HydraulicGroupTable t; t.upsert(grp());
+    HydraulicGroupEngine e; e.reset();
+
+    e.setDesired(1, 1, true, 600);
+    tick1(e, t, z, 1000); e.noteSent(NODE, 1, 1, 1); e.onAck(NODE, 1);
+    GroupEmit p1 = tick1(e, t, z, 6000); e.noteSent(NODE, 9, 1, 2); e.onAck(NODE, 2);
+    TEST_ASSERT_EQUAL_UINT16(720, p1.durationS);
+
+    // transição V1->V2 com nova duração menor.
+    e.setDesired(1, 1, false, 0);
+    e.setDesired(1, 2, true, 300);
+    GroupEmit o2 = tick1(e, t, z, 100000); e.noteSent(NODE, 2, 1, 3); e.onAck(NODE, 3); // abre V2
+    GroupEmit c1 = tick1(e, t, z, 110001); e.noteSent(NODE, 1, 0, 4); e.onAck(NODE, 4); // fecha V1
+    // renovação: bomba re-enviada com dur = 300+120 = 420.
+    GroupEmit pr = tick1(e, t, z, 110001);
+    TEST_ASSERT_EQUAL_UINT8(9, pr.zoneId);
+    TEST_ASSERT_EQUAL_UINT8(1, pr.action);
+    TEST_ASSERT_EQUAL_UINT16(420, pr.durationS);
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -187,6 +210,7 @@ void setup()
     RUN_TEST(test_happy_path_min1);
     RUN_TEST(test_fechar_antes_de_abrir);
     RUN_TEST(test_min_open_2);
+    RUN_TEST(test_renova_bomba_na_transicao);
     exit(UNITY_END());
 }
 void loop() {}
