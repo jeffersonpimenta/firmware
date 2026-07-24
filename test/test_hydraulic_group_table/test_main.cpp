@@ -94,6 +94,48 @@ static void test_remove()
     TEST_ASSERT_EQUAL_UINT32(0, t.count());
 }
 
+static void test_deserialize_crc_invalido_zera()
+{
+    HydraulicGroupTable a;
+    a.upsert(mk(1, 9, {1, 2}));
+    uint8_t buf[600];
+    size_t n = a.serialize(buf, sizeof(buf));
+    buf[10] ^= 0xFF; // byte de dados; MAGIC+versão intactos -> rejeição pelo CRC
+    HydraulicGroupTable b;
+    TEST_ASSERT_FALSE(b.deserialize(buf, n));
+    TEST_ASSERT_EQUAL_UINT32(0, b.count());
+}
+
+static void test_tabela_cheia_rejeita_nono()
+{
+    HydraulicGroupTable t;
+    // Grupos 1..8: zonas {i*2, i*2+1}, bomba=100+i (sem sobreposição)
+    for (uint8_t i = 1; i <= 8; i++) {
+        uint8_t z1 = (uint8_t)(i * 2);
+        uint8_t z2 = (uint8_t)(i * 2 + 1);
+        uint8_t pump = (uint8_t)(100 + i);
+        TEST_ASSERT_TRUE(t.upsert(mk(i, pump, {z1, z2})));
+    }
+    TEST_ASSERT_EQUAL_UINT32(8, t.count());
+    // 9º grupo deve ser rejeitado (tabela cheia)
+    TEST_ASSERT_FALSE(t.upsert(mk(9, 109, {18, 19})));
+    TEST_ASSERT_EQUAL_UINT32(8, t.count());
+}
+
+static void test_group_at()
+{
+    HydraulicGroupTable t;
+    t.upsert(mk(3, 9, {1, 2}));
+    t.upsert(mk(5, 8, {3, 4}));
+    const HydraulicGroup *g0 = t.groupAt(0);
+    const HydraulicGroup *g1 = t.groupAt(1);
+    TEST_ASSERT_NOT_NULL(g0);
+    TEST_ASSERT_NOT_NULL(g1);
+    TEST_ASSERT_EQUAL_UINT8(3, g0->id);
+    TEST_ASSERT_EQUAL_UINT8(5, g1->id);
+    TEST_ASSERT_NULL(t.groupAt(2));
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -104,6 +146,9 @@ void setup()
     RUN_TEST(test_serialize_roundtrip);
     RUN_TEST(test_deserialize_corrompido_zera);
     RUN_TEST(test_remove);
+    RUN_TEST(test_deserialize_crc_invalido_zera);
+    RUN_TEST(test_tabela_cheia_rejeita_nono);
+    RUN_TEST(test_group_at);
     exit(UNITY_END());
 }
 void loop() {}

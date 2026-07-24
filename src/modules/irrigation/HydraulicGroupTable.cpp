@@ -4,7 +4,7 @@
 namespace
 {
 // Entrada fixa: id(1)+name(16)+bomba(1)+zoneIds(8)+zoneCount(1)+minOpen(1)+maxOpen(1)
-//   +transicao(1)+overlapS(2)+startAfterOpenS(2)+stopBeforeCloseS(2)+minRunMin(2)+maxStartsHour(1) = 41 B
+//   +transicao(1)+overlapS(2)+startAfterOpenS(2)+stopBeforeCloseS(2)+minRunMin(2)+maxStartsHour(1) = 39 B
 constexpr size_t ENTRY = 1 + 16 + 1 + 8 + 1 + 1 + 1 + 1 + 2 + 2 + 2 + 2 + 1;
 
 uint32_t crc32(const uint8_t *p, size_t n)
