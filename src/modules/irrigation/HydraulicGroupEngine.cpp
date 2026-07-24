@@ -83,6 +83,9 @@ void HydraulicGroupEngine::setDesired(uint8_t groupId, uint8_t zoneId, bool open
         z->wantDurS = durationS;
 }
 
+// INVARIANTE: o glue deve chamar noteSent() no mesmo ciclo do emit (antes de qualquer
+// onAck do próximo pump de mensagens). Se o ACK chegasse antes de noteSent, o pend.seq
+// ficaria 0 e o onAck não casaria. O glue síncrono do gwTick garante essa ordem.
 void HydraulicGroupEngine::noteSent(uint32_t node, uint8_t zoneId, uint8_t action, uint32_t seq)
 {
     for (auto &g : rt)
@@ -207,6 +210,8 @@ size_t HydraulicGroupEngine::tick(const HydraulicGroupTable &tbl, const ZoneTabl
             break;
         }
         case State::START_WAIT: {
+            // Timer ancorado no INSTANTE DO EMIT do open (não no ACK): mede partida_apos_abrir_s
+            // desde o envio do comando. Para ACK local rápido é equivalente; NÃO re-ancorar no onAck.
             if (nowMs - g.waitStartMs < (uint32_t)cfg->startAfterOpenS * 1000)
                 break;
             if (cfg->bombaZoneId == 0) { // grupo sem bomba: vai direto p/ RUNNING
@@ -216,7 +221,8 @@ size_t HydraulicGroupEngine::tick(const HydraulicGroupTable &tbl, const ZoneTabl
             if (!resolve(zones, cfg->bombaZoneId, e))
                 break;
             e.action = 1;
-            e.durationS = pumpDur(g.zones[0].wantDurS ? g.zones[0].wantDurS : 600);
+            ZoneRt *cur = findZone(g, g.curZone);
+            e.durationS = pumpDur((cur && cur->wantDurS) ? cur->wantDurS : 600u);
             g.pend = {true, e.node, 0, cfg->bombaZoneId, 1};
             g.state = State::PUMP_WAIT_ACK;
             pushAlert(groupId, GA_PUMP_ON, cfg->bombaZoneId);
