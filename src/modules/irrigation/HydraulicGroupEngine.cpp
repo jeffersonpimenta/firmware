@@ -210,6 +210,25 @@ size_t HydraulicGroupEngine::tick(const HydraulicGroupTable &tbl, const ZoneTabl
             break;
         }
         case State::START_WAIT: {
+            // minOpen>1: abre min_abertas_com_bomba válvulas ANTES da bomba. Enquanto faltarem
+            // válvulas confirmadas, emite o próximo open e re-ancora o timer (emit-anchored).
+            if (confirmedCount(g) < (size_t)cfg->minOpen) {
+                ZoneRt *w = firstWantedUnconfirmed();
+                if (!w) // nada mais a abrir: segue com o que tem (evita travar)
+                    ;
+                else {
+                    if (!resolve(zones, w->zoneId, e))
+                        break;
+                    e.action = 1;
+                    e.durationS = w->wantDurS;
+                    g.pend = {true, e.node, 0, w->zoneId, 1};
+                    g.curZone = w->zoneId;
+                    g.waitStartMs = nowMs; // re-ancora START_WAIT no emit do próximo open
+                    g.state = State::OPENING;
+                    out[emitted++] = e;
+                    break;
+                }
+            }
             // Timer ancorado no INSTANTE DO EMIT do open (não no ACK): mede partida_apos_abrir_s
             // desde o envio do comando. Para ACK local rápido é equivalente; NÃO re-ancorar no onAck.
             if (nowMs - g.waitStartMs < (uint32_t)cfg->startAfterOpenS * 1000)
@@ -232,6 +251,20 @@ size_t HydraulicGroupEngine::tick(const HydraulicGroupTable &tbl, const ZoneTabl
         case State::RUNNING: {
             ZoneRt *w = firstWantedUnconfirmed();       // nova zona a abrir (transição)
             if (w) {
+                if (cfg->transicao == 1) { // fechar_antes_de_abrir
+                    ZoneRt *old = confirmedNotWanted();
+                    if (old) { // fecha a antiga PRIMEIRO (sem overlap)
+                        if (!resolve(zones, old->zoneId, e))
+                            break;
+                        e.action = 0;
+                        g.pend = {true, e.node, 0, old->zoneId, 0};
+                        g.nextZone = w->zoneId;
+                        g.state = State::X_CLOSE_WAIT; // onAck volta a RUNNING; próximo tick abre a nova
+                        out[emitted++] = e;
+                        break;
+                    }
+                    // sem antiga a fechar: cai no fluxo de abrir (abaixo)
+                }
                 if (!resolve(zones, w->zoneId, e))
                     break;
                 e.action = 1;
