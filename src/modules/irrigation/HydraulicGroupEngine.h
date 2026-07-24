@@ -72,6 +72,7 @@ class HydraulicGroupEngine {
         uint32_t lastStartMs = 0;    // última partida da bomba (bridging)
         uint32_t startRing[8] = {0}; // timestamps de partida (max_partidas_hora)
         uint8_t  startCount = 0;     // partidas na janela corrente
+        uint8_t  closeFailStreak = 0; // falhas consecutivas de fechamento
         bool pumpNeedsRenew = false; // transição completou: renovar timer local da bomba (§4.2)
         bool openFailPending = false; // abrir-próxima falhou: o próximo tick decide renovar/desligar bomba
         uint8_t openFailZone = 0;    // zona cuja abertura falhou (p/ alerta)
@@ -92,4 +93,5 @@ class HydraulicGroupEngine {
     uint16_t pumpDur(uint16_t zoneDurS) const;
     size_t confirmedCount(const GroupRt &g) const;
     uint8_t pruneStarts(GroupRt &g, uint32_t nowMs) const; // remove partidas > 1h, devolve count
+    void registerStart(GroupRt &g, uint32_t nowMs);        // prune + append + lastStartMs
 };

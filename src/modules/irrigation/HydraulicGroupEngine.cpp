@@ -126,6 +126,7 @@ void HydraulicGroupEngine::onAck(uint32_t node, uint32_t ackedSeq)
             g.state = State::RUNNING;
             g.curZone = g.nextZone;
             g.nextZone = 0;
+            g.closeFailStreak = 0; // fechamento bem-sucedido: zera streak
             g.pumpNeedsRenew = true; // transição completou: renovar timer local da bomba (§4.2)
             break;
         case State::PUMP_OFF_WAIT:
@@ -150,7 +151,9 @@ void HydraulicGroupEngine::onAck(uint32_t node, uint32_t ackedSeq)
 // no caminho FAILED, por isso não é usado aqui (onAck usa seq porque o tem).
 void HydraulicGroupEngine::onCmdFailed(uint32_t node, uint8_t zoneId, uint8_t action)
 {
-    for (auto &g : rt) {
+    for (size_t i = 0; i < MAX_GROUPS; i++) {
+        GroupRt &g = rt[i];
+        uint8_t groupId = (uint8_t)(i + 1);
         if (!g.pend.inUse || g.pend.node != node || g.pend.zoneId != zoneId || g.pend.action != action)
             continue;
         g.pend.inUse = false;
@@ -158,8 +161,15 @@ void HydraulicGroupEngine::onCmdFailed(uint32_t node, uint8_t zoneId, uint8_t ac
             g.openFailZone = zoneId;
             g.openFailPending = true;
             g.state = State::RUNNING;
+        } else { // action == 0: fechar falhou
+            pushAlert(groupId, GA_CLOSE_FAIL, zoneId);
+            g.closeFailStreak++;
+            // Válvula extra aberta = pressão menor = seguro: NÃO desligar a bomba.
+            // Limpa o estado de transição pendente e retorna a RUNNING.
+            g.curZone = g.nextZone ? g.nextZone : g.curZone;
+            g.nextZone = 0;
+            g.state = State::RUNNING;
         }
-        // action == 0 (fechar falhou) -> Task 6
         return;
     }
 }
@@ -178,7 +188,23 @@ bool HydraulicGroupEngine::pumpOn(uint8_t groupId) const
     return rt[groupId - 1].pump;
 }
 
-uint8_t HydraulicGroupEngine::pruneStarts(GroupRt &, uint32_t) const { return 0; } // Task 6
+uint8_t HydraulicGroupEngine::pruneStarts(GroupRt &g, uint32_t nowMs) const
+{
+    uint8_t w = 0;
+    for (uint8_t i = 0; i < g.startCount; i++)
+        if ((int32_t)(nowMs - g.startRing[i]) <= (int32_t)START_WINDOW_MS)
+            g.startRing[w++] = g.startRing[i];
+    g.startCount = w;
+    return w;
+}
+
+void HydraulicGroupEngine::registerStart(GroupRt &g, uint32_t nowMs)
+{
+    pruneStarts(g, nowMs);
+    if (g.startCount < 8)
+        g.startRing[g.startCount++] = nowMs;
+    g.lastStartMs = nowMs;
+}
 
 size_t HydraulicGroupEngine::tick(const HydraulicGroupTable &tbl, const ZoneTable &zones, uint32_t nowMs,
                                   GroupEmit *out, size_t cap)
@@ -218,6 +244,13 @@ size_t HydraulicGroupEngine::tick(const HydraulicGroupTable &tbl, const ZoneTabl
             ZoneRt *w = firstWantedUnconfirmed();
             if (!w)
                 break;
+            // Guarda max_partidas_hora: se o budget de partidas estiver esgotado, adia.
+            if (cfg->bombaZoneId != 0 && cfg->maxStartsHour != 0 &&
+                pruneStarts(g, nowMs) >= cfg->maxStartsHour) {
+                g.state = State::DEFERRED;
+                pushAlert(groupId, GA_DEFER_RATE, 0);
+                break; // NÃO abre válvula sem bomba
+            }
             if (!resolve(zones, w->zoneId, e))
                 break;
             e.action = 1;
@@ -270,6 +303,7 @@ size_t HydraulicGroupEngine::tick(const HydraulicGroupTable &tbl, const ZoneTabl
             e.durationS = pumpDur(maxDur ? maxDur : 600u);
             g.pend = {true, e.node, 0, cfg->bombaZoneId, 1};
             g.state = State::PUMP_WAIT_ACK;
+            registerStart(g, nowMs); // registra partida da bomba (max_partidas_hora + bridging)
             pushAlert(groupId, GA_PUMP_ON, cfg->bombaZoneId);
             out[emitted++] = e;
             break;
@@ -309,6 +343,19 @@ size_t HydraulicGroupEngine::tick(const HydraulicGroupTable &tbl, const ZoneTabl
                 out[emitted++] = e;
                 break;
             }
+            // Ordered shutdown: falhas de fechamento persistentes com maxOpen excedido.
+            if (cfg->maxOpen != 0 && g.closeFailStreak > cfg->maxOpen && g.pump) {
+                if (resolve(zones, cfg->bombaZoneId, e)) {
+                    e.action = 0;
+                    g.pend = {true, e.node, 0, cfg->bombaZoneId, 0};
+                    g.waitStartMs = nowMs;
+                    g.state = State::PUMP_OFF_WAIT;
+                    pushAlert(groupId, GA_ORDERED_SHUTDOWN, 0);
+                    g.closeFailStreak = 0;
+                    out[emitted++] = e;
+                }
+                break;
+            }
             ZoneRt *w = firstWantedUnconfirmed();       // nova zona a abrir (transição)
             if (w) {
                 if (cfg->transicao == 1) { // fechar_antes_de_abrir
@@ -340,6 +387,10 @@ size_t HydraulicGroupEngine::tick(const HydraulicGroupTable &tbl, const ZoneTabl
             }
             if (!anyWanted()) {                          // fim: desliga bomba
                 if (cfg->bombaZoneId != 0 && g.pump) {
+                    // Bridging: se minRunMin não expirou, mantém bomba ligada (ponte)
+                    if (cfg->minRunMin != 0 &&
+                        (uint32_t)(nowMs - g.lastStartMs) < (uint32_t)cfg->minRunMin * 60000u)
+                        break; // ponte: mantém bomba ligada; retoma sem nova partida
                     if (!resolve(zones, cfg->bombaZoneId, e))
                         break;
                     e.action = 0;
@@ -408,6 +459,11 @@ size_t HydraulicGroupEngine::tick(const HydraulicGroupTable &tbl, const ZoneTabl
             out[emitted++] = e;
             break;
         }
+        case State::DEFERRED:
+            // Aguarda o budget de partidas liberar; no próximo tick em IDLE reabre as zonas.
+            if (cfg->maxStartsHour == 0 || pruneStarts(g, nowMs) < cfg->maxStartsHour)
+                g.state = State::IDLE;
+            break;
         default:
             break;
         }

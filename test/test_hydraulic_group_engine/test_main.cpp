@@ -249,6 +249,73 @@ static void test_open_next_falha_sem_renovar_desliga_bomba()
     TEST_ASSERT_TRUE(got);
 }
 
+static void test_close_prev_falha_alerta()
+{
+    ZoneTable z; seedZones(z);
+    HydraulicGroupTable t; t.upsert(grp());
+    HydraulicGroupEngine e; e.reset();
+    e.setDesired(1, 1, true, 600);
+    tick1(e, t, z, 1000); e.noteSent(NODE, 1, 1, 1); e.onAck(NODE, 1);
+    tick1(e, t, z, 6000); e.noteSent(NODE, 9, 1, 2); e.onAck(NODE, 2);
+    e.setDesired(1, 1, false, 0);
+    e.setDesired(1, 2, true, 600);
+    tick1(e, t, z, 100000); e.noteSent(NODE, 2, 1, 3); e.onAck(NODE, 3); // abre V2
+    GroupEmit c1 = tick1(e, t, z, 110001); e.noteSent(NODE, 1, 0, 4);   // fecha V1
+    e.onCmdFailed(NODE, 1, 0); // fechar V1 falha
+    HydraulicGroupEngine::GroupAlert al; bool got = false;
+    while (e.takeAlert(al)) if (al.code == HydraulicGroupEngine::GA_CLOSE_FAIL) got = true;
+    TEST_ASSERT_TRUE(got);
+    // invariante seguro: grupo segue com bomba ligada (válvula a mais = pressão menor).
+    TEST_ASSERT_TRUE(e.pumpOn(1));
+}
+
+static void test_bridging_sem_nova_partida()
+{
+    ZoneTable z; seedZones(z);
+    HydraulicGroup g = grp();
+    g.minRunMin = 10; g.maxStartsHour = 6;
+    HydraulicGroupTable t; t.upsert(g);
+    HydraulicGroupEngine e; e.reset();
+    e.setDesired(1, 1, true, 60);
+    tick1(e, t, z, 1000); e.noteSent(NODE, 1, 1, 1); e.onAck(NODE, 1);
+    tick1(e, t, z, 6000); e.noteSent(NODE, 9, 1, 2); e.onAck(NODE, 2); // 1 partida
+    // V1 deixa de ser desejada; gap curto -> bomba fica ligada (ponte).
+    e.setDesired(1, 1, false, 0);
+    tickNone(e, t, z, 120000); // 2 min depois, dentro de minRunMin(10 min): bomba NÃO desliga
+    TEST_ASSERT_TRUE(e.pumpOn(1));
+    TEST_ASSERT_EQUAL(State::RUNNING, e.stateOf(1));
+    // chega V2 -> retoma sem nova partida.
+    e.setDesired(1, 2, true, 60);
+    GroupEmit o2 = tick1(e, t, z, 130000);
+    TEST_ASSERT_EQUAL_UINT8(2, o2.zoneId);
+    TEST_ASSERT_EQUAL_UINT8(1, o2.action);
+}
+
+static void test_max_partidas_defer()
+{
+    ZoneTable z; seedZones(z);
+    HydraulicGroup g = grp();
+    g.minRunMin = 0; g.maxStartsHour = 1; // só 1 partida/h
+    HydraulicGroupTable t; t.upsert(g);
+    HydraulicGroupEngine e; e.reset();
+    // 1ª partida ok
+    e.setDesired(1, 1, true, 60);
+    tick1(e, t, z, 1000); e.noteSent(NODE, 1, 1, 1); e.onAck(NODE, 1);
+    tick1(e, t, z, 6000); e.noteSent(NODE, 9, 1, 2); e.onAck(NODE, 2);
+    // encerra tudo
+    e.setDesired(1, 1, false, 0);
+    tick1(e, t, z, 70000); e.noteSent(NODE, 9, 0, 3); e.onAck(NODE, 3); // bomba off
+    tick1(e, t, z, 80000); e.noteSent(NODE, 1, 0, 4); e.onAck(NODE, 4); // fecha V1
+    TEST_ASSERT_EQUAL(State::IDLE, e.stateOf(1));
+    // 2ª demanda: partida bloqueada (1/h) -> DEFER, válvula fica fechada.
+    e.setDesired(1, 2, true, 60);
+    tickNone(e, t, z, 90000); // não abre V2 (não abre válvula sem bomba)
+    TEST_ASSERT_EQUAL(State::DEFERRED, e.stateOf(1));
+    HydraulicGroupEngine::GroupAlert al; bool got = false;
+    while (e.takeAlert(al)) if (al.code == HydraulicGroupEngine::GA_DEFER_RATE) got = true;
+    TEST_ASSERT_TRUE(got);
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -259,6 +326,9 @@ void setup()
     RUN_TEST(test_renova_bomba_na_transicao);
     RUN_TEST(test_open_next_falha_renova_corrente);
     RUN_TEST(test_open_next_falha_sem_renovar_desliga_bomba);
+    RUN_TEST(test_close_prev_falha_alerta);
+    RUN_TEST(test_bridging_sem_nova_partida);
+    RUN_TEST(test_max_partidas_defer);
     exit(UNITY_END());
 }
 void loop() {}
