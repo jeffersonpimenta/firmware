@@ -1657,6 +1657,70 @@ bool IrrigationModule::gwApplyInterlockDelete(uint8_t id)
     gwRebuildLocalInterlocks();
     return true;
 }
+bool IrrigationModule::gwApplyGroupUpsert(HydraulicGroup &g, char *err, size_t errCap)
+{
+    if (!IrrigationWeb::validateGroupZones(g, gateway.zones, err, errCap))
+        return false; // err preenchido
+    if (g.id == 0) {
+        // Aloca 1º id livre 1..MAX.
+        uint8_t freeId = 0;
+        for (uint8_t cand = 1; cand <= HydraulicGroupTable::MAX; cand++) {
+            if (!gateway.groups.byId(cand)) { freeId = cand; break; }
+        }
+        if (freeId == 0) {
+            snprintf(err, errCap, "tabela de grupos cheia");
+            return false;
+        }
+        g.id = freeId;
+    }
+    if (!gateway.groups.upsert(g)) {
+        snprintf(err, errCap, "grupo invalido (zona em outro grupo?)");
+        return false;
+    }
+    saveGroups();
+    return true;
+}
+
+bool IrrigationModule::gwApplyGroupDelete(uint8_t id)
+{
+    if (!gateway.groups.removeById(id))
+        return false;
+    saveGroups();
+    return true;
+}
+
+bool IrrigationModule::gwRunGroupCommand(uint8_t id, bool open, uint16_t durationS)
+{
+    const HydraulicGroup *g = gateway.groups.byId(id);
+    if (!g)
+        return false;
+    uint16_t dur = durationS;
+    if (open && dur == 0) {
+        // Default: maior maxMin (s) entre os membros; fallback 600 s.
+        uint16_t best = 0;
+        for (uint8_t i = 0; i < g->zoneCount && i < 8; i++) {
+            const Zone *z = gateway.zones.byId(g->zoneIds[i]);
+            if (z && z->maxMin > 0 && (uint16_t)(z->maxMin * 60) > best)
+                best = (uint16_t)(z->maxMin * 60);
+        }
+        dur = best ? best : 600;
+    }
+    if (open && dur > HydraulicGroupEngine::PUMP_CEILING_S)
+        dur = HydraulicGroupEngine::PUMP_CEILING_S;
+    for (uint8_t i = 0; i < g->zoneCount && i < 8; i++) {
+        uint8_t zid = g->zoneIds[i];
+        if (open) {
+            if (gateway.interlockEngine.zoneVerdict(zid).bloqueada)
+                continue; // pula zona bloqueada
+            gateway.groupEngine.setDesired(id, zid, true, dur);
+        } else {
+            gateway.groupEngine.setDesired(id, zid, false, 0);
+        }
+    }
+    auditEvent(AuditOrigin::PAINEL, open ? AuditAction::ABRIR : AuditAction::FECHAR, id, AuditResult::OK);
+    return true;
+}
+
 bool IrrigationModule::gwApplySensorName(uint32_t node, uint8_t sensorIdx, const char *name)
 {
     if (!gateway.sensorNames.set(node, sensorIdx, name))

@@ -83,6 +83,10 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     // Espelham o padrão gwApplyZone*/gwApplyProgram*: mutam, persistem e retornam false se falhar.
     bool gwApplyInterlockUpsert(const InterlockRule &r); // upsert + saveInterlocks() + gwRebuildLocalInterlocks()
     bool gwApplyInterlockDelete(uint8_t id);             // removeById + saveInterlocks() + gwRebuildLocalInterlocks()
+    // Fase 7b: grupos hidráulicos (painel). Espelham gwApplyInterlock*.
+    bool gwApplyGroupUpsert(HydraulicGroup &g, char *err, size_t errCap); // valida + aloca id se 0 + saveGroups()
+    bool gwApplyGroupDelete(uint8_t id);                                  // removeById + saveGroups()
+    bool gwRunGroupCommand(uint8_t id, bool open, uint16_t durationS);    // controle manual do grupo
     bool gwApplySensorName(uint32_t node, uint8_t sensorIdx, const char *name); // set + saveSensorNames()
     void gwOpenMaintWindow(uint32_t node, uint16_t minutes); // chama gwSendMaintWindow() privado
     // Acesso de leitura ao log de auditoria flash do gateway (Task 16). GATEWAY-only.
