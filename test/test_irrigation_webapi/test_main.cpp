@@ -727,6 +727,62 @@ static void test_parseGroupCommand_rejectsBadAcao()
     TEST_ASSERT_FALSE(parseGroupCommand(j, strlen(j), id, open, dur).ok);
 }
 
+// ── Fase 7b — validateGroupZones ─────────────────────────────────────────────
+
+static Zone mkZone(uint8_t id, int8_t fonte)
+{
+    Zone z{};
+    z.id = id;
+    z.node = 0x1111;
+    z.fonteInput = fonte;
+    return z;
+}
+
+static void test_validateGroupZones_ok()
+{
+    ZoneTable zones;
+    zones.upsert(mkZone(3, -1));
+    zones.upsert(mkZone(4, -1));
+    zones.upsert(mkZone(9, -1)); // bomba
+    HydraulicGroup g{};
+    g.id = 1; g.zoneCount = 2; g.zoneIds[0] = 3; g.zoneIds[1] = 4; g.bombaZoneId = 9;
+    char err[48] = {0};
+    TEST_ASSERT_TRUE(validateGroupZones(g, zones, err, sizeof(err)));
+}
+
+static void test_validateGroupZones_rejectsMirrorMember()
+{
+    ZoneTable zones;
+    zones.upsert(mkZone(3, -1));
+    zones.upsert(mkZone(4, 0)); // zona 4 é espelho (fonteInput=0)
+    HydraulicGroup g{};
+    g.id = 1; g.zoneCount = 2; g.zoneIds[0] = 3; g.zoneIds[1] = 4;
+    char err[48] = {0};
+    TEST_ASSERT_FALSE(validateGroupZones(g, zones, err, sizeof(err)));
+    TEST_ASSERT_TRUE(strlen(err) > 0);
+}
+
+static void test_validateGroupZones_rejectsMissingMember()
+{
+    ZoneTable zones;
+    zones.upsert(mkZone(3, -1));
+    HydraulicGroup g{};
+    g.id = 1; g.zoneCount = 2; g.zoneIds[0] = 3; g.zoneIds[1] = 7; // 7 não existe
+    char err[48] = {0};
+    TEST_ASSERT_FALSE(validateGroupZones(g, zones, err, sizeof(err)));
+}
+
+static void test_validateGroupZones_rejectsPumpAsMember()
+{
+    ZoneTable zones;
+    zones.upsert(mkZone(3, -1));
+    zones.upsert(mkZone(9, -1));
+    HydraulicGroup g{};
+    g.id = 1; g.zoneCount = 2; g.zoneIds[0] = 3; g.zoneIds[1] = 9; g.bombaZoneId = 9; // bomba também membro
+    char err[48] = {0};
+    TEST_ASSERT_FALSE(validateGroupZones(g, zones, err, sizeof(err)));
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -784,6 +840,10 @@ void setup()
     RUN_TEST(test_parseGroupCommand_abrir);
     RUN_TEST(test_parseGroupCommand_fecharNoDur);
     RUN_TEST(test_parseGroupCommand_rejectsBadAcao);
+    RUN_TEST(test_validateGroupZones_ok);
+    RUN_TEST(test_validateGroupZones_rejectsMirrorMember);
+    RUN_TEST(test_validateGroupZones_rejectsMissingMember);
+    RUN_TEST(test_validateGroupZones_rejectsPumpAsMember);
     exit(UNITY_END());
 }
 

@@ -696,4 +696,31 @@ ParseResult parseGroupCommand(const char *json, size_t len, uint8_t &outId, bool
     return r;
 }
 
+// ── Fase 7b — validateGroupZones ─────────────────────────────────────────────
+
+bool validateGroupZones(const HydraulicGroup &g, const ZoneTable &zones, char *err, size_t errCap)
+{
+    for (uint8_t i = 0; i < g.zoneCount && i < 8; i++) {
+        uint8_t zid = g.zoneIds[i];
+        const Zone *z = zones.byId(zid);
+        if (!z) {
+            snprintf(err, errCap, "zona %u inexistente", zid);
+            return false;
+        }
+        if (z->fonteInput >= 0) {
+            snprintf(err, errCap, "zona %u e espelho", zid);
+            return false;
+        }
+        if (g.bombaZoneId != 0 && zid == g.bombaZoneId) {
+            snprintf(err, errCap, "bomba %u nao pode ser membro", zid);
+            return false;
+        }
+    }
+    if (g.bombaZoneId != 0 && !zones.byId(g.bombaZoneId)) {
+        snprintf(err, errCap, "bomba %u inexistente", g.bombaZoneId);
+        return false;
+    }
+    return true;
+}
+
 } // namespace IrrigationWeb

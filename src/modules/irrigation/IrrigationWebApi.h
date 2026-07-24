@@ -166,4 +166,7 @@ ParseResult parseGroupDelete(const char *json, size_t len, uint8_t &outId);
 // {id, acao:"abrir"|"fechar", durationS?}. durationS omitido => 0 (módulo aplica default).
 ParseResult parseGroupCommand(const char *json, size_t len, uint8_t &outId, bool &outOpen, uint16_t &outDurationS);
 
+// Validação semântica (precisa da ZoneTable). true=ok; senão preenche err (>=48 bytes).
+bool validateGroupZones(const HydraulicGroup &g, const ZoneTable &zones, char *err, size_t errCap);
+
 } // namespace IrrigationWeb
