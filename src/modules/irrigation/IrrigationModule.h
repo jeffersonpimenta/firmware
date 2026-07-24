@@ -140,8 +140,8 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     void gwTick(); // chamado no runOnce do GATEWAY 1×/s
     // Fonte única de hora local do gateway: true + segundos-de-epoch local se há RTC válido; false caso contrário.
     bool computeLocalSecs(uint32_t &out) const;
-    void gwSendValveCmd(uint32_t node, uint8_t index, uint8_t tipo, uint8_t action, uint16_t durationS, uint8_t zoneId,
-                        uint8_t attempts); // decisão §1
+    uint32_t gwSendValveCmd(uint32_t node, uint8_t index, uint8_t tipo, uint8_t action, uint16_t durationS,
+                            uint8_t zoneId, uint8_t attempts); // decisão §1 — retorna o txSeq usado (0 se falhou)
     void gwSendMaintWindow(uint32_t node, uint16_t minutes); // Fase 6b Task 15: janela de manutenção do tamper
     void gwReconcileEpoch(uint32_t node, uint32_t remoteEpoch);
     void commitPairing();

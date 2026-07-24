@@ -1579,31 +1579,33 @@ void IrrigationModule::gwRebuildLocalInterlocks()
 // ---------------------------------------------------------------------------
 
 // Decisão §1: envia CmdValvula ou CmdGpo e registra no tracker.
-void IrrigationModule::gwSendValveCmd(uint32_t node, uint8_t index, uint8_t tipo, uint8_t action, uint16_t durationS,
-                                      uint8_t zoneId, uint8_t attempts)
+uint32_t IrrigationModule::gwSendValveCmd(uint32_t node, uint8_t index, uint8_t tipo, uint8_t action, uint16_t durationS,
+                                          uint8_t zoneId, uint8_t attempts)
 {
     meshtastic_MeshPacket *p = allocDataPacket();
     p->to = node;
+    uint32_t usedSeq = ++txSeq; // mesmo seq p/ CmdGpo/CmdValvula e o tracker.track abaixo
     if (tipo == 1) {
         CmdGpo cmd = {};
         cmd.gpoId = index;
         cmd.action = action;
         cmd.durationS = durationS;
-        p->decoded.payload.size = (uint16_t)encodeCmdGpo(p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), ++txSeq, cmd);
+        p->decoded.payload.size = (uint16_t)encodeCmdGpo(p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), usedSeq, cmd);
     } else {
         CmdValvula cmd = {};
         cmd.valveId = index;
         cmd.action = action;
         cmd.durationS = durationS;
-        p->decoded.payload.size = (uint16_t)encodeCmdValvula(p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), ++txSeq, cmd);
+        p->decoded.payload.size = (uint16_t)encodeCmdValvula(p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), usedSeq, cmd);
     }
     if (!p->decoded.payload.size) {
         packetPool.release(p);
-        return;
+        return 0;
     }
     service->sendToMesh(p, RX_SRC_LOCAL, false);
-    gateway.tracker.track(txSeq, node, zoneId, action, durationS, attempts, millis());
+    gateway.tracker.track(usedSeq, node, zoneId, action, durationS, attempts, millis());
     LOG_DEBUG("Irrigation GW: sent cmd zone=%u node=0x%08x action=%u dur=%u", zoneId, node, action, durationS);
+    return usedSeq;
 }
 
 // Fase 6b Task 15: envia MSG_CMD_MAINT a uma estação para abrir/fechar janela de manutenção do tamper.
@@ -1982,6 +1984,25 @@ void IrrigationModule::gwTick()
                 LOG_WARN("Irrigation GW: scheduler zone %u not found", a.zoneId);
                 continue;
             }
+            // --- Fase 7a: zonas de grupo hidráulico são orquestradas pelo motor, não pelo caminho direto ---
+            const HydraulicGroup *hg = gateway.groups.byZone(a.zoneId);
+            if (hg) {
+                if (a.type == SchedAction::Type::OPEN) {
+                    uint16_t dur = a.durationS;
+                    if (z->maxMin > 0 && dur > (uint16_t)(z->maxMin * 60))
+                        dur = (uint16_t)(z->maxMin * 60);
+                    // intertravamento: zona bloqueada não entra no desejado
+                    if (gateway.interlockEngine.zoneVerdict(a.zoneId).bloqueada) {
+                        auditEvent(AuditOrigin::INTERTRAVAMENTO, AuditAction::CMD_REJEITADO, a.zoneId,
+                                   AuditResult::NACK, z->node);
+                    } else {
+                        gateway.groupEngine.setDesired(hg->id, a.zoneId, true, dur);
+                    }
+                } else { // CLOSE
+                    gateway.groupEngine.setDesired(hg->id, a.zoneId, false, 0);
+                }
+                continue; // NÃO segue pelo caminho direto/openGate
+            }
             if (a.type == SchedAction::Type::OPEN) {
                 // Bypass: se o espelho é dono desta zona, ele manda — suprime o OPEN.
                 if (mirrorOwnsZoneOutput(gateway.mirror, z->fonteInput)) {
@@ -2030,6 +2051,32 @@ void IrrigationModule::gwTick()
             }
             gateway.openGate.request(p.zoneId, p.durationS); // registra a abertura no slot
             gwSendValveCmd(qz->node, qz->index, qz->tipo, 1, p.durationS, p.zoneId, 1);
+        }
+    }
+
+    // --- Fase 7a: motor de grupos hidráulicos ---
+    {
+        GroupEmit emits[HydraulicGroupEngine::MAX_GROUPS * 2];
+        size_t ne = gateway.groupEngine.tick(gateway.groups, gateway.zones, millis(), emits,
+                                             sizeof(emits) / sizeof(emits[0]));
+        for (size_t i = 0; i < ne; i++) {
+            const GroupEmit &em = emits[i];
+            const StationEntry *st = gateway.stations.byNode(em.node);
+            uint8_t attempts = (st && st->retries > 0) ? st->retries : 3;
+            uint32_t seq = gwSendValveCmd(em.node, em.index, em.tipo, em.action, em.durationS, em.zoneId, attempts);
+            gateway.groupEngine.noteSent(em.node, em.zoneId, em.action, seq);
+            auditEvent(AuditOrigin::GRUPO_HIDRAULICO, em.action ? AuditAction::ABRIR : AuditAction::FECHAR,
+                       em.zoneId, AuditResult::OK, em.node);
+        }
+        HydraulicGroupEngine::GroupAlert ga;
+        while (gateway.groupEngine.takeAlert(ga)) {
+            Alert al;
+            al.type = AlertType::CMD_FAIL;
+            al.node = 0;
+            al.arg = ga.code;
+            al.atMs = millis();
+            gateway.alerts.push(al);
+            auditEvent(AuditOrigin::GRUPO_HIDRAULICO, AuditAction::CMD_REJEITADO, ga.zoneId, AuditResult::NACK, 0);
         }
     }
 
@@ -2108,6 +2155,8 @@ void IrrigationModule::gwTick()
             a.arg = r.zoneId;
             a.atMs = millis();
             gateway.alerts.push(a);
+            // Fase 7a: notifica o motor de grupos p/ tratar falha de comando da zona.
+            gateway.groupEngine.onCmdFailed(r.node, r.zoneId, r.action);
         }
     }
 
@@ -2260,6 +2309,9 @@ void IrrigationModule::handleGwAck(const meshtastic_MeshPacket &mp, const Header
         gateway.tracker.onAck(mp.from, ack.ackedSeq);
     }
 
+    // Fase 7a: motor de grupos vê todo ACK (OK ou NACK) p/ avançar seu handshake.
+    gateway.groupEngine.onAck(mp.from, ack.ackedSeq);
+
     // Reconciliação de epoch (mesma regra do HB — decisão §3).
     gwReconcileEpoch(mp.from, ack.configEpoch);
 }
@@ -2298,6 +2350,19 @@ void IrrigationModule::handleGwHeartbeat(const meshtastic_MeshPacket &mp, const 
         tel.sensors[i] = hb.sensors[i];
     tel.tamper = (hb.flags & IrrigationProto::HB_FLAG_TAMPER) != 0;
     gateway.telemetry.update(tel);
+
+    // Fase 7a: reporta o estado real das saídas (bitmaps do HB) ao motor de grupos.
+    for (size_t i = 0; i < gateway.zones.count(); i++) {
+        const Zone *zz = gateway.zones.zoneAt(i);
+        if (!zz || zz->node != mp.from)
+            continue;
+        const HydraulicGroup *hg = gateway.groups.byZone(zz->id);
+        if (!hg)
+            continue;
+        bool open = (zz->tipo == 1) ? ((hb.gpoStates >> zz->index) & 1)
+                                    : ((hb.valveStates >> zz->index) & 1);
+        gateway.groupEngine.observeActual(hg->id, zz->id, open);
+    }
 }
 
 // Decisão §3: MSG_EVENTO recebido pelo gateway (auditoria; Fase 6 processa detalhes).
