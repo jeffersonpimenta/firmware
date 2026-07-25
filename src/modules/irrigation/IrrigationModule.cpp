@@ -1231,6 +1231,89 @@ void IrrigationModule::svcExportToConsole()
     LOG_INFO("Irrigation SERVICO VAULT EXPORT: %s", buf);
 }
 
+size_t IrrigationModule::gwBuildBackup(char *buf, size_t cap)
+{
+    if (!gwIsGateway())
+        return 0;
+    // Sub-arrays de config via os builders existentes do painel (DRY, Fase 5a-7b).
+    static char zonasB[900], progB[800], interB[700], grupB[700];
+    IrrigationWeb::buildZones(gateway.zones, zonasB, sizeof zonasB);
+    IrrigationWeb::buildPrograms(gateway.scheduler, progB, sizeof progB);
+    IrrigationWeb::buildInterlocks(gateway.interlocks, interB, sizeof interB);
+    IrrigationWeb::buildGroups(gateway.groups, grupB, sizeof grupB);
+    // estacoes[] + snapshot_epoch{} a partir do registro de estações.
+    static char estB[1200], epoB[600];
+    {
+        IrrigationWeb::JsonWriter w(estB, sizeof estB);
+        w.beginArray();
+        for (size_t i = 0; i < gateway.stations.count(); i++) {
+            const StationEntry *s = gateway.stations.nodeAt(i);
+            if (!s)
+                continue;
+            char no[12];
+            snprintf(no, sizeof no, "!%08x", s->node);
+            w.beginObject();
+            w.keyStr("no", no);
+            w.keyStr("nome", s->name);
+            w.keyNum("lat", s->lat);
+            w.keyNum("lon", s->lon);
+            w.endObject();
+        }
+        w.endArray();
+        w.done();
+    }
+    {
+        IrrigationWeb::JsonWriter w(epoB, sizeof epoB);
+        w.beginObject();
+        for (size_t i = 0; i < gateway.stations.count(); i++) {
+            const StationEntry *s = gateway.stations.nodeAt(i);
+            if (!s)
+                continue;
+            char no[12];
+            snprintf(no, sizeof no, "!%08x", s->node);
+            w.keyNum(no, (int64_t)s->desiredEpoch);
+        }
+        w.endObject();
+        w.done();
+    }
+    // PSK do canal primário → base64.
+    const meshtastic_ChannelSettings &prim = channels.getPrimary();
+    char pskB[48] = {0};
+    if (prim.psk.size > 0)
+        IrrigationService::base64Encode(prim.psk.bytes, prim.psk.size, pskB, sizeof pskB);
+    const char *chName = channels.getName(channels.getPrimaryIndex());
+    IrrigationService::BackupSource s{};
+    s.id = "gateway"; // identidade default; o operador renomeia o cliente no cofre
+    s.nome = chName;
+    s.canalNome = chName;
+    s.pskB64 = pskB;
+    s.preset = (uint8_t)config.lora.modem_preset;
+    s.gateway = nodeDB->getNodeNum();
+    s.estacoesJson = estB;
+    s.snapshotEpochJson = epoB;
+    s.zonasJson = zonasB;
+    s.programasJson = progB;
+    s.intertravamentosJson = interB;
+    s.gruposJson = grupB;
+    s.sensorNamesJson = "[]"; // nomes de sensor: follow-up (sem builder dedicado)
+    static char clientB[6144];
+    size_t cn = IrrigationService::buildClientBackup(s, clientB, sizeof clientB);
+    if (!cn)
+        return 0;
+    clientB[cn < sizeof clientB ? cn : sizeof clientB - 1] = 0;
+    // Envelope multi-cliente de 1 cliente (formato de import do cofre §11.7).
+    IrrigationWeb::JsonWriter w(buf, cap);
+    w.beginObject();
+    w.keyStr("fmt", "irrig-vault");
+    w.keyNum("version", 1);
+    w.key("clients");
+    w.beginArray();
+    w.raw(clientB);
+    w.endArray();
+    w.endObject();
+    return w.done();
+}
+
 void IrrigationModule::sendEvento(uint8_t code, uint32_t arg)
 {
     Evento ev = {code, arg};

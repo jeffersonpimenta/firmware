@@ -651,6 +651,36 @@ static void hGroupsCommand(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, "{\"ok\":true}");
 }
 
+// GET /api/irrigation/export — backup §5.5 completo (PSK + tabelas) num envelope
+// multi-cliente, para o cofre do device SERVICO (Fase 8b §11.7).
+static void hExport(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!gwReady()) {
+        res->setStatusCode(404);
+        return;
+    }
+    const size_t cap = 8192;
+    char *buf = (char *)malloc(cap);
+    if (!buf) {
+        res->setStatusCode(500);
+        return;
+    }
+    size_t n = irrigationModule->gwBuildBackup(buf, cap); // CI-only
+    if (!n) {
+        free(buf);
+        res->setStatusCode(500);
+        return;
+    }
+    buf[n < cap ? n : cap - 1] = 0;
+    res->setStatusCode(200);
+    res->setHeader("Content-Type", "application/json");
+    res->setHeader("Content-Disposition", "attachment; filename=\"irrigacao-backup.json\"");
+    res->setHeader("Access-Control-Allow-Origin", "*");
+    res->print(buf);
+    free(buf);
+}
+
 // ---------------------------------------------------------------------------
 // Registro
 // ---------------------------------------------------------------------------
@@ -681,6 +711,8 @@ void registerIrrigationHandlers(HTTPServer *server)
     server->registerNode(new ResourceNode("/api/irrigation/groups", "POST", &hGroupsPost));
     server->registerNode(new ResourceNode("/api/irrigation/groups/delete", "POST", &hGroupsDelete));
     server->registerNode(new ResourceNode("/api/irrigation/groups/command", "POST", &hGroupsCommand));
+    // Fase 8b: export §5.5 completo (PSK + tabelas) p/ o cofre do device SERVICO
+    server->registerNode(new ResourceNode("/api/irrigation/export", "GET", &hExport));
 }
 
 #endif

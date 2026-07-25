@@ -93,6 +93,9 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     void gwOpenMaintWindow(uint32_t node, uint16_t minutes); // chama gwSendMaintWindow() privado
     // Acesso de leitura ao log de auditoria flash do gateway (Task 16). GATEWAY-only.
     const FlashAuditRing &auditFlashRef() const { return auditFlash; }
+    // Fase 8b: backup §5.5 completo (PSK + tabelas) num envelope de 1 cliente, p/ o cofre
+    // do device SERVICO / botão de export do painel. GATEWAY-only. → bytes escritos (0 se falhou).
+    size_t gwBuildBackup(char *buf, size_t cap);
 
     // --- Serviço do portal de campo (todos os papéis). Chamados pela cola HTTP (IrrigationPortalEndpoints). ---
     void portalFillNodeState(IrrigationWeb::NodeStateCtx &out) const;
