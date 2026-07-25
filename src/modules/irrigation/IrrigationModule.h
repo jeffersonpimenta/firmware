@@ -17,6 +17,8 @@
 #include "modules/irrigation/GpoController.h"
 #include "modules/irrigation/ValveController.h"
 #include "modules/irrigation/SensorSampler.h"
+#include "modules/irrigation/SurveyBeacon.h"
+#include "modules/irrigation/SurveyLog.h"
 #include "modules/irrigation/LittleFsByteStore.h"
 #include "modules/irrigation/ServiceController.h"
 #include "modules/irrigation/ServicePortalApi.h" // Fase 8c: tipos/builders do portal SERVICO
@@ -32,6 +34,7 @@ struct NetCommand;
 struct PortalSensorsCtx;
 struct PortalGpoReq;
 struct PortalCoords;
+struct SurveyStartReq;
 }
 
 // Saída de nível (relé/MOSFET) dos GPOs.
@@ -127,6 +130,13 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     bool svcPortalSeedConfig(uint32_t node, IrrigationSettings &out); // out = último blob lido do nó (campos geridos)
     uint32_t gwTimeAdopted() const { return 0; } // TODO banca: ts adotado do gateway (HB/ACK); 0=sem RTC
 
+    // Fase 8d — site survey (§8.5). Portais (nó §7.2 / SERVICO §11.8) iniciam o beacon;
+    // o painel do gateway lê o log. portalStart/Stop valem p/ qualquer papel que beacona.
+    bool portalStartSurvey(const IrrigationWeb::SurveyStartReq &r);
+    void portalStopSurvey();
+    size_t buildSurveyLog(char *buf, size_t cap); // GATEWAY: tabela Cobertura do painel
+    void clearSurveyLog();
+
   protected:
     bool wantPacket(const meshtastic_MeshPacket *p) override;
     ProcessMessage handleReceived(const meshtastic_MeshPacket &mp) override;
@@ -165,6 +175,7 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     // Fase 8b — device SERVICO (role == SERVICO). Executores das intents do ServiceController.
     void applyRetune(const char *clientId);   // §11.3 re-tune do canal + reboot
     void svcEmitProbe();                       // §11.4 emissor da sonda PING_SURVEY (broadcast, FROM_SERVICE)
+    void emitSurveyBeacon();                   // §8.5 beacon de cobertura PING_SURVEY kind=2 (broadcast)
     void svcSendResyncRequest(uint32_t node);  // §11.5 RESYNC_SEQ REQUEST (FROM_SERVICE)
     void svcExportToConsole();                 // §11.7 despeja o envelope do cofre no serial (bancada)
     void handleGwAck(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
@@ -243,6 +254,9 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     // considerados reconhecidos pelo overview. ACK_ALERT seta = millis().
     uint32_t lastAckAllMs = 0;
     SensorSampler sampler;
+    // Fase 8d — site survey (§8.5): beacon (qualquer papel que beacona) + log (gateway).
+    SurveyBeacon surveyBeacon;
+    SurveyLog surveyLog;
     // Fase 8b — device SERVICO: cofre + controlador. Alocados só quando role == SERVICO.
     LittleFsProfileStore *svcStore = nullptr;
     ServiceController *svc = nullptr;

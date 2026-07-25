@@ -583,6 +583,23 @@ void IrrigationModule::handlePingSurvey(const meshtastic_MeshPacket &mp, const H
     PingSurvey req;
     if (!decodePingSurvey(mp.decoded.payload.bytes, mp.decoded.payload.size, req))
         return;
+    if (req.kind == 2) { // BEACON — site survey §8.5: gateway loga, ninguém responde
+        if (gwIsGateway()) {
+            SurveyPoint sp{};
+            sp.node = mp.from;
+            sp.role = req.role;
+            sp.vbatCentiV = req.vbatCentiV;
+            sp.fwVersion = req.fwVersion;
+            sp.latE7 = req.latE7;
+            sp.lonE7 = req.lonE7;
+            sp.hasCoord = (req.latE7 != 0 || req.lonE7 != 0);
+            sp.snrQuarterDb = (int8_t)(mp.rx_snr * 4);
+            sp.rssiDbm = (int16_t)mp.rx_rssi;
+            sp.uptimeS = millis() / 1000;
+            surveyLog.add(sp);
+        }
+        return;
+    }
     if (req.kind != 0) { // REPLY: coletado pelo prober do device SERVICO (§11.4)
         if (svc) {
             ScanEntry e{};
@@ -908,6 +925,10 @@ int32_t IrrigationModule::runOnce()
         lastAuditSaveMs = millis();
     }
 
+    // Fase 8d — site survey (§8.5): emite beacon PING_SURVEY no intervalo, em qualquer papel que o iniciou.
+    if (surveyBeacon.tick(millis()))
+        emitSurveyBeacon();
+
     if ((IrrigationRole)settings.role != IrrigationRole::ESTACAO) {
         if ((IrrigationRole)settings.role == IrrigationRole::GATEWAY)
             gwTick(); // Task 6, decisão §2: loop principal do gateway 1×/s
@@ -1202,6 +1223,56 @@ void IrrigationModule::svcEmitProbe()
     setServiceFlag(p->decoded.payload.bytes, p->decoded.payload.size);
     service->sendToMesh(p, RX_SRC_LOCAL, false);
     LOG_INFO("Irrigation SERVICO: PING_SURVEY probe broadcast");
+}
+
+// Fase 8d — site survey (§8.5): beacon periódico de cobertura (kind=2), broadcast.
+void IrrigationModule::emitSurveyBeacon()
+{
+    PingSurvey b = {};
+    b.kind = 2; // BEACON
+    b.role = settings.role;
+    b.configEpoch = settings.configEpoch;
+    b.vbatCentiV = batteryCentiV();
+    b.fwVersion = APP_FW_VERSION;
+    b.latE7 = surveyBeacon.hasCoord() ? surveyBeacon.latE7() : 0;
+    b.lonE7 = surveyBeacon.hasCoord() ? surveyBeacon.lonE7() : 0;
+
+    meshtastic_MeshPacket *p = allocDataPacket();
+    p->to = NODENUM_BROADCAST;
+    uint16_t sz = (uint16_t)encodePingSurvey(p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), ++txSeq, b);
+    if (!sz) {
+        packetPool.release(p);
+        return;
+    }
+    p->decoded.payload.size = sz;
+    if ((IrrigationRole)settings.role == IrrigationRole::SERVICO)
+        setServiceFlag(p->decoded.payload.bytes, p->decoded.payload.size);
+    service->sendToMesh(p, RX_SRC_LOCAL, false);
+}
+
+bool IrrigationModule::portalStartSurvey(const IrrigationWeb::SurveyStartReq &r)
+{
+    surveyBeacon.start(millis(), r.intervalS, r.timeoutS, r.latE7, r.lonE7, r.hasCoord);
+    return true;
+}
+
+void IrrigationModule::portalStopSurvey()
+{
+    surveyBeacon.stop();
+}
+
+size_t IrrigationModule::buildSurveyLog(char *buf, size_t cap)
+{
+    SurveyPoint tmp[SurveyLog::CAP];
+    size_t k = surveyLog.count();
+    for (size_t i = 0; i < k; i++)
+        tmp[i] = surveyLog.at(i);
+    return IrrigationWeb::buildSurvey(tmp, k, millis() / 1000, buf, cap);
+}
+
+void IrrigationModule::clearSurveyLog()
+{
+    surveyLog.clear();
 }
 
 void IrrigationModule::svcSendResyncRequest(uint32_t node)
