@@ -2,6 +2,7 @@ const ROLES = ["Estação", "Gateway", "Repetidor", "Serviço"];
 const ORIGENS = ["sistema","cronograma","painel","portal","botao","entrada","intertravamento","failsafe","servico"];
 const ACOES = ["abrir","fechar","pulso","gpo_on","gpo_off","parear","factory_reset","config_epoch","safe_in","safe_out","tamper","reboot","hiberna_in","hiberna_out","rejeitado"];
 const RESULTADOS = ["ok","nack","timeout"];
+let svcInit = false; // Fase 8c: abas SERVICO ativadas 1× quando role==Serviço
 
 async function j(url, opts) {
   const r = await fetch(url, opts);
@@ -97,6 +98,7 @@ async function refresh() {
   if (ok) {
     renderNode(body);
     renderGpos(body);
+    if (body.role === 3 && !svcInit) initService(); // §11.8: device SERVICO
   }
   await refreshSensors();
 }
@@ -162,3 +164,146 @@ loadCoords();
 refresh();
 refreshLog();
 setInterval(refresh, 3000);
+
+// ── Fase 8c — portal do device SERVICO (§11.8) ──────────────────────────────
+function initService() {
+  svcInit = true;
+  document.querySelectorAll(".svc-only").forEach((b) => b.classList.remove("hidden"));
+  // Esconde as abas de nó/rede-local; o device SERVICO usa Clientes/Rede(cliente)/Log.
+  document.querySelectorAll('nav.tabs button:not(.svc-only)').forEach((b) => b.classList.add("hidden"));
+  document.querySelector('[data-tab="svcclients"]').click();
+  loadClients();
+  loadSvcLog();
+}
+
+async function loadClients() {
+  const { ok, body } = await j("/api/portal/service/clients");
+  const el = document.getElementById("clientsList");
+  if (!ok || !body.clients) { el.textContent = "—"; return; }
+  el.innerHTML = body.clients.map((c) =>
+    `<p>${c.active ? "▶ " : ""}<b>${c.nome || c.id}</b> <small class="muted">${c.canal} · ${c.estacoes} nós</small>
+     ${c.active ? "<em>(ativo)</em>" : `<button data-sel="${c.id}">Selecionar</button>`}</p>`
+  ).join("") || "nenhum cliente no cofre";
+  el.querySelectorAll("button[data-sel]").forEach((b) => (b.onclick = () => selectClient(b.dataset.sel)));
+}
+
+async function selectClient(id) {
+  if (!confirm("Re-tunar no canal deste cliente? O device REINICIA (~3 s).")) return;
+  await j("/api/portal/service/select", { method: "POST", body: JSON.stringify({ id }) });
+  document.getElementById("clientsMsg").textContent = "Re-tunando… reconecte ao portal após o reboot.";
+}
+
+function exportVault() { location.href = "/api/portal/service/export"; }
+
+async function importVault(replace) {
+  const f = document.getElementById("importFile").files[0];
+  if (!f) { document.getElementById("clientsMsg").textContent = "escolha um arquivo"; return; }
+  const url = "/api/portal/service/import" + (replace ? "/replace" : "");
+  const { ok, body } = await j(url, { method: "POST", body: await f.text() });
+  document.getElementById("clientsMsg").textContent = ok ? "Importado" : (body.errors || ["erro"]).join("; ");
+  loadClients();
+}
+
+async function startScanSvc() {
+  await j("/api/portal/service/scan", { method: "POST" });
+  document.getElementById("svcnetMsg").textContent = "Varredura disparada…";
+  setTimeout(pollScanSvc, 1500);
+}
+
+function nodeHex(n) { return "!" + (n >>> 0).toString(16).padStart(8, "0"); }
+
+async function pollScanSvc() {
+  const { ok, body } = await j("/api/portal/service/scan");
+  const el = document.getElementById("svcNodes");
+  if (!ok || !body.nodes || !body.nodes.length) { el.textContent = "nenhum respondente ainda"; return; }
+  el.innerHTML = "<table><tr><th>nó</th><th>papel</th><th>epoch</th><th>bat</th><th>fw</th><th>snr</th><th></th></tr>" +
+    body.nodes.map((n) => {
+      const hx = nodeHex(n.node);
+      return `<tr><td class="mono">${hx}</td><td>${ROLES[n.role] || n.role}</td><td>${n.epoch}</td>
+        <td>${(n.vbat / 100).toFixed(1)}V</td><td>0x${(n.fw || 0).toString(16)}</td><td>${(n.snr / 4).toFixed(0)}</td>
+        <td><button data-rd="${hx}">Ler cfg</button> <button data-pulse="${hx}">Pulso</button>
+            <button data-zone="${hx}">Zona</button> <button data-rs="${hx}">RESYNC</button></td></tr>`;
+    }).join("") + "</table>";
+  el.querySelectorAll("button[data-rd]").forEach((b) => (b.onclick = () => readConfig(b.dataset.rd)));
+  el.querySelectorAll("button[data-pulse]").forEach((b) => (b.onclick = () => nodeAction(b.dataset.pulse, "pulse")));
+  el.querySelectorAll("button[data-zone]").forEach((b) => (b.onclick = () => nodeAction(b.dataset.zone, "zone")));
+  el.querySelectorAll("button[data-rs]").forEach((b) => (b.onclick = () => nodeAction(b.dataset.rs, "resync")));
+}
+
+async function nodeAction(node, action) {
+  let extra = {};
+  if (action === "pulse") {
+    extra = { valveId: +prompt("Válvula (0-7)", "0"), durationS: +prompt("Duração (s)", "10") };
+  } else if (action === "zone") {
+    const zoneId = +prompt("Zona (1-255)", "1");
+    const open = confirm("Abrir? (Cancelar = fechar)");
+    extra = { zoneId, open: open ? 1 : 0, durationS: open ? +prompt("Duração (s)", "300") : 0 };
+  }
+  const { ok, body } = await j("/api/portal/service/node/action",
+    { method: "POST", body: JSON.stringify({ node, action, ...extra }) });
+  document.getElementById("svcnetMsg").textContent = ok ? "OK" : (body.errors || ["erro"]).join("; ");
+}
+
+// Editor de config — campos escalares/pinos como inputs; sensores/intertravamentos como JSON.
+const CFG_SCALARS = ["numValves", "hbMinutes", "vbatMinAbrirCentiV", "maxOpenConfigS", "cmdRatePerMin", "pulseMs",
+  "digitalInActiveLow", "pinBtn", "pinLed", "pinTamper", "hwFlags", "latE7", "lonE7"];
+const CFG_PINS = ["pinsHbridgeA", "pinsHbridgeB", "pinsDigitalIn", "pinsGpo"];
+let cfgNode = null;
+
+async function readConfig(node) {
+  cfgNode = node;
+  document.getElementById("cfgMsg").textContent = "Lendo… (aguardando reply do nó)";
+  for (let i = 0; i < 20; i++) {
+    const { ok, body } = await j("/api/portal/service/node/config/read", { method: "POST", body: JSON.stringify({ node }) });
+    if (ok && !body.pending) { fillEditor(body); document.getElementById("cfgMsg").textContent = "Config lida de " + node; return; }
+    await new Promise((r) => setTimeout(r, 700));
+  }
+  document.getElementById("cfgMsg").textContent = "Timeout lendo config (nó fora de alcance?)";
+}
+
+function fillEditor(c) {
+  let html = `<p class="muted">Geridos (read-only): role=${c.role} · epoch=${c.configEpoch} · gw=0x${(c.boundGateway >>> 0).toString(16)}</p>`;
+  CFG_SCALARS.forEach((k) => (html += `<label>${k} <input id="cfg_${k}" type="number" value="${c[k]}"></label>`));
+  CFG_PINS.forEach((k) => (html += `<label>${k} (csv) <input id="cfg_${k}" value="${(c[k] || []).join(",")}"></label>`));
+  html += `<label>sensores (JSON) <textarea id="cfg_sensores" rows="4">${JSON.stringify(c.sensores || [])}</textarea></label>`;
+  html += `<label>localInterlocks (JSON) <textarea id="cfg_localInterlocks" rows="4">${JSON.stringify(c.localInterlocks || [])}</textarea></label>`;
+  html += `<label>Rota <select id="cfg_route"><option value="direct">Direta (epoch+1)</option><option value="gateway">Via gateway</option></select></label>`;
+  html += `<button type="button" id="cfgSave">Gravar config</button>`;
+  const box = document.getElementById("cfgEditor");
+  box.innerHTML = html;
+  box.classList.remove("hidden");
+  document.getElementById("cfgSave").onclick = writeConfig;
+}
+
+async function writeConfig() {
+  const g = (id) => document.getElementById("cfg_" + id);
+  const config = {};
+  CFG_SCALARS.forEach((k) => (config[k] = +g(k).value));
+  CFG_PINS.forEach((k) => (config[k] = g(k).value.split(",").map((x) => +x.trim())));
+  try {
+    config.sensores = JSON.parse(g("sensores").value);
+    config.localInterlocks = JSON.parse(g("localInterlocks").value);
+  } catch (e) {
+    document.getElementById("cfgMsg").textContent = "JSON inválido em sensores/localInterlocks";
+    return;
+  }
+  const route = g("route").value;
+  const { ok, body } = await j("/api/portal/service/node/config/write",
+    { method: "POST", body: JSON.stringify({ node: cfgNode, route, config }) });
+  document.getElementById("cfgMsg").textContent = ok ? "Config gravada" : (body.errors || ["erro"]).join("; ");
+}
+
+async function loadSvcLog() {
+  const { ok, body } = await j("/api/portal/service/log");
+  const el = document.getElementById("svcLogList");
+  if (!ok || !body.log || !body.log.length) { el.textContent = "log vazio"; return; }
+  el.innerHTML = body.log.map((r) =>
+    `<p class="mono">up=${r.up}${r.ts ? " ts=" + r.ts : ""} <b>${r.ev}</b>${r.node ? " 0x" + (r.node >>> 0).toString(16) : ""}</p>`
+  ).join("");
+}
+
+document.getElementById("svcScanBtn").addEventListener("click", startScanSvc);
+document.getElementById("svcLogRefresh").addEventListener("click", loadSvcLog);
+document.getElementById("exportBtn").addEventListener("click", exportVault);
+document.getElementById("importBtn").addEventListener("click", () => importVault(false));
+document.getElementById("importReplaceBtn").addEventListener("click", () => importVault(true));

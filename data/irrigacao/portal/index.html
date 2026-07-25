@@ -11,6 +11,9 @@
   <nav class="tabs">
     <button data-tab="node" class="active">Este nó</button>
     <button data-tab="net">Rede</button>
+    <button data-tab="svcclients" class="svc-only hidden">Clientes</button>
+    <button data-tab="svcnet" class="svc-only hidden">Rede (cliente)</button>
+    <button data-tab="svclog" class="svc-only hidden">Log serviço</button>
   </nav>
 
   <section id="tab-node" class="tab">
@@ -55,6 +58,43 @@
       <button type="submit">Enviar</button>
       <span id="netMsg" class="muted"></span>
     </form>
+  </section>
+
+  <!-- Fase 8c — abas do device SERVICO (§11.8), reveladas por app.js quando role==Serviço. -->
+  <section id="tab-svcclients" class="tab hidden">
+    <div class="card">
+      <h2>Clientes do cofre</h2>
+      <div id="clientsList" class="muted">—</div>
+      <span id="clientsMsg" class="muted"></span>
+    </div>
+    <div class="card">
+      <h2>Import / Export (§11.7)</h2>
+      <button type="button" id="exportBtn">Exportar cofre (.json)</button>
+      <hr />
+      <input type="file" id="importFile" accept="application/json" />
+      <button type="button" id="importBtn">Importar (merge)</button>
+      <button type="button" id="importReplaceBtn">Importar (substituir)</button>
+    </div>
+  </section>
+
+  <section id="tab-svcnet" class="tab hidden">
+    <div class="card">
+      <h2>Rede do cliente ativo <button type="button" id="svcScanBtn">Varredura</button></h2>
+      <div id="svcNodes" class="muted">—</div>
+      <span id="svcnetMsg" class="muted"></span>
+    </div>
+    <div class="card">
+      <h2>Editor de config</h2>
+      <div id="cfgEditor" class="hidden"></div>
+      <span id="cfgMsg" class="muted"></span>
+    </div>
+  </section>
+
+  <section id="tab-svclog" class="tab hidden">
+    <div class="card">
+      <h2>Log de serviço <button type="button" id="svcLogRefresh">Atualizar</button></h2>
+      <div id="svcLogList" class="muted">—</div>
+    </div>
   </section>
 
   <script src="/irrigacao/portal/app.js"></script>
