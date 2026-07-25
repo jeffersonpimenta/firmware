@@ -1,11 +1,21 @@
 #include "Arduino.h"
 #include "TestUtil.h"
+#include "modules/irrigation/ServiceBackup.h"
+#include "modules/irrigation/ServiceVault.h"
 #include "support/RamProfileStore.h"
 #include <cstring>
 #include <unity.h>
 
+using namespace IrrigationService;
+
 void setUp(void) {}
 void tearDown(void) {}
+
+static const char *kEnv2 =
+    "{\"fmt\":\"irrig-vault\",\"version\":1,\"clients\":["
+    "{\"id\":\"f1\",\"nome\":\"A\",\"canal\":{\"nome\":\"c1\",\"psk_b64\":\"1PG7Og==\",\"modem_preset\":\"LONG_FAST\"},\"gateway\":\"!a1b2c3d4\",\"estacoes\":[]},"
+    "{\"id\":\"f2\",\"nome\":\"B\",\"canal\":{\"nome\":\"c2\",\"psk_b64\":\"1PG7Og==\",\"modem_preset\":\"LONG_FAST\"},\"gateway\":\"!ffffffff\",\"estacoes\":[]}"
+    "]}";
 
 static void test_ramstore_write_read_list()
 {
@@ -29,12 +39,37 @@ static void test_ramstore_active_roundtrip()
     TEST_ASSERT_EQUAL_STRING("f2", a);
 }
 
+static void test_vault_import_lists_two()
+{
+    RamProfileStore s;
+    ServiceVault v(s);
+    char err[48];
+    TEST_ASSERT_TRUE(v.importEnvelope(kEnv2, strlen(kEnv2), false, err, sizeof err));
+    LightProfile lp[8];
+    TEST_ASSERT_EQUAL_size_t(2, v.listClients(lp, 8));
+}
+
+static void test_vault_select_sets_active()
+{
+    RamProfileStore s;
+    ServiceVault v(s);
+    char err[48];
+    v.importEnvelope(kEnv2, strlen(kEnv2), false, err, sizeof err);
+    TEST_ASSERT_TRUE(v.select("f2"));
+    char a[32];
+    TEST_ASSERT_TRUE(v.activeId(a, sizeof a));
+    TEST_ASSERT_EQUAL_STRING("f2", a);
+    TEST_ASSERT_FALSE(v.select("nope"));
+}
+
 void setup()
 {
     initializeTestEnvironment();
     UNITY_BEGIN();
     RUN_TEST(test_ramstore_write_read_list);
     RUN_TEST(test_ramstore_active_roundtrip);
+    RUN_TEST(test_vault_import_lists_two);
+    RUN_TEST(test_vault_select_sets_active);
     exit(UNITY_END());
 }
 void loop() {}
