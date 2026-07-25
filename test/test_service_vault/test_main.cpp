@@ -62,6 +62,31 @@ static void test_vault_select_sets_active()
     TEST_ASSERT_FALSE(v.select("nope"));
 }
 
+static void test_vault_seq_unknown_then_set()
+{
+    RamProfileStore s;
+    ServiceVault v(s);
+    char err[48];
+    v.importEnvelope(kEnv2, strlen(kEnv2), false, err, sizeof err);
+    TEST_ASSERT_FALSE(v.hasSeq("f1", 0xe5f6a7b8));
+    TEST_ASSERT_EQUAL_UINT32(0, v.seqFor("f1", 0xe5f6a7b8));
+    v.setSeq("f1", 0xe5f6a7b8, 4213);
+    TEST_ASSERT_TRUE(v.hasSeq("f1", 0xe5f6a7b8));
+    TEST_ASSERT_EQUAL_UINT32(4213, v.seqFor("f1", 0xe5f6a7b8));
+}
+
+static void test_vault_seq_two_nodes_independent()
+{
+    RamProfileStore s;
+    ServiceVault v(s);
+    char err[48];
+    v.importEnvelope(kEnv2, strlen(kEnv2), false, err, sizeof err);
+    v.setSeq("f1", 0x11, 10);
+    v.setSeq("f1", 0x22, 20);
+    TEST_ASSERT_EQUAL_UINT32(10, v.seqFor("f1", 0x11));
+    TEST_ASSERT_EQUAL_UINT32(20, v.seqFor("f1", 0x22));
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -70,6 +95,8 @@ void setup()
     RUN_TEST(test_ramstore_active_roundtrip);
     RUN_TEST(test_vault_import_lists_two);
     RUN_TEST(test_vault_select_sets_active);
+    RUN_TEST(test_vault_seq_unknown_then_set);
+    RUN_TEST(test_vault_seq_two_nodes_independent);
     exit(UNITY_END());
 }
 void loop() {}

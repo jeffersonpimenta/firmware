@@ -14,6 +14,11 @@ class ServiceVault {
     bool select(const char *id); // sets active if id exists
     bool activeId(char *out, size_t cap);
 
+    // Anti-replay counters per (client, node), persisted in the separate .seq blob (§11.2).
+    uint32_t seqFor(const char *id, uint32_t node); // 0 if unknown
+    bool hasSeq(const char *id, uint32_t node);
+    void setSeq(const char *id, uint32_t node, uint32_t seq);
+
   private:
     IProfileStore &store;
 };

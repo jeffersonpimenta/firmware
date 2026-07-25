@@ -72,3 +72,58 @@ bool ServiceVault::select(const char *id)
 }
 
 bool ServiceVault::activeId(char *out, size_t cap) { return store.getActive(out, cap); }
+
+// packed .seq = N × {uint32 node, uint32 seq} little-endian
+static constexpr size_t SEQ_MAX = 256;
+static bool findSeqIdx(const uint8_t *buf, size_t bn, uint32_t node, size_t &idx)
+{
+    for (size_t i = 0; i + 8 <= bn; i += 8) {
+        uint32_t nd;
+        memcpy(&nd, buf + i, 4);
+        if (nd == node) {
+            idx = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+uint32_t ServiceVault::seqFor(const char *id, uint32_t node)
+{
+    uint8_t buf[SEQ_MAX * 8];
+    size_t bn = 0;
+    store.readSeq(id, buf, sizeof buf, bn);
+    size_t idx;
+    if (!findSeqIdx(buf, bn, node, idx))
+        return 0;
+    uint32_t s;
+    memcpy(&s, buf + idx + 4, 4);
+    return s;
+}
+
+bool ServiceVault::hasSeq(const char *id, uint32_t node)
+{
+    uint8_t buf[SEQ_MAX * 8];
+    size_t bn = 0;
+    store.readSeq(id, buf, sizeof buf, bn);
+    size_t idx;
+    return findSeqIdx(buf, bn, node, idx);
+}
+
+void ServiceVault::setSeq(const char *id, uint32_t node, uint32_t seq)
+{
+    uint8_t buf[SEQ_MAX * 8];
+    size_t bn = 0;
+    store.readSeq(id, buf, sizeof buf, bn);
+    size_t idx;
+    if (findSeqIdx(buf, bn, node, idx)) {
+        memcpy(buf + idx + 4, &seq, 4);
+    } else {
+        if (bn + 8 > sizeof buf)
+            return;
+        memcpy(buf + bn, &node, 4);
+        memcpy(buf + bn + 4, &seq, 4);
+        bn += 8;
+    }
+    store.writeSeq(id, buf, bn);
+}
