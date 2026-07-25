@@ -124,6 +124,31 @@ static void test_validate_rejects_bad_psk()
     TEST_ASSERT_FALSE(validateEnvelope(bad, strlen(bad), err, sizeof err));
 }
 
+static void test_extractLight_fields()
+{
+    const char *cl = "{\"id\":\"fazenda-sp-01\",\"nome\":\"Boa Vista\","
+                     "\"canal\":{\"nome\":\"bv-irrig\",\"psk_b64\":\"1PG7Og==\",\"modem_preset\":\"LONG_FAST\"},"
+                     "\"gateway\":\"!a1b2c3d4\","
+                     "\"estacoes\":[{\"no\":\"!e5f6a7b8\",\"nome\":\"Pasto\",\"lat\":-221000000,\"lon\":-476000000}]}";
+    Slice s{cl, strlen(cl)};
+    LightProfile p;
+    TEST_ASSERT_TRUE(extractLight(s, p));
+    TEST_ASSERT_EQUAL_STRING("fazenda-sp-01", p.id);
+    TEST_ASSERT_EQUAL_STRING("bv-irrig", p.canalNome);
+    TEST_ASSERT_EQUAL_UINT8(0, p.preset); // LONG_FAST
+    TEST_ASSERT_EQUAL_HEX32(0xa1b2c3d4, p.gateway);
+    TEST_ASSERT_EQUAL_UINT8(1, p.estacaoCount);
+    TEST_ASSERT_EQUAL_HEX32(0xe5f6a7b8, p.estacoes[0].node);
+    TEST_ASSERT_EQUAL_INT32(-221000000, p.estacoes[0].lat);
+}
+
+static void test_preset_roundtrip()
+{
+    TEST_ASSERT_EQUAL_UINT8(1, presetFromString("LONG_SLOW"));
+    TEST_ASSERT_EQUAL_STRING("LONG_FAST", presetToString(0));
+    TEST_ASSERT_EQUAL_UINT8(0, presetFromString("garbage")); // default
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -138,6 +163,8 @@ void setup()
     RUN_TEST(test_validate_ok);
     RUN_TEST(test_validate_rejects_bad_fmt);
     RUN_TEST(test_validate_rejects_bad_psk);
+    RUN_TEST(test_extractLight_fields);
+    RUN_TEST(test_preset_roundtrip);
     exit(UNITY_END());
 }
 

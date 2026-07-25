@@ -28,4 +28,25 @@ bool envelopeForEachClient(const char *json, size_t n, void *ctx, bool (*cb)(voi
 // fmt=="irrig-vault", version==1, each client has id + gateway + canal.psk_b64 (valid base64).
 bool validateEnvelope(const char *json, size_t n, char *err, size_t errCap);
 
+// ── Light profile (operational fields kept in RAM; §11.2 parse-light) ────────
+struct LightStation {
+    uint32_t node = 0;
+    char name[24] = {0};
+    int32_t lat = 0, lon = 0;
+};
+struct LightProfile {
+    char id[32] = {0};
+    char nome[32] = {0};
+    char canalNome[13] = {0}; // Meshtastic channel name ≤ 12 + NUL
+    char pskB64[48] = {0};
+    uint8_t preset = 0; // ModemPreset enum value
+    uint32_t gateway = 0;
+    LightStation estacoes[16];
+    uint8_t estacaoCount = 0;
+};
+uint8_t presetFromString(const char *s); // "LONG_FAST"→0…; default LONG_FAST(0)
+const char *presetToString(uint8_t p);
+uint32_t parseNodeHex(const char *s); // "!a1b2c3d4"→0xa1b2c3d4; leading '!' optional
+bool extractLight(Slice client, LightProfile &out);
+
 } // namespace IrrigationService

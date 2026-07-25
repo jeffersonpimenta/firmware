@@ -316,4 +316,70 @@ bool validateEnvelope(const char *json, size_t n, char *err, size_t errCap)
     return v.ok;
 }
 
+// ── Light profile extraction ────────────────────────────────────────────────
+
+static const char *kPresets[] = {"LONG_FAST",  "LONG_SLOW",  "VERY_LONG_SLOW", "MEDIUM_SLOW",
+                                 "MEDIUM_FAST", "SHORT_SLOW", "SHORT_FAST",     "LONG_MODERATE"};
+uint8_t presetFromString(const char *s)
+{
+    for (uint8_t i = 0; i < 8; i++)
+        if (strcmp(s, kPresets[i]) == 0)
+            return i;
+    return 0;
+}
+const char *presetToString(uint8_t p) { return (p < 8) ? kPresets[p] : kPresets[0]; }
+
+uint32_t parseNodeHex(const char *s)
+{
+    if (*s == '!')
+        ++s;
+    return (uint32_t)strtoul(s, nullptr, 16);
+}
+
+struct EstCtx {
+    LightProfile *p;
+};
+static bool estCb(void *c, Slice el)
+{
+    auto *e = (EstCtx *)c;
+    LightProfile *p = e->p;
+    if (p->estacaoCount >= 16)
+        return false;
+    LightStation &st = p->estacoes[p->estacaoCount];
+    char no[16];
+    if (jsonStr(el, "no", no, sizeof no))
+        st.node = parseNodeHex(no);
+    jsonStr(el, "nome", st.name, sizeof st.name);
+    int64_t v;
+    st.lat = jsonInt(el, "lat", v) ? (int32_t)v : 0;
+    st.lon = jsonInt(el, "lon", v) ? (int32_t)v : 0;
+    p->estacaoCount++;
+    return true;
+}
+
+bool extractLight(Slice client, LightProfile &out)
+{
+    out = LightProfile{};
+    if (!jsonStr(client, "id", out.id, sizeof out.id) || out.id[0] == 0)
+        return false;
+    jsonStr(client, "nome", out.nome, sizeof out.nome);
+    char gw[16];
+    if (jsonStr(client, "gateway", gw, sizeof gw))
+        out.gateway = parseNodeHex(gw);
+    Slice canal;
+    if (jsonMember(client.p, client.n, "canal", canal)) {
+        jsonStr(canal, "nome", out.canalNome, sizeof out.canalNome);
+        jsonStr(canal, "psk_b64", out.pskB64, sizeof out.pskB64);
+        char pre[24];
+        if (jsonStr(canal, "modem_preset", pre, sizeof pre))
+            out.preset = presetFromString(pre);
+    }
+    Slice est;
+    if (jsonMember(client.p, client.n, "estacoes", est)) {
+        EstCtx c{&out};
+        jsonForEachArray(est, &c, estCb);
+    }
+    return true;
+}
+
 } // namespace IrrigationService
