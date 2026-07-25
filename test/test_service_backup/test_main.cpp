@@ -149,6 +149,31 @@ static void test_preset_roundtrip()
     TEST_ASSERT_EQUAL_UINT8(0, presetFromString("garbage")); // default
 }
 
+static void test_buildClientBackup_roundtrips_through_extractLight()
+{
+    BackupSource s{};
+    s.id = "f1";
+    s.nome = "A";
+    s.canalNome = "c1";
+    s.pskB64 = "1PG7Og==";
+    s.preset = 0;
+    s.gateway = 0xa1b2c3d4;
+    s.estacoesJson = "[{\"no\":\"!e5f6a7b8\",\"nome\":\"P\",\"lat\":10,\"lon\":20}]";
+    s.snapshotEpochJson = "{\"!e5f6a7b8\":17}";
+    char buf[1024];
+    size_t n = buildClientBackup(s, buf, sizeof buf);
+    TEST_ASSERT_TRUE(n > 0);
+    Slice cl{buf, n};
+    LightProfile p;
+    TEST_ASSERT_TRUE(extractLight(cl, p));
+    TEST_ASSERT_EQUAL_STRING("f1", p.id);
+    TEST_ASSERT_EQUAL_HEX32(0xa1b2c3d4, p.gateway);
+    TEST_ASSERT_EQUAL_HEX32(0xe5f6a7b8, p.estacoes[0].node);
+    Slice cfg;
+    TEST_ASSERT_TRUE(jsonMember(buf, n, "config", cfg));
+    TEST_ASSERT_TRUE(cfg.n > 0);
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -165,6 +190,7 @@ void setup()
     RUN_TEST(test_validate_rejects_bad_psk);
     RUN_TEST(test_extractLight_fields);
     RUN_TEST(test_preset_roundtrip);
+    RUN_TEST(test_buildClientBackup_roundtrips_through_extractLight);
     exit(UNITY_END());
 }
 

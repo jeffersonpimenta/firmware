@@ -49,4 +49,23 @@ const char *presetToString(uint8_t p);
 uint32_t parseNodeHex(const char *s); // "!a1b2c3d4"→0xa1b2c3d4; leading '!' optional
 bool extractLight(Slice client, LightProfile &out);
 
+// ── §5.5 client backup assembly (glue builds sub-arrays via IrrigationWeb::build*) ──
+struct BackupSource {
+    const char *id = "";
+    const char *nome = "";
+    const char *canalNome = "";
+    const char *pskB64 = "";
+    uint8_t preset = 0;
+    uint32_t gateway = 0;
+    const char *estacoesJson = "[]";      // "[{no,nome,lat,lon}]"
+    const char *snapshotEpochJson = "{}"; // "{\"!e5f6a7b8\":17}"
+    const char *zonasJson = "[]";
+    const char *programasJson = "[]";
+    const char *intertravamentosJson = "[]";
+    const char *gruposJson = "[]";
+    const char *sensorNamesJson = "[]";
+    const char *seqJson = ""; // "" to omit
+};
+size_t buildClientBackup(const BackupSource &s, char *buf, size_t cap);
+
 } // namespace IrrigationService

@@ -1,4 +1,6 @@
 #include "modules/irrigation/ServiceBackup.h"
+#include "modules/irrigation/IrrigationWebApi.h" // JsonWriter
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
@@ -380,6 +382,48 @@ bool extractLight(Slice client, LightProfile &out)
         jsonForEachArray(est, &c, estCb);
     }
     return true;
+}
+
+// ── §5.5 client backup assembly ─────────────────────────────────────────────
+
+size_t buildClientBackup(const BackupSource &s, char *buf, size_t cap)
+{
+    IrrigationWeb::JsonWriter w(buf, cap);
+    char gw[12];
+    snprintf(gw, sizeof gw, "!%08x", s.gateway);
+    w.beginObject();
+    w.keyStr("id", s.id);
+    w.keyStr("nome", s.nome ? s.nome : "");
+    w.key("canal");
+    w.beginObject();
+    w.keyStr("nome", s.canalNome ? s.canalNome : "");
+    w.keyStr("psk_b64", s.pskB64 ? s.pskB64 : "");
+    w.keyStr("modem_preset", presetToString(s.preset));
+    w.endObject();
+    w.keyStr("gateway", gw);
+    w.key("estacoes");
+    w.raw(s.estacoesJson ? s.estacoesJson : "[]");
+    w.key("snapshot_epoch");
+    w.raw(s.snapshotEpochJson ? s.snapshotEpochJson : "{}");
+    if (s.seqJson && s.seqJson[0]) {
+        w.key("seq");
+        w.raw(s.seqJson);
+    }
+    w.key("config");
+    w.beginObject();
+    w.key("zonas");
+    w.raw(s.zonasJson ? s.zonasJson : "[]");
+    w.key("programas");
+    w.raw(s.programasJson ? s.programasJson : "[]");
+    w.key("intertravamentos");
+    w.raw(s.intertravamentosJson ? s.intertravamentosJson : "[]");
+    w.key("grupos");
+    w.raw(s.gruposJson ? s.gruposJson : "[]");
+    w.key("sensorNames");
+    w.raw(s.sensorNamesJson ? s.sensorNamesJson : "[]");
+    w.endObject();
+    w.endObject();
+    return w.done();
 }
 
 } // namespace IrrigationService
