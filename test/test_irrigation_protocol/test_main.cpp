@@ -364,6 +364,89 @@ static void test_cmd_maint_roundtrip()
     TEST_ASSERT_EQUAL_UINT16(15, out.durationMin);
 }
 
+static void test_serviceFlag_setAndRead()
+{
+    uint8_t buf[MAX_PAYLOAD];
+    CmdValvula in = {0, 1, 600};
+    size_t n = encodeCmdValvula(buf, sizeof(buf), 5, in);
+    TEST_ASSERT_GREATER_THAN(HEADER_LEN, n);
+
+    Header h0;
+    TEST_ASSERT_TRUE(decodeHeader(buf, n, h0));
+    TEST_ASSERT_EQUAL_UINT16(0, h0.flags & FLAG_FROM_SERVICE); // default: sem marca
+
+    setServiceFlag(buf, n);
+
+    Header h1;
+    TEST_ASSERT_TRUE(decodeHeader(buf, n, h1));
+    TEST_ASSERT_TRUE((h1.flags & FLAG_FROM_SERVICE) != 0); // marcado
+    // corpo intacto após marcar
+    CmdValvula out;
+    TEST_ASSERT_TRUE(decodeCmdValvula(buf, n, out));
+    TEST_ASSERT_EQUAL_UINT16(600, out.durationS);
+}
+
+static void test_resyncSeq_roundTrip()
+{
+    uint8_t buf[MAX_PAYLOAD];
+    ResyncSeq in = {1, 4242}; // REPLY carregando lastSeq
+    size_t n = encodeResyncSeq(buf, sizeof(buf), 7, in);
+    TEST_ASSERT_GREATER_THAN(HEADER_LEN, n);
+
+    Header h;
+    TEST_ASSERT_TRUE(decodeHeader(buf, n, h));
+    TEST_ASSERT_EQUAL_UINT8(MSG_RESYNC_SEQ, h.type);
+
+    ResyncSeq out;
+    TEST_ASSERT_TRUE(decodeResyncSeq(buf, n, out));
+    TEST_ASSERT_EQUAL_UINT8(1, out.kind);
+    TEST_ASSERT_EQUAL_UINT32(4242, out.lastSeq);
+}
+
+static void test_pingSurvey_roundTrip()
+{
+    uint8_t buf[MAX_PAYLOAD];
+    PingSurvey in = {};
+    in.kind = 1; // REPLY
+    in.role = 1; // GATEWAY
+    in.configEpoch = 17;
+    in.vbatCentiV = 1250;
+    in.fwVersion = APP_FW_VERSION;
+    in.latE7 = -221000000;
+    in.lonE7 = -476000000;
+    size_t n = encodePingSurvey(buf, sizeof(buf), 9, in);
+    TEST_ASSERT_GREATER_THAN(HEADER_LEN, n);
+
+    Header h;
+    TEST_ASSERT_TRUE(decodeHeader(buf, n, h));
+    TEST_ASSERT_EQUAL_UINT8(MSG_PING_SURVEY, h.type);
+
+    PingSurvey out;
+    TEST_ASSERT_TRUE(decodePingSurvey(buf, n, out));
+    TEST_ASSERT_EQUAL_UINT8(1, out.kind);
+    TEST_ASSERT_EQUAL_UINT8(1, out.role);
+    TEST_ASSERT_EQUAL_UINT32(17, out.configEpoch);
+    TEST_ASSERT_EQUAL_UINT16(1250, out.vbatCentiV);
+    TEST_ASSERT_EQUAL_UINT16(APP_FW_VERSION, out.fwVersion);
+    TEST_ASSERT_EQUAL_INT32(-221000000, out.latE7);
+    TEST_ASSERT_EQUAL_INT32(-476000000, out.lonE7);
+}
+
+static void test_resyncPing_truncated_rejected()
+{
+    uint8_t buf[MAX_PAYLOAD];
+    ResyncSeq r = {0, 0};
+    size_t nr = encodeResyncSeq(buf, sizeof(buf), 1, r);
+    ResyncSeq ro;
+    TEST_ASSERT_FALSE(decodeResyncSeq(buf, nr - 1, ro)); // corta 1 byte do lastSeq
+
+    PingSurvey p = {};
+    p.kind = 1;
+    size_t np = encodePingSurvey(buf, sizeof(buf), 1, p);
+    PingSurvey po;
+    TEST_ASSERT_FALSE(decodePingSurvey(buf, np - 1, po)); // corta 1 byte do lonE7
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -392,6 +475,10 @@ void setup()
     RUN_TEST(test_heartbeat_sensor_count_overflow_rejected);
     RUN_TEST(test_evento_tamper_roundtrip);
     RUN_TEST(test_cmd_maint_roundtrip);
+    RUN_TEST(test_serviceFlag_setAndRead);
+    RUN_TEST(test_resyncSeq_roundTrip);
+    RUN_TEST(test_pingSurvey_roundTrip);
+    RUN_TEST(test_resyncPing_truncated_rejected);
     exit(UNITY_END());
 }
 

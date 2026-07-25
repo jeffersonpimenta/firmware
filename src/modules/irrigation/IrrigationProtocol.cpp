@@ -367,4 +367,54 @@ bool decodeCmdMaint(const uint8_t *buf, size_t len, CmdMaint &out)
     return r.ok;
 }
 
+size_t encodeResyncSeq(uint8_t *buf, size_t len, uint32_t seq, const ResyncSeq &m)
+{
+    Writer w{buf, len};
+    writeHeader(w, MSG_RESYNC_SEQ, seq);
+    w.u8(m.kind);
+    w.u32(m.lastSeq);
+    return w.ok ? w.pos : 0;
+}
+
+bool decodeResyncSeq(const uint8_t *buf, size_t len, ResyncSeq &out)
+{
+    Reader r = bodyReader(buf, len);
+    out.kind = r.u8();
+    out.lastSeq = r.u32();
+    return r.ok;
+}
+
+size_t encodePingSurvey(uint8_t *buf, size_t len, uint32_t seq, const PingSurvey &m)
+{
+    Writer w{buf, len};
+    writeHeader(w, MSG_PING_SURVEY, seq);
+    w.u8(m.kind);
+    w.u8(m.role);
+    w.u32(m.configEpoch);
+    w.u16(m.vbatCentiV);
+    w.u16(m.fwVersion);
+    w.u32((uint32_t)m.latE7); // Writer não tem i32; cast round-trips em dois-complementos
+    w.u32((uint32_t)m.lonE7);
+    return w.ok ? w.pos : 0;
+}
+
+bool decodePingSurvey(const uint8_t *buf, size_t len, PingSurvey &out)
+{
+    Reader r = bodyReader(buf, len);
+    out.kind = r.u8();
+    out.role = r.u8();
+    out.configEpoch = r.u32();
+    out.vbatCentiV = r.u16();
+    out.fwVersion = r.u16();
+    out.latE7 = (int32_t)r.u32();
+    out.lonE7 = (int32_t)r.u32();
+    return r.ok;
+}
+
+void setServiceFlag(uint8_t *buf, size_t len)
+{
+    if (len >= HEADER_LEN)
+        buf[2] |= (uint8_t)(FLAG_FROM_SERVICE & 0xff); // flags LE começa no offset 2
+}
+
 } // namespace IrrigationProto

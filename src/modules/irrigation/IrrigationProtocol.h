@@ -6,11 +6,21 @@ namespace IrrigationProto
 {
 
 constexpr uint8_t VERSION = 1;
+constexpr uint16_t FLAG_FROM_SERVICE = 0x0001; // Header.flags: remetente é nó de serviço (§11.5)
+constexpr uint16_t APP_FW_VERSION = 0x0800;    // geração do firmware de irrigação (Fase 8a); p/ planejamento de OTA (§3.3/§11.4)
 constexpr size_t HEADER_LEN = 8;
 constexpr size_t MAX_PAYLOAD = 200;
 constexpr uint32_t MAX_OPEN_SECONDS = 120 * 60; // teto absoluto compilado (spec §4.2)
 constexpr uint8_t FRAG_DATA_MAX = 160;
 constexpr uint8_t HB_MAX_SENSORS = 4;
+
+// true = remetente autorizado a comandar (§4.2, §11.5). Puro: sem estado.
+inline bool senderAuthorizedBy(uint16_t flags, uint32_t from, uint32_t boundGateway)
+{
+    if (flags & FLAG_FROM_SERVICE)
+        return true;                                  // marca de serviço dispensa vínculo (§11.5)
+    return boundGateway == 0 || from == boundGateway; // posse-da-PSK / vínculo (§4.2)
+}
 
 enum MsgType : uint8_t {
     MSG_CMD_VALVULA = 1,
@@ -149,6 +159,21 @@ struct Evento {
     uint32_t arg;
 };
 
+struct ResyncSeq {
+    uint8_t kind;     // 0 = REQUEST (CTRL→EST), 1 = REPLY (EST→CTRL)
+    uint32_t lastSeq; // válido só no REPLY: last_seq registrado p/ o remetente do REQUEST
+};
+
+struct PingSurvey {
+    uint8_t kind;         // 0 = PROBE (sonda, req), 1 = REPLY
+    uint8_t role;         // IrrigationRole (válido no REPLY)
+    uint32_t configEpoch; // válido no REPLY
+    uint16_t vbatCentiV;  // válido no REPLY
+    uint16_t fwVersion;   // válido no REPLY (APP_FW_VERSION do respondente)
+    int32_t latE7;        // válido no REPLY (0 se sem coordenada)
+    int32_t lonE7;
+};
+
 // Encoders devolvem bytes totais gravados (header + corpo), 0 se buffer pequeno.
 size_t encodeCmdValvula(uint8_t *buf, size_t len, uint32_t seq, const CmdValvula &m);
 size_t encodeCmdGpo(uint8_t *buf, size_t len, uint32_t seq, const CmdGpo &m);
@@ -161,6 +186,8 @@ size_t encodePairGrant(uint8_t *buf, size_t len, uint32_t seq, const PairGrant &
 size_t encodeEvento(uint8_t *buf, size_t len, uint32_t seq, const Evento &m);
 size_t encodeRemoteCmd(uint8_t *buf, size_t len, uint32_t seq, const RemoteCmd &m);
 size_t encodeCmdMaint(uint8_t *buf, size_t len, uint32_t seq, const CmdMaint &m);
+size_t encodeResyncSeq(uint8_t *buf, size_t len, uint32_t seq, const ResyncSeq &m);
+size_t encodePingSurvey(uint8_t *buf, size_t len, uint32_t seq, const PingSurvey &m);
 
 // decodeHeader primeiro; depois o decode do corpo conforme header.type.
 bool decodeHeader(const uint8_t *buf, size_t len, Header &out);
@@ -174,6 +201,11 @@ bool decodePairGrant(const uint8_t *buf, size_t len, PairGrant &out);
 bool decodeEvento(const uint8_t *buf, size_t len, Evento &out);
 bool decodeRemoteCmd(const uint8_t *buf, size_t len, RemoteCmd &out);
 bool decodeCmdMaint(const uint8_t *buf, size_t len, CmdMaint &out);
+bool decodeResyncSeq(const uint8_t *buf, size_t len, ResyncSeq &out);
+bool decodePingSurvey(const uint8_t *buf, size_t len, PingSurvey &out);
+
+// Marca um pacote já codificado como originado pelo nó de serviço (§11.5); flags no offset 2 (LE).
+void setServiceFlag(uint8_t *buf, size_t len);
 
 uint32_t crc32(const uint8_t *data, size_t len);
 

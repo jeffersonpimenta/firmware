@@ -1,8 +1,11 @@
 #include "Arduino.h"
 #include "TestUtil.h"
+#include "modules/irrigation/IrrigationProtocol.h"
 #include "modules/irrigation/RateLimiter.h"
 #include "modules/irrigation/SeqTable.h"
 #include <unity.h>
+
+using namespace IrrigationProto;
 
 void setUp(void) {}
 void tearDown(void) {}
@@ -67,6 +70,22 @@ static void test_rateLimiter_millisRollover()
     TEST_ASSERT_TRUE(rl.allow(0xFFFFF000u + 60000)); // atravessa o wrap
 }
 
+static void test_senderAuthorized_unbound_acceptsAny()
+{
+    TEST_ASSERT_TRUE(senderAuthorizedBy(0, 0x1234, 0)); // boundGateway==0 → modo aberto
+}
+
+static void test_senderAuthorized_bound_onlyGateway()
+{
+    TEST_ASSERT_TRUE(senderAuthorizedBy(0, 0xAAAA, 0xAAAA));  // from==gateway vinculado
+    TEST_ASSERT_FALSE(senderAuthorizedBy(0, 0xBBBB, 0xAAAA)); // outro nó → rejeitado
+}
+
+static void test_senderAuthorized_serviceFlag_bypassesBinding()
+{
+    TEST_ASSERT_TRUE(senderAuthorizedBy(FLAG_FROM_SERVICE, 0xBBBB, 0xAAAA)); // marca dispensa vínculo
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -78,6 +97,9 @@ void setup()
     RUN_TEST(test_rateLimiter_blocksAboveLimit);
     RUN_TEST(test_rateLimiter_windowResets);
     RUN_TEST(test_rateLimiter_millisRollover);
+    RUN_TEST(test_senderAuthorized_unbound_acceptsAny);
+    RUN_TEST(test_senderAuthorized_bound_onlyGateway);
+    RUN_TEST(test_senderAuthorized_serviceFlag_bypassesBinding);
     exit(UNITY_END());
 }
 
