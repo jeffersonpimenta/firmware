@@ -4,6 +4,7 @@
 #include "modules/irrigation/InterlockTable.h"
 #include "modules/irrigation/IrrigationProtocol.h"
 #include "modules/irrigation/ProgramScheduler.h"
+#include "modules/irrigation/SurveyLog.h"
 #include <cstddef>
 #include <cstdint>
 
@@ -181,5 +182,19 @@ struct GroupStatusView {
     uint8_t openCount = 0;
 };
 size_t buildGroupsStatus(const GroupStatusView *views, size_t n, char *buf, size_t cap);
+
+// ── Fase 8d — site survey (§8.5) ─────────────────────────────────────────────
+// Serializa pontos de survey p/ a tabela Cobertura do painel. idadeS = nowS - uptimeS.
+size_t buildSurvey(const SurveyPoint *pts, size_t n, uint32_t nowS, char *buf, size_t cap);
+
+struct SurveyStartReq {
+    uint16_t intervalS = 5;
+    uint16_t timeoutS = 300;
+    int32_t latE7 = 0, lonE7 = 0;
+    bool hasCoord = false;
+};
+// {intervalS?, timeoutS?, lat?, lon?}. Defaults 5 s / 300 s; clamp [1,3600].
+// hasCoord = lat E lon presentes. Nunca falha (pr.ok sempre true).
+ParseResult parseSurveyStart(const char *json, size_t len, SurveyStartReq &out);
 
 } // namespace IrrigationWeb

@@ -853,6 +853,63 @@ static void test_buildGroupsStatus_basic()
     TEST_ASSERT_TRUE(contains(buf, "\"abertas\":2"));
 }
 
+// ── Fase 8d — site survey ────────────────────────────────────────────────────
+static void test_buildSurvey_two_points()
+{
+    SurveyPoint pts[2] = {};
+    pts[0].node = 0xa1b2c3d4;
+    pts[0].role = 0;
+    pts[0].snrQuarterDb = 20; // 5 dB
+    pts[0].rssiDbm = -95;
+    pts[0].hasCoord = true;
+    pts[0].latE7 = -221000000;
+    pts[0].lonE7 = -476000000;
+    pts[0].uptimeS = 40;
+    pts[1].node = 0xe5f6a7b8;
+    pts[1].uptimeS = 90;
+    char buf[512];
+    size_t n = buildSurvey(pts, 2, /*nowS*/ 100, buf, sizeof buf);
+    TEST_ASSERT_TRUE(n > 0);
+    buf[n] = 0;
+    TEST_ASSERT_TRUE(buf[0] == '[');
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"no\":"));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"snr\":20"));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"idadeS\":60")); // 100 - 40
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"coord\":true"));
+}
+
+static void test_parseSurveyStart_full()
+{
+    const char *body = "{\"intervalS\":10,\"timeoutS\":600,\"lat\":-221000000,\"lon\":-476000000}";
+    SurveyStartReq r;
+    ParseResult pr = parseSurveyStart(body, strlen(body), r);
+    TEST_ASSERT_TRUE(pr.ok);
+    TEST_ASSERT_EQUAL_UINT16(10, r.intervalS);
+    TEST_ASSERT_EQUAL_UINT16(600, r.timeoutS);
+    TEST_ASSERT_TRUE(r.hasCoord);
+    TEST_ASSERT_EQUAL_INT32(-221000000, r.latE7);
+    TEST_ASSERT_EQUAL_INT32(-476000000, r.lonE7);
+}
+
+static void test_parseSurveyStart_defaults_and_nocoord()
+{
+    const char *body = "{}";
+    SurveyStartReq r;
+    parseSurveyStart(body, strlen(body), r);
+    TEST_ASSERT_EQUAL_UINT16(5, r.intervalS);
+    TEST_ASSERT_EQUAL_UINT16(300, r.timeoutS);
+    TEST_ASSERT_FALSE(r.hasCoord);
+}
+
+static void test_parseSurveyStart_clamps()
+{
+    const char *body = "{\"intervalS\":0,\"timeoutS\":99999}";
+    SurveyStartReq r;
+    parseSurveyStart(body, strlen(body), r);
+    TEST_ASSERT_EQUAL_UINT16(1, r.intervalS);
+    TEST_ASSERT_EQUAL_UINT16(3600, r.timeoutS);
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -919,6 +976,11 @@ void setup()
     RUN_TEST(test_buildGroups_empty);
     RUN_TEST(test_groupStateLabel_map);
     RUN_TEST(test_buildGroupsStatus_basic);
+    // Fase 8d — site survey
+    RUN_TEST(test_buildSurvey_two_points);
+    RUN_TEST(test_parseSurveyStart_full);
+    RUN_TEST(test_parseSurveyStart_defaults_and_nocoord);
+    RUN_TEST(test_parseSurveyStart_clamps);
     exit(UNITY_END());
 }
 
