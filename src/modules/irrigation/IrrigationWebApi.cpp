@@ -634,6 +634,7 @@ ParseResult parseGroupUpsert(const char *json, size_t len, HydraulicGroup &out)
     if (zCount < 1) r.fail("grupo sem zonas");
     if (minOpen < 1) r.fail("minOpen >= 1");
     if (maxOpen != 0 && maxOpen < minOpen) r.fail("maxOpen < minOpen");
+    if (zCount >= 1 && minOpen > zCount) r.fail("minOpen > numero de zonas");
     if (transicao != 0 && transicao != 1) r.fail("transicao invalida");
 
     if (!r.ok) return r;

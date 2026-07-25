@@ -1700,24 +1700,31 @@ bool IrrigationModule::gwRunGroupCommand(uint8_t id, bool open, uint16_t duratio
         uint16_t best = 0;
         for (uint8_t i = 0; i < g->zoneCount && i < 8; i++) {
             const Zone *z = gateway.zones.byId(g->zoneIds[i]);
-            if (z && z->maxMin > 0 && (uint16_t)(z->maxMin * 60) > best)
-                best = (uint16_t)(z->maxMin * 60);
+            if (z && z->maxMin > 0) {
+                uint16_t candSecs = (uint16_t)(z->maxMin * 60);
+                if (candSecs > best) best = candSecs;
+            }
         }
         dur = best ? best : 600;
     }
     if (open && dur > HydraulicGroupEngine::PUMP_CEILING_S)
         dur = HydraulicGroupEngine::PUMP_CEILING_S;
+    bool anyOpened = false;
     for (uint8_t i = 0; i < g->zoneCount && i < 8; i++) {
         uint8_t zid = g->zoneIds[i];
         if (open) {
             if (gateway.interlockEngine.zoneVerdict(zid).bloqueada)
                 continue; // pula zona bloqueada
             gateway.groupEngine.setDesired(id, zid, true, dur);
+            anyOpened = true;
         } else {
             gateway.groupEngine.setDesired(id, zid, false, 0);
         }
     }
-    auditEvent(AuditOrigin::PAINEL, open ? AuditAction::ABRIR : AuditAction::FECHAR, id, AuditResult::OK);
+    if (open && !anyOpened)
+        auditEvent(AuditOrigin::PAINEL, AuditAction::CMD_REJEITADO, id, AuditResult::NACK);
+    else
+        auditEvent(AuditOrigin::PAINEL, open ? AuditAction::ABRIR : AuditAction::FECHAR, id, AuditResult::OK);
     return true;
 }
 

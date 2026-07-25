@@ -659,6 +659,13 @@ static void test_parseGroupUpsert_rejectsMinGtMax()
     TEST_ASSERT_FALSE(parseGroupUpsert(j, strlen(j), out).ok);
 }
 
+static void test_parseGroupUpsert_rejectsMinGtZoneCount()
+{
+    const char *j = "{\"id\":1,\"zonas\":[3],\"minOpen\":5,\"maxOpen\":5}";
+    HydraulicGroup out;
+    TEST_ASSERT_FALSE(parseGroupUpsert(j, strlen(j), out).ok);
+}
+
 static void test_parseGroupUpsert_maxZeroMeansNoCeiling()
 {
     const char *j = "{\"id\":1,\"zonas\":[3,4],\"minOpen\":2,\"maxOpen\":0}";
@@ -817,10 +824,19 @@ static void test_buildGroups_empty()
 
 static void test_groupStateLabel_map()
 {
-    TEST_ASSERT_EQUAL_STRING("ocioso", groupStateLabel(0));   // IDLE
-    TEST_ASSERT_EQUAL_STRING("rodando", groupStateLabel(4));  // RUNNING
-    TEST_ASSERT_EQUAL_STRING("transicao", groupStateLabel(6)); // X_OVERLAP
-    TEST_ASSERT_EQUAL_STRING("adiado", groupStateLabel(11));  // DEFERRED
+    TEST_ASSERT_EQUAL_STRING("ocioso", groupStateLabel(0));
+    TEST_ASSERT_EQUAL_STRING("abrindo", groupStateLabel(1));
+    TEST_ASSERT_EQUAL_STRING("aguardando_partida", groupStateLabel(2));
+    TEST_ASSERT_EQUAL_STRING("partindo_bomba", groupStateLabel(3));
+    TEST_ASSERT_EQUAL_STRING("rodando", groupStateLabel(4));
+    TEST_ASSERT_EQUAL_STRING("transicao", groupStateLabel(5));
+    TEST_ASSERT_EQUAL_STRING("transicao", groupStateLabel(6));
+    TEST_ASSERT_EQUAL_STRING("transicao", groupStateLabel(7));
+    TEST_ASSERT_EQUAL_STRING("parando_bomba", groupStateLabel(8));
+    TEST_ASSERT_EQUAL_STRING("drenando", groupStateLabel(9));
+    TEST_ASSERT_EQUAL_STRING("fechando", groupStateLabel(10));
+    TEST_ASSERT_EQUAL_STRING("adiado", groupStateLabel(11));
+    TEST_ASSERT_EQUAL_STRING("desconhecido", groupStateLabel(99));
 }
 
 static void test_buildGroupsStatus_basic()
@@ -886,6 +902,7 @@ void setup()
     RUN_TEST(test_parseGroupUpsert_ok);
     RUN_TEST(test_parseGroupUpsert_idZeroAllowed);
     RUN_TEST(test_parseGroupUpsert_rejectsMinGtMax);
+    RUN_TEST(test_parseGroupUpsert_rejectsMinGtZoneCount);
     RUN_TEST(test_parseGroupUpsert_maxZeroMeansNoCeiling);
     RUN_TEST(test_parseGroupUpsert_rejectsNoZones);
     RUN_TEST(test_parseGroupUpsert_zonasOverflowGuard);

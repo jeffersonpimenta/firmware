@@ -1207,9 +1207,9 @@ async function renderGrupos() {
     `<button class="btn dashed" data-gnew>+ Novo grupo</button>` +
     (cards || '<div class="empty">Nenhum grupo hidráulico.</div>');
 
-  view.querySelector('[data-gnew]').addEventListener('click', () => groupForm(null, zs, rows));
+  view.querySelector('[data-gnew]').addEventListener('click', () => groupForm(null, zs));
   view.querySelectorAll('[data-gedit]').forEach((b) => b.addEventListener('click', () => {
-    groupForm(rows.find((x) => x && num(x.id) === num(b.dataset.gedit)) || null, zs, rows);
+    groupForm(rows.find((x) => x && num(x.id) === num(b.dataset.gedit)) || null, zs);
   }));
   view.querySelectorAll('[data-gdel]').forEach((b) => b.addEventListener('click', async () => {
     if (!confirm('Excluir este grupo?')) return;
@@ -1243,13 +1243,16 @@ async function pollGroupStatus() {
     if (open) open.textContent = num(s.abertas);
     const bombaWrap = view.querySelector(`[data-gbomba="${num(s.id)}"]`);
     if (bombaWrap) {
-      bombaWrap.innerHTML = (s.bomba ? '<span class="chip green">bomba on</span>' : '<span class="chip gray">bomba off</span>') +
-        ` · abertas <span data-gopen="${num(s.id)}">${num(s.abertas)}</span>`;
+      const bombaChip = bombaWrap.querySelector('.chip');
+      if (bombaChip) {
+        bombaChip.className = s.bomba ? 'chip green' : 'chip gray';
+        bombaChip.textContent = s.bomba ? 'bomba on' : 'bomba off';
+      }
     }
   });
 }
 
-function groupForm(group, zones, allGroups) {
+function groupForm(group, zones) {
   const editing = !!group;
   const zs = (Array.isArray(zones) ? zones : []).filter((z) => z && num(z.fonteInput ?? -1) < 0);
   const st = group ? JSON.parse(JSON.stringify(group)) : {
