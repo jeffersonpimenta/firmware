@@ -1429,6 +1429,31 @@ size_t IrrigationModule::svcPortalBuildLog(char *buf, size_t cap)
     return IrrigationWeb::buildServiceLog(svcStore->logReader(), 100, buf, cap);
 }
 
+size_t IrrigationModule::svcPortalExport(char *buf, size_t cap)
+{
+    if (!svc)
+        return 0;
+    return svc->getVault().exportEnvelope(buf, cap); // envelope multi-cliente (plaintext, §11.7)
+}
+
+bool IrrigationModule::svcPortalImport(const char *json, size_t n, bool replace, char *err, size_t errCap)
+{
+    if (!svc)
+        return false;
+    bool ok = svc->getVault().importEnvelope(json, n, replace, err, errCap); // valida em staging + merge por id
+    if (ok)
+        svc->logService(replace ? "import_replace" : "import_merge", 0, gwTimeAdopted());
+    return ok;
+}
+
+bool IrrigationModule::svcPortalSeedConfig(uint32_t node, IrrigationSettings &out)
+{
+    if (!svcReadReady || svcReadNode != node)
+        return false;
+    out = svcReadBlob; // magic/version/role/boundGateway/configEpoch do blob lido → preservados no parse
+    return true;
+}
+
 size_t IrrigationModule::gwBuildBackup(char *buf, size_t cap)
 {
     if (!gwIsGateway())

@@ -48,6 +48,7 @@ using namespace httpsserver;
 #include "mesh/http/ContentHandler.h"
 #include "modules/irrigation/IrrigationWebEndpoints.h"
 #include "modules/irrigation/IrrigationPortalEndpoints.h"
+#include "modules/irrigation/ServicePortalEndpoints.h"
 
 #define DEST_FS_USES_LITTLEFS
 
@@ -121,6 +122,8 @@ void registerHandlers(HTTPServer *insecureServer, HTTPSServer *secureServer)
     registerIrrigationHandlers(secureServer);
     // Portal de campo (Fase 5b): role-agnóstico — /api/portal/* respondem em qualquer papel (não gateado por gwIsGateway).
     registerIrrigationPortalHandlers(secureServer);
+    // Portal do device SERVICO (Fase 8c): /api/portal/service/* respondem só quando role==SERVICO.
+    registerIrrigationServicePortalHandlers(secureServer);
     secureServer->registerNode(nodeRoot); // This has to be last
 
     // Insecure nodes
@@ -147,6 +150,8 @@ void registerHandlers(HTTPServer *insecureServer, HTTPSServer *secureServer)
     registerIrrigationHandlers(insecureServer);
     // Portal de campo (Fase 5b): role-agnóstico — /api/portal/* respondem em qualquer papel (não gateado por gwIsGateway).
     registerIrrigationPortalHandlers(insecureServer);
+    // Portal do device SERVICO (Fase 8c): /api/portal/service/* respondem só quando role==SERVICO.
+    registerIrrigationServicePortalHandlers(insecureServer);
     insecureServer->registerNode(nodeRoot); // This has to be last
 }
 

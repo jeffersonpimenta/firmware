@@ -122,6 +122,9 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     bool svcPortalWriteConfig(const IrrigationWeb::NodeConfigReq &req); // rota DIRECT (§11.6); VIA_GATEWAY=follow-on
     bool svcPortalNodeAction(const IrrigationWeb::NodeAction &a);       // pulso/zona/resync; approve_pair=follow-on
     size_t svcPortalBuildLog(char *buf, size_t cap);
+    size_t svcPortalExport(char *buf, size_t cap); // §11.7 despeja o envelope multi-cliente do cofre
+    bool svcPortalImport(const char *json, size_t n, bool replace, char *err, size_t errCap); // §11.7 valida+merge
+    bool svcPortalSeedConfig(uint32_t node, IrrigationSettings &out); // out = último blob lido do nó (campos geridos)
     uint32_t gwTimeAdopted() const { return 0; } // TODO banca: ts adotado do gateway (HB/ACK); 0=sem RTC
 
   protected:
