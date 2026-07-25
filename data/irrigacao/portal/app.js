@@ -3,6 +3,7 @@ const ORIGENS = ["sistema","cronograma","painel","portal","botao","entrada","int
 const ACOES = ["abrir","fechar","pulso","gpo_on","gpo_off","parear","factory_reset","config_epoch","safe_in","safe_out","tamper","reboot","hiberna_in","hiberna_out","rejeitado"];
 const RESULTADOS = ["ok","nack","timeout"];
 let svcInit = false; // Fase 8c: abas SERVICO ativadas 1× quando role==Serviço
+let lastRole = 0; // Fase 8d: última role vista, escolhe endpoint de survey
 
 async function j(url, opts) {
   const r = await fetch(url, opts);
@@ -98,6 +99,7 @@ async function refresh() {
   if (ok) {
     renderNode(body);
     renderGpos(body);
+    lastRole = body.role;
     if (body.role === 3 && !svcInit) initService(); // §11.8: device SERVICO
   }
   await refreshSensors();
@@ -170,7 +172,7 @@ function initService() {
   svcInit = true;
   document.querySelectorAll(".svc-only").forEach((b) => b.classList.remove("hidden"));
   // Esconde as abas de nó/rede-local; o device SERVICO usa Clientes/Rede(cliente)/Log.
-  document.querySelectorAll('nav.tabs button:not(.svc-only)').forEach((b) => b.classList.add("hidden"));
+  document.querySelectorAll('nav.tabs button:not(.svc-only):not(.survey-tab)').forEach((b) => b.classList.add("hidden"));
   document.querySelector('[data-tab="svcclients"]').click();
   loadClients();
   loadSvcLog();
@@ -307,3 +309,20 @@ document.getElementById("svcLogRefresh").addEventListener("click", loadSvcLog);
 document.getElementById("exportBtn").addEventListener("click", exportVault);
 document.getElementById("importBtn").addEventListener("click", () => importVault(false));
 document.getElementById("importReplaceBtn").addEventListener("click", () => importVault(true));
+
+// ── Fase 8d — modo cobertura (site survey §8.5) ─────────────────────────────
+const svBase = () => (lastRole === 3 ? "/api/portal/service/survey" : "/api/portal/survey");
+document.getElementById("surveyForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const intervalS = +document.getElementById("svInterval").value;
+  const timeoutS = Math.round(+document.getElementById("svTimeout").value * 60);
+  const lat = +document.getElementById("svLat").value, lon = +document.getElementById("svLon").value;
+  const payload = { intervalS, timeoutS };
+  if (lat || lon) { payload.lat = Math.round(lat * 1e7); payload.lon = Math.round(lon * 1e7); }
+  const { ok, body } = await j(svBase() + "/start", { method: "POST", body: JSON.stringify(payload) });
+  document.getElementById("svMsg").textContent = ok ? "Beacon iniciado" : (body.errors || ["erro"]).join("; ");
+});
+document.getElementById("svStop").addEventListener("click", async () => {
+  const { ok } = await j(svBase() + "/stop", { method: "POST" });
+  document.getElementById("svMsg").textContent = ok ? "Beacon parado" : "erro";
+});

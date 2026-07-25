@@ -1334,6 +1334,37 @@ function groupForm(group, zones) {
   render();
 }
 
+// ===== Cobertura (site survey §8.5) =====
+async function renderCobertura() {
+  const COV_ROLES = ['Estação', 'Gateway', 'Repetidor', 'Serviço'];
+  const rows = (await getJson('/survey')) || [];
+  const list = Array.isArray(rows) ? rows : [];
+  const clearRow = `<div class="log-export-row"><button class="btn ghost sm" id="cov-clear">Limpar</button></div>`;
+  const body = list.length
+    ? list.map((r) => {
+        r = r || {};
+        const coord = r.coord ? `${(num(r.lat) / 1e7).toFixed(5)}, ${(num(r.lon) / 1e7).toFixed(5)}` : '—';
+        return `<tr>
+          <td class="mono">${esc(nodeHex(r.no))}</td>
+          <td>${esc(COV_ROLES[num(r.role)] || ('papel ' + num(r.role)))}</td>
+          <td class="mono">${esc(coord)}</td>
+          <td>${esc((num(r.snr) / 4).toFixed(0))}</td>
+          <td>${esc(String(num(r.rssi)))}</td>
+          <td>${esc(fmtSince(r.idadeS))}</td>
+        </tr>`;
+      }).join('')
+    : '<tr><td colspan="6" class="empty">Sem beacons recebidos.</td></tr>';
+  view.innerHTML = clearRow + `<div class="log-table-wrap"><table class="log-table">
+    <thead><tr><th>Nó</th><th>Papel</th><th>Coordenada</th><th>SNR</th><th>RSSI</th><th>Idade</th></tr></thead>
+    <tbody>${body}</tbody></table></div>`;
+  const cb = view.querySelector('#cov-clear');
+  if (cb)
+    cb.addEventListener('click', async () => {
+      await postJson('/survey/clear', {});
+      renderCobertura().catch(() => {});
+    });
+}
+
 // Mapa extensível: programs adicionado na Task 13.
 const RENDER = {
   overview: renderOverview,
@@ -1346,6 +1377,7 @@ const RENDER = {
   intertravamentos: renderIntertravamentos,
   auditlog: renderAuditLog,
   tamper: renderTamper,
+  cobertura: renderCobertura,
 };
 
 async function show(tab) {
@@ -1365,7 +1397,7 @@ async function show(tab) {
   } catch (e) {
     view.innerHTML = '<div class="empty">Erro ao carregar (' + esc(e.message) + ').</div>';
   }
-  if (tab === 'overview' || tab === 'stations' || tab === 'sensores') {
+  if (tab === 'overview' || tab === 'stations' || tab === 'sensores' || tab === 'cobertura') {
     timer = setInterval(() => fn().catch(() => {}), 3000);
   } else if (tab === 'grupos') {
     timer = setInterval(() => pollGroupStatus().catch(() => {}), 3000);
