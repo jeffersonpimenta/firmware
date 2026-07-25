@@ -22,6 +22,9 @@ class ServiceVault {
     // Compose the multi-client envelope from stored profiles. → bytes written (0 on overflow).
     size_t exportEnvelope(char *buf, size_t cap);
 
+    // Store subjacente (8c: writer do servico.jsonl via ServiceController::logService).
+    IProfileStore &getStore() { return store; }
+
   private:
     IProfileStore &store;
 };

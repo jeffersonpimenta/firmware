@@ -72,6 +72,9 @@ class ServiceController {
     // Consume a RESYNC_SEQ REPLY: resume at lastSeq+1.
     void onResyncReply(const char *id, uint32_t node, uint32_t lastSeq);
 
+    // Anexa uma linha ao servico.jsonl (§11.8 aba Log). up=uptime; gwTs=timestamp adotado do gateway (0=sem RTC).
+    void logService(const char *ev, uint32_t node, uint32_t gwTs);
+
   private:
     ServiceVault vault;
     ScanResults scan;

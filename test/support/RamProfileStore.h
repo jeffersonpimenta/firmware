@@ -3,6 +3,7 @@
 #include <cstring>
 #include <map>
 #include <string>
+#include <vector>
 
 // In-RAM IProfileStore for native tests (no FSCom).
 class RamProfileStore : public IProfileStore {
@@ -60,8 +61,26 @@ class RamProfileStore : public IProfileStore {
         active = id;
         return true;
     }
+    bool appendLog(const char *line) override
+    {
+        logLines.emplace_back(line);
+        return true;
+    }
+    IrrigationWeb::IServiceLogReader &logReader() override { return reader_; }
 
   private:
     std::map<std::string, std::string> profiles, seqs;
     std::string active;
+    std::vector<std::string> logLines;
+    struct RamReader : IrrigationWeb::IServiceLogReader {
+        RamProfileStore *s;
+        RamReader(RamProfileStore *o) : s(o) {}
+        void forEachLine(size_t maxLines, void *ctx, void (*cb)(void *, const char *)) override
+        {
+            size_t total = s->logLines.size();
+            size_t start = (total > maxLines) ? total - maxLines : 0;
+            for (size_t i = start; i < total; i++)
+                cb(ctx, s->logLines[i].c_str());
+        }
+    } reader_{this};
 };

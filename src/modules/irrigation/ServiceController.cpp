@@ -1,4 +1,6 @@
 #include "modules/irrigation/ServiceController.h"
+#include "Arduino.h"                              // millis()
+#include "modules/irrigation/IrrigationWebApi.h" // JsonWriter
 #include <cstring>
 
 using namespace IrrigationService;
@@ -64,4 +66,20 @@ void ServiceController::onResyncReply(const char *id, uint32_t node, uint32_t la
     // Store the receiver's last-seen seq; the next nextSeq() then yields
     // resumeSeqFrom(lastSeq) == lastSeq+1, i.e. resume outgoing at lastSeq+1 (§11.5).
     vault.setSeq(id, node, lastSeq);
+}
+
+void ServiceController::logService(const char *ev, uint32_t node, uint32_t gwTs)
+{
+    char line[160];
+    IrrigationWeb::JsonWriter w(line, sizeof line);
+    w.beginObject();
+    w.keyNum("up", (int64_t)(millis() / 1000)); // uptime; device sem RTC
+    if (gwTs)
+        w.keyNum("ts", (int64_t)gwTs); // timestamp adotado do gateway, se houver
+    w.keyStr("ev", ev);
+    if (node)
+        w.keyNum("node", (int64_t)node);
+    w.endObject();
+    if (w.done())
+        vault.getStore().appendLog(line);
 }

@@ -1,4 +1,5 @@
 #pragma once
+#include "modules/irrigation/IServiceLogReader.h"
 #include <cstddef>
 #include <cstdint>
 
@@ -14,4 +15,7 @@ struct IProfileStore {
     virtual bool writeSeq(const char *id, const uint8_t *buf, size_t n) = 0;
     virtual bool getActive(char *out, size_t cap) = 0;
     virtual bool setActive(const char *id) = 0;
+    // Log de serviço (§11.2 servico.jsonl). Append de linha JSONL + leitor p/ a aba Log (8c §11.8).
+    virtual bool appendLog(const char *line) = 0;
+    virtual IrrigationWeb::IServiceLogReader &logReader() = 0;
 };

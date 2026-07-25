@@ -185,6 +185,70 @@ bool LittleFsProfileStore::setActive(const char *id)
 #endif
 }
 
+bool LittleFsProfileStore::appendLog(const char *line)
+{
+#ifdef FSCom
+    char path[80];
+    snprintf(path, sizeof path, "%s/servico.jsonl", base_);
+    auto f = FSCom.open(path, "a"); // append (rotação = follow-on; o reader só lê o tail)
+    if (!f)
+        return false;
+    f.write((const uint8_t *)line, strlen(line));
+    f.write((const uint8_t *)"\n", 1);
+    f.close();
+    return true;
+#else
+    (void)line;
+    return false;
+#endif
+}
+
+void LittleFsProfileStore::LogReader::forEachLine(size_t maxLines, void *ctx, void (*cb)(void *, const char *))
+{
+#ifdef FSCom
+    char path[80];
+    snprintf(path, sizeof path, "%s/servico.jsonl", s->base_);
+    auto f = FSCom.open(path, FILE_O_READ);
+    if (!f)
+        return;
+    const size_t CAP = 8192;
+    size_t sz = f.size();
+    size_t off = (sz > CAP) ? sz - CAP : 0; // lê só o tail
+    if (off)
+        f.seek(off);
+    static char buf[CAP + 1];
+    size_t n = f.read((uint8_t *)buf, CAP);
+    f.close();
+    buf[n] = 0;
+    char *p = buf;
+    if (off) { // descarta 1ª linha parcial
+        char *nl = strchr(p, '\n');
+        if (nl)
+            p = nl + 1;
+    }
+    char *lines[128];
+    size_t cnt = 0;
+    while (*p && cnt < 128) {
+        char *nl = strchr(p, '\n');
+        if (!nl) {
+            lines[cnt++] = p;
+            break;
+        }
+        *nl = 0;
+        if (*p)
+            lines[cnt++] = p;
+        p = nl + 1;
+    }
+    size_t start = (cnt > maxLines) ? cnt - maxLines : 0;
+    for (size_t i = start; i < cnt; i++)
+        cb(ctx, lines[i]);
+#else
+    (void)maxLines;
+    (void)ctx;
+    (void)cb;
+#endif
+}
+
 void LittleFsProfileStore::indexAdd(const char *id)
 {
 #ifdef FSCom

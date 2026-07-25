@@ -21,9 +21,16 @@ class LittleFsProfileStore : public IProfileStore {
     bool writeSeq(const char *id, const uint8_t *buf, size_t n) override;
     bool getActive(char *out, size_t cap) override;
     bool setActive(const char *id) override;
+    bool appendLog(const char *line) override;
+    IrrigationWeb::IServiceLogReader &logReader() override { return logReader_; }
 
   private:
     const char *base_;
     void indexAdd(const char *id);
     void indexRemove(const char *id);
+    struct LogReader : IrrigationWeb::IServiceLogReader {
+        LittleFsProfileStore *s;
+        LogReader(LittleFsProfileStore *o) : s(o) {}
+        void forEachLine(size_t maxLines, void *ctx, void (*cb)(void *, const char *)) override;
+    } logReader_{this};
 };
