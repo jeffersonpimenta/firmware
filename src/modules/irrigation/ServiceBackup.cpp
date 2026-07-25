@@ -426,4 +426,22 @@ size_t buildClientBackup(const BackupSource &s, char *buf, size_t cap)
     return w.done();
 }
 
+bool planMerge(const char *const *existingIds, size_t nExisting, const char *const *incomingIds,
+               size_t nIncoming, bool replace, void *ctx, void (*removeCb)(void *, const char *))
+{
+    if (!replace)
+        return true;
+    for (size_t i = 0; i < nExisting; i++) {
+        bool keep = false;
+        for (size_t j = 0; j < nIncoming; j++)
+            if (strcmp(existingIds[i], incomingIds[j]) == 0) {
+                keep = true;
+                break;
+            }
+        if (!keep)
+            removeCb(ctx, existingIds[i]);
+    }
+    return true;
+}
+
 } // namespace IrrigationService

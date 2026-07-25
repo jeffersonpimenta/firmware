@@ -174,6 +174,34 @@ static void test_buildClientBackup_roundtrips_through_extractLight()
     TEST_ASSERT_TRUE(cfg.n > 0);
 }
 
+struct RmCtx {
+    char removed[8][32];
+    int n;
+};
+static void rmCb(void *c, const char *id)
+{
+    auto *r = (RmCtx *)c;
+    strncpy(r->removed[r->n++], id, 31);
+}
+
+static void test_planMerge_keeps_others_when_not_replace()
+{
+    const char *ex[] = {"a", "b", "c"};
+    const char *in[] = {"b"};
+    RmCtx r{};
+    planMerge(ex, 3, in, 1, /*replace*/ false, &r, rmCb);
+    TEST_ASSERT_EQUAL_INT(0, r.n); // merge: nothing removed
+}
+
+static void test_planMerge_replace_removes_absent()
+{
+    const char *ex[] = {"a", "b", "c"};
+    const char *in[] = {"b"};
+    RmCtx r{};
+    planMerge(ex, 3, in, 1, /*replace*/ true, &r, rmCb);
+    TEST_ASSERT_EQUAL_INT(2, r.n); // a and c removed
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -191,6 +219,8 @@ void setup()
     RUN_TEST(test_extractLight_fields);
     RUN_TEST(test_preset_roundtrip);
     RUN_TEST(test_buildClientBackup_roundtrips_through_extractLight);
+    RUN_TEST(test_planMerge_keeps_others_when_not_replace);
+    RUN_TEST(test_planMerge_replace_removes_absent);
     exit(UNITY_END());
 }
 

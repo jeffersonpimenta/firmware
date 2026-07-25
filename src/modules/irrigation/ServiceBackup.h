@@ -68,4 +68,9 @@ struct BackupSource {
 };
 size_t buildClientBackup(const BackupSource &s, char *buf, size_t cap);
 
+// Decide what the vault removes when importing. replace=false → merge (nothing removed;
+// incoming ids overwrite). replace=true → existing ids absent from incoming are removed.
+bool planMerge(const char *const *existingIds, size_t nExisting, const char *const *incomingIds,
+               size_t nIncoming, bool replace, void *ctx, void (*removeCb)(void *, const char *id));
+
 } // namespace IrrigationService
