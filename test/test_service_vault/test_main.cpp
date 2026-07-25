@@ -87,6 +87,22 @@ static void test_vault_seq_two_nodes_independent()
     TEST_ASSERT_EQUAL_UINT32(20, v.seqFor("f1", 0x22));
 }
 
+static void test_vault_export_roundtrips_import()
+{
+    RamProfileStore s;
+    ServiceVault v(s);
+    char err[48];
+    v.importEnvelope(kEnv2, strlen(kEnv2), false, err, sizeof err);
+    char out[4096];
+    size_t n = v.exportEnvelope(out, sizeof out);
+    TEST_ASSERT_TRUE(n > 0);
+    RamProfileStore s2;
+    ServiceVault v2(s2);
+    TEST_ASSERT_TRUE(v2.importEnvelope(out, n, false, err, sizeof err));
+    LightProfile lp[8];
+    TEST_ASSERT_EQUAL_size_t(2, v2.listClients(lp, 8));
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -97,6 +113,7 @@ void setup()
     RUN_TEST(test_vault_select_sets_active);
     RUN_TEST(test_vault_seq_unknown_then_set);
     RUN_TEST(test_vault_seq_two_nodes_independent);
+    RUN_TEST(test_vault_export_roundtrips_import);
     exit(UNITY_END());
 }
 void loop() {}

@@ -1,4 +1,5 @@
 #include "modules/irrigation/ServiceVault.h"
+#include "modules/irrigation/IrrigationWebApi.h" // JsonWriter
 #include <cstring>
 
 using namespace IrrigationService;
@@ -126,4 +127,27 @@ void ServiceVault::setSeq(const char *id, uint32_t node, uint32_t seq)
         bn += 8;
     }
     store.writeSeq(id, buf, bn);
+}
+
+size_t ServiceVault::exportEnvelope(char *buf, size_t cap)
+{
+    IrrigationWeb::JsonWriter w(buf, cap);
+    w.beginObject();
+    w.keyStr("fmt", "irrig-vault");
+    w.keyNum("version", 1);
+    w.key("clients");
+    w.beginArray();
+    char ids[16][32];
+    size_t k = store.listIds(ids, 16);
+    for (size_t i = 0; i < k; i++) {
+        char pb[4096];
+        size_t bn = 0;
+        if (!store.readProfile(ids[i], pb, sizeof pb - 1, bn))
+            continue;
+        pb[bn] = 0;
+        w.raw(pb); // stored client object verbatim (config carried opaque)
+    }
+    w.endArray();
+    w.endObject();
+    return w.done();
 }

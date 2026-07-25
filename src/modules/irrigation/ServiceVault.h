@@ -19,6 +19,9 @@ class ServiceVault {
     bool hasSeq(const char *id, uint32_t node);
     void setSeq(const char *id, uint32_t node, uint32_t seq);
 
+    // Compose the multi-client envelope from stored profiles. → bytes written (0 on overflow).
+    size_t exportEnvelope(char *buf, size_t cap);
+
   private:
     IProfileStore &store;
 };
