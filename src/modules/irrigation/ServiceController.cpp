@@ -18,3 +18,21 @@ RetunePlan channelFromProfile(const LightProfile &p)
     r.ok = true;
     return r;
 }
+
+RouteDecision decideConfigRoute(bool gatewayReachable, uint32_t currentEpoch)
+{
+    if (gatewayReachable)
+        return {ConfigRoute::VIA_GATEWAY, 0};
+    return {ConfigRoute::DIRECT, currentEpoch + 1};
+}
+
+void ScanResults::add(const ScanEntry &x)
+{
+    for (size_t i = 0; i < n; i++)
+        if (e[i].node == x.node) {
+            e[i] = x;
+            return;
+        }
+    if (n < MAX)
+        e[n++] = x;
+}
