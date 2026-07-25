@@ -18,6 +18,8 @@
 #include "modules/irrigation/ValveController.h"
 #include "modules/irrigation/SensorSampler.h"
 #include "modules/irrigation/LittleFsByteStore.h"
+#include "modules/irrigation/ServiceController.h"
+#include "modules/irrigation/LittleFsProfileStore.h"
 
 // Forward-decl da cola web (definida em IrrigationWebApi.h, incluída só no .cpp).
 namespace IrrigationWeb
@@ -139,6 +141,11 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     void handleRemoteCmd(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
     void handleResyncSeq(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);   // §11.5 responder
     void handlePingSurvey(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);  // §11.4 responder (todos papéis)
+    // Fase 8b — device SERVICO (role == SERVICO). Executores das intents do ServiceController.
+    void applyRetune(const char *clientId);   // §11.3 re-tune do canal + reboot
+    void svcEmitProbe();                       // §11.4 emissor da sonda PING_SURVEY (broadcast, FROM_SERVICE)
+    void svcSendResyncRequest(uint32_t node);  // §11.5 RESYNC_SEQ REQUEST (FROM_SERVICE)
+    void svcExportToConsole();                 // §11.7 despeja o envelope do cofre no serial (bancada)
     void handleGwAck(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
     void handleGwHeartbeat(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
     void handleGwEvento(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
@@ -215,6 +222,9 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     // considerados reconhecidos pelo overview. ACK_ALERT seta = millis().
     uint32_t lastAckAllMs = 0;
     SensorSampler sampler;
+    // Fase 8b — device SERVICO: cofre + controlador. Alocados só quando role == SERVICO.
+    LittleFsProfileStore *svcStore = nullptr;
+    ServiceController *svc = nullptr;
     // Fase 6b Task 14c: estado da réplica local de intertravamento (estação).
     // Latch por regra (>= MAX_LOCAL_INTERLOCKS entradas); prev-mask p/ borda de subida.
     bool localInterlockLatch[IrrigationSettings::MAX_LOCAL_INTERLOCKS] = {false};

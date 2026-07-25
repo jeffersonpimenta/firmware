@@ -256,6 +256,12 @@ IrrigationModule::IrrigationModule()
         auditFlashStore.ensureAllocated();
         auditFlash.begin();
     }
+    // Fase 8b: device SERVICO — cofre LittleFS + controlador (§11).
+    if ((IrrigationRole)settings.role == IrrigationRole::SERVICO) {
+        svcStore = new LittleFsProfileStore("/clientes");
+        svcStore->ensureDir();
+        svc = new ServiceController(*svcStore);
+    }
     // §8.9: carrega o mini-log sobrevivente de reboot e registra o boot.
     loadAuditLog();
     auditEvent(AuditOrigin::SISTEMA, AuditAction::REBOOT, /*target=*/0, AuditResult::OK);
@@ -542,8 +548,14 @@ void IrrigationModule::handleResyncSeq(const meshtastic_MeshPacket &mp, const He
     ResyncSeq req;
     if (!decodeResyncSeq(mp.decoded.payload.bytes, mp.decoded.payload.size, req))
         return;
-    if (req.kind != 0) // REPLY é consumido pelo controlador (gateway/8b); aqui só respondemos ao REQUEST
+    if (req.kind != 0) { // REPLY: device SERVICO retoma sua numeração em lastSeq+1 (§11.5 requester)
+        if (svc) {
+            char cid[32];
+            if (svc->getVault().activeId(cid, sizeof cid))
+                svc->onResyncReply(cid, mp.from, req.lastSeq);
+        }
         return;
+    }
     // Query read-only: NÃO passa pelo gate anti-replay (§11.5 — o remetente pode ter contador defasado).
     if (!rateLimiter.allow(millis()))
         return;
@@ -568,8 +580,21 @@ void IrrigationModule::handlePingSurvey(const meshtastic_MeshPacket &mp, const H
     PingSurvey req;
     if (!decodePingSurvey(mp.decoded.payload.bytes, mp.decoded.payload.size, req))
         return;
-    if (req.kind != 0) // REPLY é coletado pelo prober (8b/8d); aqui só respondemos à PROBE
+    if (req.kind != 0) { // REPLY: coletado pelo prober do device SERVICO (§11.4)
+        if (svc) {
+            ScanEntry e{};
+            e.node = mp.from;
+            e.role = req.role;
+            e.epoch = req.configEpoch;
+            e.vbatCentiV = req.vbatCentiV;
+            e.fwVersion = req.fwVersion;
+            e.lat = req.latE7;
+            e.lon = req.lonE7;
+            e.snrQuarterDb = (int8_t)(mp.rx_snr * 4);
+            svc->onSurveyReply(e);
+        }
         return;
+    }
     // Sonda broadcast, resposta só nodeinfo: isenta de auth/seq, mas rate-limited p/ proteger airtime.
     if (!rateLimiter.allow(millis()))
         return;
@@ -1126,6 +1151,86 @@ void IrrigationModule::logFarmKey()
     LOG_INFO("Irrigation FARM KEY: channel=%s psk_b64=%s", channels.getName(channels.getPrimaryIndex()), out);
 }
 
+// Fase 8b — executores do device SERVICO (§11). Espelham commitPairing (re-tune) e o
+// padrão allocDataPacket/encode/sendToMesh dos demais emissores.
+
+void IrrigationModule::applyRetune(const char *clientId)
+{
+    if (!svc)
+        return;
+    RetunePlan r;
+    if (!svc->planRetune(clientId, r)) {
+        LOG_WARN("Irrigation SERVICO: retune plan failed for '%s'", clientId);
+        return;
+    }
+    meshtastic_Channel ch = channels.getByIndex(channels.getPrimaryIndex());
+    memset(ch.settings.psk.bytes, 0, sizeof(ch.settings.psk.bytes));
+    memcpy(ch.settings.psk.bytes, r.psk, r.pskLen);
+    ch.settings.psk.size = (uint16_t)r.pskLen;
+    memset(ch.settings.name, 0, sizeof(ch.settings.name));
+    strncpy(ch.settings.name, r.name, sizeof(ch.settings.name) - 1);
+    channels.setChannel(ch);
+    channels.onConfigChanged();
+    config.lora.modem_preset = (meshtastic_Config_LoRaConfig_ModemPreset)r.preset;
+    config.lora.use_preset = true;
+    // Persiste canal + config antes do reboot (§11.3): queda de energia não deixa estado meio-trocado.
+    service->reloadConfig(SEGMENT_CHANNELS | SEGMENT_CONFIG);
+    svc->getVault().select(clientId); // persiste ponteiro de cliente ativo (/clientes/active)
+    LOG_INFO("Irrigation SERVICO: retune to client '%s' channel '%s', rebooting in 3 s", clientId, r.name);
+    rebootAtMsec = millis() + 3000;
+}
+
+void IrrigationModule::svcEmitProbe()
+{
+    if (!svc)
+        return;
+    svc->clearScan();
+    PingSurvey probe = {};
+    probe.kind = 0; // PROBE
+    meshtastic_MeshPacket *p = allocDataPacket();
+    p->to = NODENUM_BROADCAST;
+    uint16_t sz =
+        (uint16_t)encodePingSurvey(p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), ++txSeq, probe);
+    if (!sz) {
+        packetPool.release(p);
+        return;
+    }
+    p->decoded.payload.size = sz;
+    setServiceFlag(p->decoded.payload.bytes, p->decoded.payload.size);
+    service->sendToMesh(p, RX_SRC_LOCAL, false);
+    LOG_INFO("Irrigation SERVICO: PING_SURVEY probe broadcast");
+}
+
+void IrrigationModule::svcSendResyncRequest(uint32_t node)
+{
+    ResyncSeq req = {};
+    req.kind = 0; // REQUEST
+    meshtastic_MeshPacket *p = allocDataPacket();
+    p->to = node;
+    uint16_t sz = (uint16_t)encodeResyncSeq(p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), ++txSeq, req);
+    if (!sz) {
+        packetPool.release(p);
+        return;
+    }
+    p->decoded.payload.size = sz;
+    setServiceFlag(p->decoded.payload.bytes, p->decoded.payload.size);
+    service->sendToMesh(p, RX_SRC_LOCAL, false);
+}
+
+void IrrigationModule::svcExportToConsole()
+{
+    if (!svc)
+        return;
+    static char buf[4096];
+    size_t n = svc->getVault().exportEnvelope(buf, sizeof buf);
+    if (!n) {
+        LOG_WARN("Irrigation SERVICO: vault export overflow");
+        return;
+    }
+    buf[n < sizeof buf ? n : sizeof buf - 1] = 0;
+    LOG_INFO("Irrigation SERVICO VAULT EXPORT: %s", buf);
+}
+
 void IrrigationModule::sendEvento(uint8_t code, uint32_t arg)
 {
     Evento ev = {code, arg};
@@ -1164,6 +1269,15 @@ void IrrigationModule::onButtonEvent(ButtonGestureDetector::Event ev)
         } else if (ev == Ev::LONG_3S) {
             logFarmKey(); // export PSK to service device vault (spec §11.2)
         }
+        return;
+    }
+    if (role == IrrigationRole::SERVICO) {
+        // Fase 8b: device SERVICO. LONG = despeja o cofre no serial (bancada §11.7);
+        // SHORT = sobe o portal (abas Clientes/Rede/Log chegam na 8c).
+        if (ev == Ev::LONG_3S)
+            svcExportToConsole();
+        else if (ev == Ev::SHORT)
+            portal.requestOpen(millis());
         return;
     }
     if (role != IrrigationRole::ESTACAO)
