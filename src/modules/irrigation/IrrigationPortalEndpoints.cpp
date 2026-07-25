@@ -227,6 +227,29 @@ static void hCoordsSet(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, "{\"ok\":true}");
 }
 
+// ── Site survey (§8.5) — modo beacon de cobertura (nó §7.2) ──────────────────
+
+static void hSurveyStart(HTTPRequest *req, HTTPResponse *res)
+{
+    char body[192];
+    size_t nb = readBody(req, body, sizeof body);
+    SurveyStartReq r;
+    ParseResult pr = parseSurveyStart(body, nb, r);
+    if (!pr.ok) {
+        sendParseErrors(res, pr);
+        return;
+    }
+    irrigationModule->portalStartSurvey(r);
+    sendJson(res, "{\"ok\":true}");
+}
+
+static void hSurveyStop(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    irrigationModule->portalStopSurvey();
+    sendJson(res, "{\"ok\":true}");
+}
+
 void registerIrrigationPortalHandlers(HTTPServer *server)
 {
     server->registerNode(new ResourceNode("/api/portal/node", "GET", &hNode));
@@ -238,6 +261,8 @@ void registerIrrigationPortalHandlers(HTTPServer *server)
     server->registerNode(new ResourceNode("/api/portal/gpo", "POST", &hGpo));
     server->registerNode(new ResourceNode("/api/portal/coords", "GET", &hCoordsGet));
     server->registerNode(new ResourceNode("/api/portal/coords", "POST", &hCoordsSet));
+    server->registerNode(new ResourceNode("/api/portal/survey/start", "POST", &hSurveyStart));
+    server->registerNode(new ResourceNode("/api/portal/survey/stop", "POST", &hSurveyStop));
 }
 
 #endif

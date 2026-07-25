@@ -341,6 +341,33 @@ static void doImport(HTTPRequest *req, HTTPResponse *res, bool replace)
 static void hSvcImport(HTTPRequest *req, HTTPResponse *res) { doImport(req, res, false); }
 static void hSvcImportReplace(HTTPRequest *req, HTTPResponse *res) { doImport(req, res, true); }
 
+// ── Site survey (§8.5) — device SERVICO em modo beacon ───────────────────────
+
+static void hSvcSurveyStart(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!svcGuard(res))
+        return;
+    char body[192];
+    size_t nb = readBody(req, body, sizeof body);
+    SurveyStartReq r;
+    ParseResult pr = parseSurveyStart(body, nb, r);
+    if (!pr.ok) {
+        sendParseErrors(res, pr);
+        return;
+    }
+    irrigationModule->portalStartSurvey(r);
+    sendJson(res, "{\"ok\":true}");
+}
+
+static void hSvcSurveyStop(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!svcGuard(res))
+        return;
+    irrigationModule->portalStopSurvey();
+    sendJson(res, "{\"ok\":true}");
+}
+
 void registerIrrigationServicePortalHandlers(HTTPServer *server)
 {
     server->registerNode(new ResourceNode("/api/portal/service/clients", "GET", &hSvcClients));
@@ -354,6 +381,8 @@ void registerIrrigationServicePortalHandlers(HTTPServer *server)
     server->registerNode(new ResourceNode("/api/portal/service/export", "GET", &hSvcExport));
     server->registerNode(new ResourceNode("/api/portal/service/import", "POST", &hSvcImport));
     server->registerNode(new ResourceNode("/api/portal/service/import/replace", "POST", &hSvcImportReplace));
+    server->registerNode(new ResourceNode("/api/portal/service/survey/start", "POST", &hSvcSurveyStart));
+    server->registerNode(new ResourceNode("/api/portal/service/survey/stop", "POST", &hSvcSurveyStop));
 }
 
 #endif

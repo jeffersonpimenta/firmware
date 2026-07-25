@@ -681,6 +681,42 @@ static void hExport(HTTPRequest *req, HTTPResponse *res)
     free(buf);
 }
 
+// GET /api/irrigation/survey — pontos de cobertura registrados (§8.5). GATEWAY-only.
+static void hSurvey(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!gwReady()) {
+        res->setStatusCode(404);
+        return;
+    }
+    const size_t cap = 8192;
+    char *buf = (char *)malloc(cap);
+    if (!buf) {
+        res->setStatusCode(500);
+        return;
+    }
+    size_t n = irrigationModule->buildSurveyLog(buf, cap); // CI-only
+    if (!n) {
+        free(buf);
+        res->setStatusCode(500);
+        return;
+    }
+    sendJson(res, buf);
+    free(buf);
+}
+
+// POST /api/irrigation/survey/clear — zera o log de cobertura.
+static void hSurveyClear(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!gwReady()) {
+        res->setStatusCode(404);
+        return;
+    }
+    irrigationModule->clearSurveyLog();
+    sendJson(res, "{\"ok\":true}");
+}
+
 // ---------------------------------------------------------------------------
 // Registro
 // ---------------------------------------------------------------------------
@@ -713,6 +749,9 @@ void registerIrrigationHandlers(HTTPServer *server)
     server->registerNode(new ResourceNode("/api/irrigation/groups/command", "POST", &hGroupsCommand));
     // Fase 8b: export §5.5 completo (PSK + tabelas) p/ o cofre do device SERVICO
     server->registerNode(new ResourceNode("/api/irrigation/export", "GET", &hExport));
+    // Fase 8d: site survey (§8.5)
+    server->registerNode(new ResourceNode("/api/irrigation/survey", "GET", &hSurvey));
+    server->registerNode(new ResourceNode("/api/irrigation/survey/clear", "POST", &hSurveyClear));
 }
 
 #endif
