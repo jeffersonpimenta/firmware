@@ -1,5 +1,6 @@
 #pragma once
 #include "modules/irrigation/ServiceBackup.h"
+#include "modules/irrigation/ServiceVault.h"
 #include <cstddef>
 #include <cstdint>
 
@@ -49,4 +50,29 @@ class ScanResults {
   private:
     ScanEntry e[MAX];
     size_t n = 0;
+};
+
+// Owns the vault + active scan; produces intents the module executes on hardware.
+// Hardware-free → native-testable end to end.
+class ServiceController {
+  public:
+    explicit ServiceController(IProfileStore &store) : vault(store) {}
+    ServiceVault &getVault() { return vault; }
+
+    // Retune plan for a client (§11.3). false = no such client / bad psk.
+    bool planRetune(const char *id, RetunePlan &out);
+
+    // Active-client scan (§11.4).
+    void onSurveyReply(const ScanEntry &e) { scan.add(e); }
+    const ScanResults &scanResults() const { return scan; }
+    void clearScan() { scan.clear(); }
+
+    // Next outgoing seq for (client,node); needResync=true when the counter is unknown (§11.5).
+    uint32_t nextSeq(const char *id, uint32_t node, bool &needResync);
+    // Consume a RESYNC_SEQ REPLY: resume at lastSeq+1.
+    void onResyncReply(const char *id, uint32_t node, uint32_t lastSeq);
+
+  private:
+    ServiceVault vault;
+    ScanResults scan;
 };

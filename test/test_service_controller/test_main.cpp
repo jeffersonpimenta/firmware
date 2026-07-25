@@ -2,11 +2,17 @@
 #include "TestUtil.h"
 #include "modules/irrigation/ServiceBackup.h"
 #include "modules/irrigation/ServiceController.h"
+#include "support/RamProfileStore.h"
 #include <cstring>
 #include <unity.h>
 
 void setUp(void) {}
 void tearDown(void) {}
+
+static const char *kEnv1 =
+    "{\"fmt\":\"irrig-vault\",\"version\":1,\"clients\":["
+    "{\"id\":\"f1\",\"nome\":\"A\",\"canal\":{\"nome\":\"bv-irrig\",\"psk_b64\":\"1PG7Og==\",\"modem_preset\":\"LONG_FAST\"},\"gateway\":\"!a1b2c3d4\",\"estacoes\":[]}"
+    "]}";
 
 static void test_channelFromProfile_decodes()
 {
@@ -76,6 +82,46 @@ static void test_scan_dedupes_by_node()
     TEST_ASSERT_EQUAL_UINT32(5, s.at(0)->epoch);
 }
 
+static void test_controller_planRetune_finds_client()
+{
+    RamProfileStore s;
+    ServiceController c(s);
+    char err[48];
+    c.getVault().importEnvelope(kEnv1, strlen(kEnv1), false, err, sizeof err);
+    RetunePlan r;
+    TEST_ASSERT_TRUE(c.planRetune("f1", r));
+    TEST_ASSERT_EQUAL_STRING("bv-irrig", r.name);
+    RetunePlan r2;
+    TEST_ASSERT_FALSE(c.planRetune("nope", r2));
+}
+
+static void test_controller_nextSeq_resync_flow()
+{
+    RamProfileStore s;
+    ServiceController c(s);
+    char err[48];
+    c.getVault().importEnvelope(kEnv1, strlen(kEnv1), false, err, sizeof err);
+    bool need = false;
+    c.nextSeq("f1", 0x55, need);
+    TEST_ASSERT_TRUE(need); // unknown counter → needs resync
+    c.onResyncReply("f1", 0x55, 4213);
+    uint32_t s1 = c.nextSeq("f1", 0x55, need);
+    TEST_ASSERT_FALSE(need);
+    TEST_ASSERT_EQUAL_UINT32(4214, s1); // resume outgoing at lastSeq+1 (§11.5)
+}
+
+static void test_controller_scan_collects()
+{
+    RamProfileStore s;
+    ServiceController c(s);
+    ScanEntry e{};
+    e.node = 0x99;
+    e.epoch = 3;
+    c.onSurveyReply(e);
+    TEST_ASSERT_EQUAL_size_t(1, c.scanResults().count());
+    TEST_ASSERT_EQUAL_HEX32(0x99, c.scanResults().at(0)->node);
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -87,6 +133,9 @@ void setup()
     RUN_TEST(test_route_direct_bumps_epoch);
     RUN_TEST(test_resync_helpers);
     RUN_TEST(test_scan_dedupes_by_node);
+    RUN_TEST(test_controller_planRetune_finds_client);
+    RUN_TEST(test_controller_nextSeq_resync_flow);
+    RUN_TEST(test_controller_scan_collects);
     exit(UNITY_END());
 }
 void loop() {}
