@@ -280,11 +280,12 @@ bool IrrigationModule::wantPacket(const meshtastic_MeshPacket *p)
     return p->decoded.portnum == ourPortNum;
 }
 
-bool IrrigationModule::senderAuthorized(uint32_t from) const
+bool IrrigationModule::senderAuthorized(uint32_t from, uint16_t flags) const
 {
-    // Fase 3 (pareamento) elimina o modo aberto: hoje, sem vínculo gravado,
-    // qualquer nó do canal comanda (posse da PSK = autoridade, spec §4.2).
-    return settings.boundGateway == 0 || from == settings.boundGateway;
+    // Predicado puro (§4.2, §11.5): marca de serviço OU não-vinculado OU vínculo com o remetente.
+    // Sem vínculo gravado, qualquer nó do canal comanda (posse da PSK = autoridade, spec §4.2);
+    // FLAG_FROM_SERVICE dispensa o vínculo para o nó de serviço (spec §11.5).
+    return IrrigationProto::senderAuthorizedBy(flags, from, settings.boundGateway);
 }
 
 ProcessMessage IrrigationModule::handleReceived(const meshtastic_MeshPacket &mp)
@@ -331,6 +332,12 @@ ProcessMessage IrrigationModule::handleReceived(const meshtastic_MeshPacket &mp)
     case MSG_PAIR_GRANT:
         handlePairGrant(mp, h);
         break;
+    case MSG_RESYNC_SEQ:
+        handleResyncSeq(mp, h);
+        break;
+    case MSG_PING_SURVEY:
+        handlePingSurvey(mp, h);
+        break;
     case MSG_ACK:
         // Task 6, decisão §3: gateway trata ACKs das estações.
         if ((IrrigationRole)settings.role == IrrigationRole::GATEWAY)
@@ -373,7 +380,7 @@ ProcessMessage IrrigationModule::handleReceived(const meshtastic_MeshPacket &mp)
 
 void IrrigationModule::handleCmdValvula(const meshtastic_MeshPacket &mp, const Header &h)
 {
-    if (!senderAuthorized(mp.from)) {
+    if (!senderAuthorized(mp.from, h.flags)) {
         LOG_WARN("Irrigation: unauthorized cmd from 0x%08x", mp.from);
         sendAck(mp.from, h.seq, ACK_NACK, REASON_UNAUTHORIZED);
         auditEvent(AuditOrigin::PAINEL, AuditAction::CMD_REJEITADO, REASON_UNAUTHORIZED, AuditResult::NACK, mp.from, h.seq);
@@ -432,7 +439,7 @@ void IrrigationModule::handleCmdValvula(const meshtastic_MeshPacket &mp, const H
 void IrrigationModule::handleCmdGpo(const meshtastic_MeshPacket &mp, const Header &h)
 {
     // Apenas remetentes autorizados podem acionar GPOs (§4.2).
-    if (!senderAuthorized(mp.from)) {
+    if (!senderAuthorized(mp.from, h.flags)) {
         LOG_WARN("Irrigation: GPO cmd não autorizado de 0x%08x", mp.from);
         sendAck(mp.from, h.seq, ACK_NACK, REASON_UNAUTHORIZED);
         auditEvent(AuditOrigin::PAINEL, AuditAction::CMD_REJEITADO, REASON_UNAUTHORIZED, AuditResult::NACK, mp.from, h.seq);
@@ -478,7 +485,7 @@ void IrrigationModule::handleCmdGpo(const meshtastic_MeshPacket &mp, const Heade
 void IrrigationModule::handleCmdMaint(const meshtastic_MeshPacket &mp, const Header &h)
 {
     // Apenas o gateway vinculado pode abrir janela de manutenção (mesma regra dos outros comandos).
-    if (!senderAuthorized(mp.from)) {
+    if (!senderAuthorized(mp.from, h.flags)) {
         LOG_WARN("Irrigation: CMD_MAINT não autorizado de 0x%08x", mp.from);
         sendAck(mp.from, h.seq, ACK_NACK, REASON_UNAUTHORIZED);
         auditEvent(AuditOrigin::PAINEL, AuditAction::CMD_REJEITADO, REASON_UNAUTHORIZED, AuditResult::NACK, mp.from, h.seq);
@@ -522,6 +529,63 @@ void IrrigationModule::sendAck(uint32_t to, uint32_t ackedSeq, uint8_t status, u
     meshtastic_MeshPacket *p = allocDataPacket();
     p->to = to;
     p->decoded.payload.size = encodeAck(p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), ++txSeq, ack);
+    if (!p->decoded.payload.size) {
+        packetPool.release(p);
+        return;
+    }
+    service->sendToMesh(p, RX_SRC_LOCAL, false);
+}
+
+void IrrigationModule::handleResyncSeq(const meshtastic_MeshPacket &mp, const Header &h)
+{
+    (void)h;
+    ResyncSeq req;
+    if (!decodeResyncSeq(mp.decoded.payload.bytes, mp.decoded.payload.size, req))
+        return;
+    if (req.kind != 0) // REPLY é consumido pelo controlador (gateway/8b); aqui só respondemos ao REQUEST
+        return;
+    // Query read-only: NÃO passa pelo gate anti-replay (§11.5 — o remetente pode ter contador defasado).
+    if (!rateLimiter.allow(millis()))
+        return;
+    ResyncSeq reply = {};
+    reply.kind = 1;
+    reply.lastSeq = seqTable.lastSeq(mp.from);
+
+    meshtastic_MeshPacket *p = allocDataPacket();
+    p->to = mp.from;
+    p->decoded.payload.size =
+        (uint16_t)encodeResyncSeq(p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), ++txSeq, reply);
+    if (!p->decoded.payload.size) {
+        packetPool.release(p);
+        return;
+    }
+    service->sendToMesh(p, RX_SRC_LOCAL, false);
+}
+
+void IrrigationModule::handlePingSurvey(const meshtastic_MeshPacket &mp, const Header &h)
+{
+    (void)h;
+    PingSurvey req;
+    if (!decodePingSurvey(mp.decoded.payload.bytes, mp.decoded.payload.size, req))
+        return;
+    if (req.kind != 0) // REPLY é coletado pelo prober (8b/8d); aqui só respondemos à PROBE
+        return;
+    // Sonda broadcast, resposta só nodeinfo: isenta de auth/seq, mas rate-limited p/ proteger airtime.
+    if (!rateLimiter.allow(millis()))
+        return;
+    PingSurvey reply = {};
+    reply.kind = 1;
+    reply.role = settings.role;
+    reply.configEpoch = settings.configEpoch;
+    reply.vbatCentiV = batteryCentiV();
+    reply.fwVersion = APP_FW_VERSION;
+    reply.latE7 = settings.latE7;
+    reply.lonE7 = settings.lonE7;
+
+    meshtastic_MeshPacket *p = allocDataPacket();
+    p->to = mp.from;
+    p->decoded.payload.size =
+        (uint16_t)encodePingSurvey(p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), ++txSeq, reply);
     if (!p->decoded.payload.size) {
         packetPool.release(p);
         return;
@@ -656,7 +720,7 @@ void IrrigationModule::activateSettings(const IrrigationSettings &merged)
 
 void IrrigationModule::handleSetConfig(const meshtastic_MeshPacket &mp, const Header &h)
 {
-    if (!senderAuthorized(mp.from)) {
+    if (!senderAuthorized(mp.from, h.flags)) {
         sendAck(mp.from, h.seq, ACK_NACK, REASON_UNAUTHORIZED);
         auditEvent(AuditOrigin::PAINEL, AuditAction::CMD_REJEITADO, REASON_UNAUTHORIZED, AuditResult::NACK, mp.from, h.seq);
         return;
@@ -727,7 +791,7 @@ void IrrigationModule::handleSetConfig(const meshtastic_MeshPacket &mp, const He
 
 void IrrigationModule::handleGetConfig(const meshtastic_MeshPacket &mp, const Header &h)
 {
-    if (!senderAuthorized(mp.from)) {
+    if (!senderAuthorized(mp.from, h.flags)) {
         sendAck(mp.from, h.seq, ACK_NACK, REASON_UNAUTHORIZED);
         return;
     }

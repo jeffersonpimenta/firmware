@@ -137,6 +137,8 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     void handlePairGrant(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
     // Gateway handlers (Fase 4, Task 6: decisões 1-6)
     void handleRemoteCmd(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
+    void handleResyncSeq(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);   // §11.5 responder
+    void handlePingSurvey(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);  // §11.4 responder (todos papéis)
     void handleGwAck(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
     void handleGwHeartbeat(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
     void handleGwEvento(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
@@ -173,7 +175,7 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     void activateSettings(const IrrigationSettings &merged);
     void sendAck(uint32_t to, uint32_t ackedSeq, uint8_t status, uint8_t reason);
     void sendHeartbeat();
-    bool senderAuthorized(uint32_t from) const;
+    bool senderAuthorized(uint32_t from, uint16_t flags) const;
     uint16_t batteryCentiV() const;
 
     // settings must be declared before driver and valves so it is constructed
