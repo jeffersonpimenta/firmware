@@ -22,4 +22,10 @@ bool jsonForEachMember(Slice obj, void *ctx, bool (*cb)(void *, Slice key, Slice
 bool jsonStr(Slice obj, const char *key, char *out, size_t cap);
 bool jsonInt(Slice obj, const char *key, int64_t &out);
 
+// ── Multi-client envelope ───────────────────────────────────────────────────
+// Iterate the clients[] array of an envelope; cb returns false to stop early.
+bool envelopeForEachClient(const char *json, size_t n, void *ctx, bool (*cb)(void *, Slice client));
+// fmt=="irrig-vault", version==1, each client has id + gateway + canal.psk_b64 (valid base64).
+bool validateEnvelope(const char *json, size_t n, char *err, size_t errCap);
+
 } // namespace IrrigationService

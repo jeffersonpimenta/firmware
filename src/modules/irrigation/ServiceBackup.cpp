@@ -241,4 +241,79 @@ bool jsonStr(Slice obj, const char *key, char *out, size_t cap)
     return true;
 }
 
+// ── Multi-client envelope ───────────────────────────────────────────────────
+
+bool envelopeForEachClient(const char *json, size_t n, void *ctx, bool (*cb)(void *, Slice))
+{
+    Slice clients;
+    if (!jsonMember(json, n, "clients", clients))
+        return false;
+    return jsonForEachArray(clients, ctx, cb);
+}
+
+struct ValCtx {
+    char *err;
+    size_t cap;
+    bool ok;
+};
+static void setErr(ValCtx *v, const char *m)
+{
+    v->ok = false;
+    if (v->cap) {
+        strncpy(v->err, m, v->cap - 1);
+        v->err[v->cap - 1] = 0;
+    }
+}
+static bool valClientCb(void *c, Slice cl)
+{
+    auto *v = (ValCtx *)c;
+    char buf[64];
+    if (!jsonStr(cl, "id", buf, sizeof buf) || buf[0] == 0) {
+        setErr(v, "client missing id");
+        return false;
+    }
+    if (!jsonStr(cl, "gateway", buf, sizeof buf) || buf[0] == 0) {
+        setErr(v, "client missing gateway");
+        return false;
+    }
+    Slice canal;
+    char psk[64];
+    if (!jsonMember(cl.p, cl.n, "canal", canal) || !jsonStr(canal, "psk_b64", psk, sizeof psk)) {
+        setErr(v, "client missing psk_b64");
+        return false;
+    }
+    uint8_t raw[48];
+    if (base64Decode(psk, strlen(psk), raw, sizeof raw) < 0) {
+        setErr(v, "invalid psk_b64");
+        return false;
+    }
+    return true;
+}
+
+bool validateEnvelope(const char *json, size_t n, char *err, size_t errCap)
+{
+    if (errCap)
+        err[0] = 0;
+    char fmt[24];
+    Slice root{json, n};
+    if (!jsonStr(root, "fmt", fmt, sizeof fmt) || strcmp(fmt, "irrig-vault") != 0) {
+        if (errCap)
+            strncpy(err, "bad fmt", errCap - 1);
+        return false;
+    }
+    int64_t ver = 0;
+    if (!jsonInt(root, "version", ver) || ver != 1) {
+        if (errCap)
+            strncpy(err, "bad version", errCap - 1);
+        return false;
+    }
+    ValCtx v{err, errCap, true};
+    if (!envelopeForEachClient(json, n, &v, valClientCb)) {
+        if (v.ok && errCap)
+            strncpy(err, "missing clients[]", errCap - 1);
+        return false;
+    }
+    return v.ok;
+}
+
 } // namespace IrrigationService
