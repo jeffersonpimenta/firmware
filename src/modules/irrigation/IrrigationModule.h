@@ -19,6 +19,7 @@
 #include "modules/irrigation/SensorSampler.h"
 #include "modules/irrigation/LittleFsByteStore.h"
 #include "modules/irrigation/ServiceController.h"
+#include "modules/irrigation/ServicePortalApi.h" // Fase 8c: tipos/builders do portal SERVICO
 #include "modules/irrigation/LittleFsProfileStore.h"
 
 // Forward-decl da cola web (definida em IrrigationWebApi.h, incluída só no .cpp).
@@ -108,6 +109,20 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     PortalSession &portalSession() { return portal; }
     // Acesso de leitura ao mini-log de auditoria (Task 10: portal de campo). §8.9
     const AuditLog &auditLogRef() const { return audit; }
+
+    // Fase 8c — portal do device SERVICO (§11.8). Chamados pelos endpoints /api/portal/service/*.
+    bool svcIsService() const;
+    size_t svcPortalListClients(char *buf, size_t cap);
+    bool svcPortalSelect(const char *id); // planRetune + applyRetune (re-tune + reboot)
+    void svcPortalStartScan();
+    size_t svcPortalScanResults(char *buf, size_t cap);
+    bool svcPortalReadConfig(uint32_t node);  // envia GET_CONFIG direto
+    bool svcPortalConfigReady(uint32_t node); // reply remontado pronto?
+    size_t svcPortalGetReadConfig(char *buf, size_t cap);
+    bool svcPortalWriteConfig(const IrrigationWeb::NodeConfigReq &req); // rota DIRECT (§11.6); VIA_GATEWAY=follow-on
+    bool svcPortalNodeAction(const IrrigationWeb::NodeAction &a);       // pulso/zona/resync; approve_pair=follow-on
+    size_t svcPortalBuildLog(char *buf, size_t cap);
+    uint32_t gwTimeAdopted() const { return 0; } // TODO banca: ts adotado do gateway (HB/ACK); 0=sem RTC
 
   protected:
     bool wantPacket(const meshtastic_MeshPacket *p) override;
@@ -228,6 +243,12 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     // Fase 8b — device SERVICO: cofre + controlador. Alocados só quando role == SERVICO.
     LittleFsProfileStore *svcStore = nullptr;
     ServiceController *svc = nullptr;
+    // Fase 8c — leitura de config de um nó pelo device: GET_CONFIG → SET_CONFIG reply remontado
+    // (cacheado, NÃO aplicado em si mesmo, ao contrário de handleSetConfig da estação).
+    void handleSvcSetConfigReply(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
+    uint32_t svcReadNode = 0;
+    bool svcReadReady = false;
+    IrrigationSettings svcReadBlob;
     // Fase 6b Task 14c: estado da réplica local de intertravamento (estação).
     // Latch por regra (>= MAX_LOCAL_INTERLOCKS entradas); prev-mask p/ borda de subida.
     bool localInterlockLatch[IrrigationSettings::MAX_LOCAL_INTERLOCKS] = {false};

@@ -324,8 +324,11 @@ ProcessMessage IrrigationModule::handleReceived(const meshtastic_MeshPacket &mp)
         break;
     case MSG_SET_CONFIG:
         // Task 6, decisão §3: role split — GATEWAY recebe SET_CONFIG como resposta de GET_CONFIG.
+        // Fase 8c: SERVICO recebe SET_CONFIG como resposta do próprio GET_CONFIG (leitura de nó), sem aplicar em si.
         if ((IrrigationRole)settings.role == IrrigationRole::GATEWAY)
             handleGwSetConfig(mp, h);
+        else if ((IrrigationRole)settings.role == IrrigationRole::SERVICO)
+            handleSvcSetConfigReply(mp, h);
         else
             handleSetConfig(mp, h);
         break;
@@ -1229,6 +1232,201 @@ void IrrigationModule::svcExportToConsole()
     }
     buf[n < sizeof buf ? n : sizeof buf - 1] = 0;
     LOG_INFO("Irrigation SERVICO VAULT EXPORT: %s", buf);
+}
+
+// ── Fase 8c — portal do device SERVICO (§11.8): accessors dirigidos pelos endpoints ──
+
+bool IrrigationModule::svcIsService() const
+{
+    return (IrrigationRole)settings.role == IrrigationRole::SERVICO;
+}
+
+size_t IrrigationModule::svcPortalListClients(char *buf, size_t cap)
+{
+    if (!svc)
+        return 0;
+    IrrigationService::LightProfile cs[16];
+    size_t n = svc->getVault().listClients(cs, 16);
+    char active[32] = {0};
+    svc->getVault().activeId(active, sizeof active);
+    return IrrigationWeb::buildClientList(cs, n, active, buf, cap);
+}
+
+bool IrrigationModule::svcPortalSelect(const char *id)
+{
+    if (!svc)
+        return false;
+    RetunePlan probe;
+    if (!svc->planRetune(id, probe)) // valida existência + PSK antes de reiniciar
+        return false;
+    svc->logService("select", 0, gwTimeAdopted());
+    applyRetune(id); // persiste ativo + reboot 3 s (§11.3)
+    return true;
+}
+
+void IrrigationModule::svcPortalStartScan()
+{
+    if (!svc)
+        return;
+    svc->logService("scan", 0, gwTimeAdopted());
+    svcEmitProbe(); // limpa scan + broadcast PROBE (8b)
+}
+
+size_t IrrigationModule::svcPortalScanResults(char *buf, size_t cap)
+{
+    if (!svc)
+        return 0;
+    return IrrigationWeb::buildScanResults(svc->scanResults(), buf, cap);
+}
+
+bool IrrigationModule::svcPortalReadConfig(uint32_t node)
+{
+    if (!svc || !node)
+        return false;
+    svcReadNode = node;
+    svcReadReady = false;
+    reasm.reset();
+    meshtastic_MeshPacket *p = allocDataPacket();
+    p->to = node;
+    p->decoded.payload.size =
+        (uint16_t)encodeGetConfig(p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), ++txSeq);
+    if (!p->decoded.payload.size) {
+        packetPool.release(p);
+        return false;
+    }
+    setServiceFlag(p->decoded.payload.bytes, p->decoded.payload.size);
+    service->sendToMesh(p, RX_SRC_LOCAL, false);
+    svc->logService("get_config", node, gwTimeAdopted());
+    return true;
+}
+
+void IrrigationModule::handleSvcSetConfigReply(const meshtastic_MeshPacket &mp, const Header &h)
+{
+    (void)h;
+    if (mp.from != svcReadNode)
+        return; // resposta de outro nó — ignora
+    SetConfig sc;
+    if (!decodeSetConfig(mp.decoded.payload.bytes, mp.decoded.payload.size, sc))
+        return;
+    auto r = reasm.add(mp.from, sc.epoch, sc.crc, sc.totalLen, sc.fragIndex, sc.fragCount, sc.frag, sc.fragLen, millis());
+    if (r != FragmentReassembler::Add::COMPLETE)
+        return;
+    IrrigationSettings blob;
+    if (migrateIrrigationSettings(reasm.blob(), reasm.blobLen(), blob)) {
+        svcReadBlob = blob; // cacheia p/ o editor; NÃO aplica em si
+        svcReadReady = true;
+    }
+    reasm.reset();
+}
+
+bool IrrigationModule::svcPortalConfigReady(uint32_t node)
+{
+    return svcReadReady && svcReadNode == node;
+}
+
+size_t IrrigationModule::svcPortalGetReadConfig(char *buf, size_t cap)
+{
+    if (!svcReadReady)
+        return 0;
+    return IrrigationWeb::buildStationConfig(svcReadBlob, buf, cap);
+}
+
+bool IrrigationModule::svcPortalWriteConfig(const IrrigationWeb::NodeConfigReq &req)
+{
+    if (!svc || !req.node)
+        return false;
+    if (req.route != IrrigationWeb::SvcRoute::DIRECT) {
+        // VIA_GATEWAY exigiria um comando gateway-side "configurar estação X"; o wire atual não o tem
+        // (SET_CONFIG ao gateway é adotado como config DELE). Follow-on; a rota direta converge via §5.4.
+        svc->logService("set_config_gw_unsupported", req.node, gwTimeAdopted());
+        return false;
+    }
+    // DIRECT (§11.6): grava na estação com epoch+1; o gateway adota depois pela regra do maior epoch (§5.4, 8a).
+    IrrigationSettings blob = req.config;
+    RouteDecision d = decideConfigRoute(false, req.config.configEpoch);
+    blob.configEpoch = d.epochToWrite;
+    const uint8_t *raw = (const uint8_t *)&blob;
+    uint16_t totalLen = (uint16_t)sizeof(IrrigationSettings);
+    uint32_t crc = crc32(raw, totalLen);
+    uint8_t fragCount = (uint8_t)((totalLen + FRAG_DATA_MAX - 1) / FRAG_DATA_MAX);
+    for (uint8_t i = 0; i < fragCount; i++) {
+        SetConfig sc = {};
+        sc.epoch = blob.configEpoch;
+        sc.crc = crc;
+        sc.totalLen = totalLen;
+        sc.fragIndex = i;
+        sc.fragCount = fragCount;
+        uint16_t off = (uint16_t)i * FRAG_DATA_MAX;
+        sc.fragLen = (uint8_t)((totalLen - off > FRAG_DATA_MAX) ? FRAG_DATA_MAX : (uint8_t)(totalLen - off));
+        sc.frag = raw + off;
+        meshtastic_MeshPacket *p = allocDataPacket();
+        p->to = req.node;
+        p->decoded.payload.size =
+            (uint16_t)encodeSetConfig(p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), ++txSeq, sc);
+        if (!p->decoded.payload.size) {
+            packetPool.release(p);
+            return false;
+        }
+        setServiceFlag(p->decoded.payload.bytes, p->decoded.payload.size);
+        service->sendToMesh(p, RX_SRC_LOCAL, false);
+    }
+    svc->logService("set_config_direct", req.node, gwTimeAdopted());
+    return true;
+}
+
+bool IrrigationModule::svcPortalNodeAction(const IrrigationWeb::NodeAction &a)
+{
+    if (!svc || !a.node)
+        return false;
+    switch (a.action) {
+    case IrrigationWeb::SvcAction::PULSE: {
+        CmdValvula cv{a.valveOrZoneId, 1, a.durationS}; // abrir por durationS (pulso)
+        meshtastic_MeshPacket *p = allocDataPacket();
+        p->to = a.node;
+        p->decoded.payload.size =
+            (uint16_t)encodeCmdValvula(p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), ++txSeq, cv);
+        if (!p->decoded.payload.size) {
+            packetPool.release(p);
+            return false;
+        }
+        setServiceFlag(p->decoded.payload.bytes, p->decoded.payload.size);
+        service->sendToMesh(p, RX_SRC_LOCAL, false);
+        svc->logService("pulse", a.node, gwTimeAdopted());
+        return true;
+    }
+    case IrrigationWeb::SvcAction::ZONE: {
+        RemoteCmd rc{a.valveOrZoneId, (uint8_t)(a.open ? 1 : 0), a.durationS};
+        meshtastic_MeshPacket *p = allocDataPacket();
+        p->to = a.node;
+        p->decoded.payload.size =
+            (uint16_t)encodeRemoteCmd(p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), ++txSeq, rc);
+        if (!p->decoded.payload.size) {
+            packetPool.release(p);
+            return false;
+        }
+        setServiceFlag(p->decoded.payload.bytes, p->decoded.payload.size);
+        service->sendToMesh(p, RX_SRC_LOCAL, false);
+        svc->logService("zone", a.node, gwTimeAdopted());
+        return true;
+    }
+    case IrrigationWeb::SvcAction::RESYNC:
+        svcSendResyncRequest(a.node); // 8b (carimba FLAG_FROM_SERVICE)
+        svc->logService("resync", a.node, gwTimeAdopted());
+        return true;
+    case IrrigationWeb::SvcAction::APPROVE_PAIR:
+    default:
+        // Aprovação de pareamento pelo device (§11.8) exige intake device-side de PAIR_ANNOUNCE +
+        // PairGrant com a PSK do cliente ativo — fluxo não presente na 8b. Follow-on.
+        svc->logService("approve_pair_unsupported", a.node, gwTimeAdopted());
+        return false;
+    }
+}
+
+size_t IrrigationModule::svcPortalBuildLog(char *buf, size_t cap)
+{
+    if (!svcStore)
+        return 0;
+    return IrrigationWeb::buildServiceLog(svcStore->logReader(), 100, buf, cap);
 }
 
 size_t IrrigationModule::gwBuildBackup(char *buf, size_t cap)
