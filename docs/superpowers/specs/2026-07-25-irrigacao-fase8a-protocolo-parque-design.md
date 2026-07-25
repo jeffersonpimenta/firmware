@@ -87,14 +87,21 @@ bool   decodePingSurvey(const uint8_t *buf, size_t len, PingSurvey &out);
 ## 5. Comportamento
 
 ### 5.1 SERVICE_MAGIC (validação de origem)
-`senderAuthorized` ganha o estado de flags do pacote em curso:
+A **decisão** de autorização é extraída para uma função livre pura (testável como `SeqTable`/`RateLimiter`), em `IrrigationProtocol.h`:
 ```
-bool senderAuthorized(uint32_t from, uint16_t flags) const {
-    if (flags & FLAG_FROM_SERVICE) return true;           // marca de serviço dispensa vínculo (§11.5)
-    return settings.boundGateway == 0 || from == settings.boundGateway;
+// true = remetente autorizado a comandar (§4.2, §11.5).
+inline bool senderAuthorizedBy(uint16_t flags, uint32_t from, uint32_t boundGateway) {
+    if (flags & FLAG_FROM_SERVICE) return true;            // marca de serviço dispensa vínculo (§11.5)
+    return boundGateway == 0 || from == boundGateway;      // posse-da-PSK / vínculo (§4.2)
 }
 ```
-Chamadores em `handleReceived`/handlers de comando passam `h.flags`. Comando de serviço aceito é auditado com `AuditOrigin::SERVICO` (enum já existe). Os handlers de comando (`MSG_CMD_VALVULA`, `MSG_CMD_GPO`, `MSG_REMOTE_CMD`, `MSG_SET_CONFIG`, `MSG_GET_CONFIG`, `MSG_CMD_MAINT`, aprovação de pareamento) usam a nova assinatura.
+O membro do módulo delega e recebe as flags do pacote em curso:
+```
+bool IrrigationModule::senderAuthorized(uint32_t from, uint16_t flags) const {
+    return senderAuthorizedBy(flags, from, settings.boundGateway);
+}
+```
+Os 5 chamadores em `IrrigationModule.cpp` (linhas 376/435/481/659/730, todos com o `Header h` em escopo) passam `h.flags`. Comando de serviço aceito é auditado com `AuditOrigin::SERVICO` (enum já existe).
 
 ### 5.2 RESYNC_SEQ
 - **Estação (responder — o pré-requisito de §11.9):** ao receber `MSG_RESYNC_SEQ kind=REQUEST`, **não** passa pelo gate `seqTable.checkAndUpdate` (§2, Q4); responde `MSG_RESYNC_SEQ kind=REPLY` com `lastSeq = seqTable.lastSeq(mp.from)`, unicast ao remetente, sujeito ao `RateLimiter`. Validação de origem: aceita se `FLAG_FROM_SERVICE` ou remetente conhecido — mas como é read-only e não altera estado, pode responder amplamente (decisão no plano; default = mesma regra de `senderAuthorized`).
@@ -107,22 +114,27 @@ Em **qualquer papel**, ao receber `MSG_PING_SURVEY kind=PROBE`: responde `kind=R
 
 | Arquivo | Mudança |
 |---|---|
-| `IrrigationProtocol.h` | `FLAG_FROM_SERVICE`; structs `ResyncSeq`/`PingSurvey`; assinaturas encode/decode |
-| `IrrigationProtocol.cpp` | encode/decode dos 2 corpos (padrão writer/reader existente) |
+| `IrrigationProtocol.h` | `FLAG_FROM_SERVICE`; `senderAuthorizedBy()` (inline puro); structs `ResyncSeq`/`PingSurvey`; assinaturas encode/decode + `setServiceFlag` |
+| `IrrigationProtocol.cpp` | encode/decode dos 2 corpos + `setServiceFlag` (padrão writer/reader existente) |
 | `IrrigationModule.h` | assinatura nova de `senderAuthorized`; declaração dos handlers `handleResyncSeq`/`handlePingSurvey` |
 | `IrrigationModule.cpp` | `senderAuthorized(from,flags)` + chamadores; `case MSG_RESYNC_SEQ`/`MSG_PING_SURVEY` no dispatch; helpers de resposta |
 
 Sem arquivos novos, sem módulo novo, sem ABI de settings, sem endpoint web (portal/painel do SERVICO é 8b/8c).
 
-## 7. Testes (nativos)
+## 7. Testes
 
-- **`test_irrigation_protocol`** (codec puro): round-trip encode→decode de `ResyncSeq` (REQUEST e REPLY) e `PingSurvey` (PROBE e REPLY); persistência do bit `FLAG_FROM_SERVICE` no header; rejeição de buffer curto.
-- **Suite de handlers do módulo** (a que já exercita `handleReceived`): 
-  - SERVICE_MAGIC — estação **vinculada** aceita comando com `FLAG_FROM_SERVICE` vindo de nó ≠ gateway; **sem** o bit → NACK `REASON_UNAUTHORIZED`. Auditoria origem `SERVICO`.
-  - RESYNC — REQUEST **não** é descartado por anti-replay mesmo com seq baixo/repetido; REPLY carrega `lastSeq` correto p/ o remetente.
-  - PING_SURVEY — PROBE gera REPLY com `role/configEpoch/vbat/coords` corretos; resposta respeita rate-limit.
+**Restrição do repo:** nenhum teste nativo instancia `IrrigationModule` (depende do stack mesh: `nodeDB`/router/pacote). Segue-se o padrão vigente — **lógica pura nativa-testada; wiring do handler validado por compilação nativa + hardware** (`IrrigationModule.cpp` compila no nativo; só `IrrigationWebEndpoints/PortalAp/IrrigationPortalEndpoints` são excluídos).
 
-Suite nativa completa deve seguir **56/56 GREEN** (sem suite nova; casos adicionados aos suites existentes). Confirmação via Docker (memória `windows-native-test-docker`).
+Nativa-testável (TDD no plano):
+
+- **`test_irrigation_protocol`** (codec puro): round-trip encode→decode de `ResyncSeq` (REQUEST e REPLY) e `PingSurvey` (PROBE e REPLY); `setServiceFlag` faz `decodeHeader` ver `FLAG_FROM_SERVICE` (e ausente por default); rejeição de buffer curto.
+- **`test_irrigation_replay`** (predicado puro): `senderAuthorizedBy(flags, from, boundGateway)` — não-vinculado aceita qualquer; vinculado aceita só o gateway; `FLAG_FROM_SERVICE` aceita independente de vínculo. `lastSeq()` do `SeqTable` já coberto (base da resposta RESYNC).
+
+Glue (compila no nativo + banca de hardware, sem TDD nativo):
+
+- Dispatch `case MSG_RESYNC_SEQ`/`MSG_PING_SURVEY`; responder RESYNC (isento do gate, responde `seqTable.lastSeq(mp.from)`); responder PING (nodeinfo de `settings`, rate-limited); passagem de `h.flags` aos 5 chamadores de `senderAuthorized`.
+
+Suite nativa completa deve seguir **56/56 GREEN** (sem suite nova; casos adicionados a `test_irrigation_protocol` e `test_irrigation_replay`). Confirmação via Docker (memória `windows-native-test-docker`).
 
 ## 8. Critérios de aceite
 
