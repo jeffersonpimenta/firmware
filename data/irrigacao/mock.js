@@ -9,7 +9,7 @@ const MOCK_DATA = {
     running: true,
     runningZoneId: 1,
     runningRemainMin: 25,
-    alertCount: 1,
+    alertCount: 2,
     pairingPending: false,
     pairingNodeId: 0,
     pairingSecondsLeft: 0,
@@ -201,10 +201,41 @@ const MOCK_DATA = {
       idadeS: 120,
     },
   ],
+  // Alertas não-reconhecidos (§8.1–§8.3). type = AlertType (StationMonitor.h).
+  alerts: [
+    { type: 5, node: 0xe5f6a7b8, arg: 0, ageS: 2400 }, // Estação silenciosa
+    { type: 1, node: 0xa1b2c3d4, arg: 0, ageS: 300 },  // Bateria em aviso
+  ],
+  // Portal do nó (/api/portal/*). provisioned é ajustado abaixo por ?wizard=1.
+  portalNode: {
+    role: 0, name: 'Horta Norte', boundGateway: 0xa1b2c3d4, configEpoch: 17,
+    safeMode: false, provisioned: true, numValves: 2, numGpos: 1,
+    valveStates: 1, gpoStates: 0, vbatCentiV: 1250, vpanelCentiV: 1380,
+    flags: 0, apSecondsLeft: 540, latE7: -221234567, lonE7: -476543210,
+  },
+  portalSensors: {
+    sensors: [
+      { id: 0, tipo: 1, unidade: 'bar', valor: 152 },
+      { id: 1, tipo: 0, unidade: '', valor: 100 },
+    ],
+  },
+  portalLog: {
+    log: [
+      { ts: Math.floor(Date.now() / 1000) - 120, origem: 4, acao: 0, alvo: 1, res: 0, no: 0xa1b2c3d4, seq: 7 },
+      { ts: 0, origem: 3, acao: 2, alvo: 0, res: 0, no: 0xa1b2c3d4, seq: 8 },
+    ],
+  },
+  portalRoster: [
+    { id: 1, name: 'Horta', padraoMin: 20 },
+    { id: 2, name: 'Pomar', padraoMin: 30 },
+    { id: 3, name: 'Pastagem', padraoMin: 45 },
+  ],
 };
 
 // Estado mutável (alterações de UI persiste até reload)
 let STATE = JSON.parse(JSON.stringify(MOCK_DATA));
+// ?wizard=1 na URL do portal força um nó não-provisionado (mostra o wizard de 1º boot §6).
+STATE.portalNode.provisioned = !/[?&]wizard(=1)?/.test(location.search);
 
 // Substitui fetch global
 const origFetch = window.fetch;
@@ -214,6 +245,22 @@ window.fetch = async function (url, opts) {
 
   // Latência artificial
   await new Promise(r => setTimeout(r, Math.random() * 300 + 100));
+
+  // Portal do nó (/api/portal/*) — para preview do portal, inclua este mock em portal/index.html.
+  const clean = url.split('?')[0];
+  if (clean.includes('/api/portal')) {
+    const ppath = clean.replace(/.*\/api\/portal/, '');
+    if (method === 'POST') {
+      if (ppath === '/provision') { STATE.portalNode.provisioned = true; return mockResponse({ ok: true, reboot: true }); }
+      return mockResponse({ ok: true });
+    }
+    if (ppath.startsWith('/node')) return mockResponse(STATE.portalNode);
+    if (ppath.startsWith('/sensors')) return mockResponse(STATE.portalSensors);
+    if (ppath.startsWith('/log')) return mockResponse(STATE.portalLog);
+    if (ppath.startsWith('/coords')) return mockResponse({ latE7: STATE.portalNode.latE7, lonE7: STATE.portalNode.lonE7 });
+    if (ppath.startsWith('/net/roster')) return mockResponse(STATE.portalRoster);
+    return mockResponse({ ok: true });
+  }
 
   // Intercepta POST + DELETE
   if (method === 'POST') {
@@ -225,6 +272,7 @@ window.fetch = async function (url, opts) {
   if (path.startsWith('/zones')) return mockResponse(STATE.zones);
   if (path.startsWith('/stations')) return mockResponse(STATE.stations);
   if (path.startsWith('/overview')) return mockResponse(STATE.overview);
+  if (path.startsWith('/alerts')) return mockResponse(STATE.alerts);
   if (path.startsWith('/programs')) return mockResponse(STATE.programs);
   if (path.startsWith('/sensors')) return mockResponse(STATE.sensors);
   if (path.startsWith('/interlocks')) return mockResponse(STATE.interlocks);
@@ -290,6 +338,7 @@ function handlePost(path, body) {
   // Comando (abrir/fechar zona)
   if (path === '/command') {
     console.log('[MOCK] Comando:', body);
+    if (body.kind === 'ack') { STATE.alerts = []; STATE.overview.alertCount = 0; return mockResponse({ ok: true }); }
     STATE.overview.running = body.kind === 'open';
     if (body.kind === 'open') {
       STATE.overview.runningZoneId = body.zoneId;
