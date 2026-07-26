@@ -83,6 +83,28 @@ size_t buildOverview(const OverviewCtx &ctx, char *buf, size_t cap)
     return w.done();
 }
 
+size_t buildAlerts(const AlertCenter &ac, uint32_t nowMs, uint32_t ackMs, char *buf, size_t cap)
+{
+    JsonWriter w(buf, cap);
+    w.beginArray();
+    for (size_t i = 0; i < ac.count(); i++) {
+        const Alert &a = ac.at(i);
+        if (a.type == AlertType::NONE)
+            continue;
+        if (a.atMs <= ackMs)
+            continue; // já reconhecido (ACK_ALERT registrou lastAckAllMs)
+        uint32_t ageS = nowMs >= a.atMs ? (nowMs - a.atMs) / 1000 : 0;
+        w.beginObject();
+        w.keyNum("type", (int64_t)(int)a.type);
+        w.keyNum("node", (int64_t)a.node);
+        w.keyNum("arg", (int64_t)a.arg);
+        w.keyNum("ageS", (int64_t)ageS);
+        w.endObject();
+    }
+    w.endArray();
+    return w.done();
+}
+
 size_t buildStations(const StationView *views, size_t n, char *buf, size_t cap)
 {
     JsonWriter w(buf, cap);

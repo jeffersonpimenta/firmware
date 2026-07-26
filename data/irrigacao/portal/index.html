@@ -7,6 +7,23 @@
   <link rel="stylesheet" href="/irrigacao/style.css" />
 </head>
 <body class="field-portal">
+  <!-- Wizard de 1º boot (§6): revelado por app.js quando node-state reporta provisioned=false.
+       Aparece só uma vez; trocar de papel depois = reset de fábrica. -->
+  <div id="wizard" class="wizard hidden">
+    <div class="wizard-card">
+      <h1>Configurar dispositivo</h1>
+      <p class="muted">Primeiro acesso — escolha o papel deste nó na rede. Esta tela aparece só uma vez; para mudar depois, faça o reset de fábrica.</p>
+      <div class="wz-roles">
+        <button type="button" class="wz-role active" data-role="1">Gateway<small>Controlador central: painel web, cronograma, coordenação</small></button>
+        <button type="button" class="wz-role" data-role="0">Estação<small>Válvulas e sensores no campo (energia solar)</small></button>
+        <button type="button" class="wz-role" data-role="3">Serviço<small>Manutenção itinerante multi-cliente</small></button>
+        <button type="button" class="wz-role" data-role="2">Repetidor<small>Só retransmite o canal da fazenda</small></button>
+      </div>
+      <label id="wz-farm-wrap">Nome da fazenda <input id="wz-farm" maxlength="12" placeholder="Ex.: Bela Vista" /></label>
+      <button type="button" id="wz-go">Continuar</button>
+      <p id="wz-msg" class="muted"></p>
+    </div>
+  </div>
   <header><h1>Portal do Nó</h1><span id="apLeft" class="muted"></span></header>
   <nav class="tabs">
     <button data-tab="node" class="active">Este nó</button>

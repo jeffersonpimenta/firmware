@@ -250,8 +250,30 @@ static void hSurveyStop(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, "{\"ok\":true}");
 }
 
+static void hProvision(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!irrigationModule) {
+        res->setStatusCode(404);
+        return;
+    }
+    char body[192];
+    size_t nb = readBody(req, body, sizeof(body));
+    ProvisionReq p;
+    ParseResult pr = parseProvision(body, nb, p);
+    if (!pr.ok) {
+        sendParseErrors(res, pr);
+        return;
+    }
+    if (!irrigationModule->portalProvision(p)) {
+        sendJson(res, "{\"errors\":[\"provisionamento rejeitado\"]}", 400);
+        return;
+    }
+    sendJson(res, "{\"ok\":true,\"reboot\":true}");
+}
+
 void registerIrrigationPortalHandlers(HTTPServer *server)
 {
+    server->registerNode(new ResourceNode("/api/portal/provision", "POST", &hProvision));
     server->registerNode(new ResourceNode("/api/portal/node", "GET", &hNode));
     server->registerNode(new ResourceNode("/api/portal/node/pulse", "POST", &hNodePulse));
     server->registerNode(new ResourceNode("/api/portal/net/roster", "GET", &hNetRoster));

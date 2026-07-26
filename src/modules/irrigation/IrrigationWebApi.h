@@ -4,6 +4,7 @@
 #include "modules/irrigation/InterlockTable.h"
 #include "modules/irrigation/IrrigationProtocol.h"
 #include "modules/irrigation/ProgramScheduler.h"
+#include "modules/irrigation/StationMonitor.h" // AlertCenter/Alert p/ buildAlerts
 #include "modules/irrigation/SurveyLog.h"
 #include <cstddef>
 #include <cstdint>
@@ -60,6 +61,10 @@ struct OverviewCtx {
     uint16_t runningRemainMin = 0;
 };
 size_t buildOverview(const OverviewCtx &ctx, char *buf, size_t cap);
+
+// Alertas não reconhecidos (§8.1–§8.3): serializa os alertas do AlertCenter com atMs > ackMs.
+// ageS = (nowMs - atMs)/1000. JSON: [{type,node,arg,ageS}]. "[]" se nada pendente.
+size_t buildAlerts(const AlertCenter &ac, uint32_t nowMs, uint32_t ackMs, char *buf, size_t cap);
 
 struct StationView {
     uint32_t node = 0;

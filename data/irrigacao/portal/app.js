@@ -97,12 +97,45 @@ document.getElementById("coordsForm").addEventListener("submit", async (e) => {
 async function refresh() {
   const { ok, body } = await j("/api/portal/node");
   if (ok) {
+    if (body.provisioned === false) { showWizard(); return; } // §6: nó de fábrica → wizard de papel
     renderNode(body);
     renderGpos(body);
     lastRole = body.role;
     if (body.role === 3 && !svcInit) initService(); // §11.8: device SERVICO
   }
   await refreshSensors();
+}
+
+// ── Wizard de 1º boot (§6) — escolha de papel, some após provisionar ─────────
+let wizardShown = false;
+function showWizard() {
+  if (wizardShown) return;
+  wizardShown = true;
+  document.querySelector("header").classList.add("hidden");
+  document.querySelector("nav.tabs").classList.add("hidden");
+  document.querySelectorAll("section.tab").forEach((t) => t.classList.add("hidden"));
+  document.getElementById("wizard").classList.remove("hidden");
+  const roles = document.querySelectorAll(".wz-role");
+  const farmWrap = document.getElementById("wz-farm-wrap");
+  let selRole = 1; // default: Gateway
+  const syncFarm = () => { farmWrap.style.display = selRole === 1 ? "block" : "none"; };
+  roles.forEach((b) => (b.onclick = () => {
+    roles.forEach((x) => x.classList.remove("active"));
+    b.classList.add("active");
+    selRole = +b.dataset.role;
+    syncFarm();
+  }));
+  syncFarm();
+  document.getElementById("wz-go").onclick = async () => {
+    const payload = { role: selRole };
+    const farm = document.getElementById("wz-farm").value.trim();
+    if (selRole === 1 && farm) payload.farmName = farm;
+    document.getElementById("wz-msg").textContent = "Gravando…";
+    const { ok, body } = await j("/api/portal/provision", { method: "POST", body: JSON.stringify(payload) });
+    document.getElementById("wz-msg").textContent = ok
+      ? "✓ Configurado! O dispositivo reinicia em ~3 s. Reconecte ao portal depois."
+      : "Erro: " + ((body.errors || ["falha"]).join("; "));
+  };
 }
 
 document.querySelectorAll("nav.tabs button").forEach((b) =>

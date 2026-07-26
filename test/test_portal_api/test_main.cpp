@@ -216,6 +216,46 @@ static void test_parseCoords_rejectsOutOfRange()
     TEST_ASSERT_FALSE(r.ok);
 }
 
+static void test_parseProvision_valid()
+{
+    ProvisionReq p = {};
+    const char *j = "{\"role\":1,\"farmName\":\"Bela Vista\"}";
+    ParseResult r = parseProvision(j, strlen(j), p);
+    TEST_ASSERT_TRUE(r.ok);
+    TEST_ASSERT_EQUAL_UINT8(1, p.role);
+    TEST_ASSERT_TRUE(p.hasFarmName);
+    TEST_ASSERT_EQUAL_STRING("Bela Vista", p.farmName);
+}
+
+static void test_parseProvision_rejectsBadRole()
+{
+    ProvisionReq p = {};
+    const char *j = "{\"role\":9}";
+    ParseResult r = parseProvision(j, strlen(j), p);
+    TEST_ASSERT_FALSE(r.ok);
+}
+
+static void test_parseProvision_farmNameOptional()
+{
+    ProvisionReq p = {};
+    const char *j = "{\"role\":0}";
+    ParseResult r = parseProvision(j, strlen(j), p);
+    TEST_ASSERT_TRUE(r.ok);
+    TEST_ASSERT_EQUAL_UINT8(0, p.role);
+    TEST_ASSERT_FALSE(p.hasFarmName);
+}
+
+static void test_buildNodeState_provisioned()
+{
+    NodeStateCtx c = {};
+    c.name = "x";
+    c.provisioned = true;
+    char buf[512];
+    size_t n = buildNodeState(c, buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_TRUE(contains(buf, "\"provisioned\":true"));
+}
+
 void setup()
 {
     UNITY_BEGIN();
@@ -236,6 +276,10 @@ void setup()
     RUN_TEST(test_parseGpoReq_rejectsBadGpo);
     RUN_TEST(test_coords_roundtrip);
     RUN_TEST(test_parseCoords_rejectsOutOfRange);
+    RUN_TEST(test_parseProvision_valid);
+    RUN_TEST(test_parseProvision_rejectsBadRole);
+    RUN_TEST(test_parseProvision_farmNameOptional);
+    RUN_TEST(test_buildNodeState_provisioned);
     UNITY_END();
 }
 

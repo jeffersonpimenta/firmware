@@ -13,23 +13,20 @@
         <div class="sub">canal privado</div>
       </div>
       <span id="syncChip" class="chip green">—</span>
-      <a id="exportBtn" class="chip" href="/api/irrigation/export" download="irrigacao-backup.json"
-         title="Backup completo §5.5 (PSK + tabelas) para o cofre do device de serviço">⬇&nbsp;Backup</a>
     </header>
+    <div id="subbar" class="subbar hidden">
+      <button class="subback" id="subBack">‹ Mais</button>
+      <span class="subtitle" id="subTitle"></span>
+    </div>
     <main id="view" class="view"></main>
     <nav class="tabs">
       <button data-tab="overview" class="tab active">Visão&nbsp;Geral</button>
       <button data-tab="stations" class="tab">Estações</button>
       <button data-tab="zones" class="tab">Zonas</button>
       <button data-tab="programs" class="tab">Programas</button>
-      <button data-tab="grupos" class="tab">Grupos</button>
-      <button data-tab="sensores" class="tab">Sensores</button>
-      <button data-tab="gpo" class="tab">GPO</button>
-      <button data-tab="intertravamentos" class="tab">Intertravam.</button>
-      <button data-tab="auditlog" class="tab">Log</button>
-      <button data-tab="tamper" class="tab">Tamper</button>
-      <button data-tab="cobertura" class="tab">Cobertura</button>
+      <button data-tab="mais" class="tab">Mais</button>
     </nav>
+    <script src="mock.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

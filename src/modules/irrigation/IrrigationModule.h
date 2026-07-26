@@ -35,6 +35,7 @@ struct PortalSensorsCtx;
 struct PortalGpoReq;
 struct PortalCoords;
 struct SurveyStartReq;
+struct ProvisionReq;
 }
 
 // Saída de nível (relé/MOSFET) dos GPOs.
@@ -100,6 +101,8 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     // Fase 8b: backup §5.5 completo (PSK + tabelas) num envelope de 1 cliente, p/ o cofre
     // do device SERVICO / botão de export do painel. GATEWAY-only. → bytes escritos (0 se falhou).
     size_t gwBuildBackup(char *buf, size_t cap);
+    // Alertas não reconhecidos (§8.1–§8.3) p/ a Visão Geral do painel. Vazio ("[]") fora do gateway.
+    size_t gwBuildAlerts(char *buf, size_t cap);
 
     // --- Serviço do portal de campo (todos os papéis). Chamados pela cola HTTP (IrrigationPortalEndpoints). ---
     void portalFillNodeState(IrrigationWeb::NodeStateCtx &out) const;
@@ -109,6 +112,8 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     bool portalGpo(const IrrigationWeb::PortalGpoReq &r); // biestável (durationS==0 ao ligar) exige confirm
     void portalGetCoords(IrrigationWeb::PortalCoords &out) const;
     bool portalSetCoords(const IrrigationWeb::PortalCoords &c); // persiste settings (coordenada é local, não mexe em epoch)
+    // Wizard de 1º boot (§6): grava o papel escolhido (+ PSK da fazenda se GATEWAY) e reinicia.
+    bool portalProvision(const IrrigationWeb::ProvisionReq &r);
     PortalSession &portalSession() { return portal; }
     // Acesso de leitura ao mini-log de auditoria (Task 10: portal de campo). §8.9
     const AuditLog &auditLogRef() const { return audit; }
@@ -247,6 +252,7 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     uint32_t lastHeartbeatMs = 0;
     uint32_t lastGatewayRxMs = 0; // last millis() we received a packet from boundGateway
     bool safeMode = false;
+    bool provisioned = false; // false = nó de fábrica (sem config salva no boot) → wizard de 1º boot (§6)
     bool bootHeartbeatPending = true;
     // Controle de LOG_WARN de RTC (1×/h para não spam)
     uint32_t lastRtcWarnMs = 0;

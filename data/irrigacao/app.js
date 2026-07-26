@@ -56,27 +56,116 @@ function nodeHex(node) {
   return '0x' + (num(node) >>> 0).toString(16);
 }
 
+// AlertType (StationMonitor.h) → [mensagem, classe de cor do ponto].
+const ALERT_INFO = {
+  1: ['Bateria em aviso', 'amber'],
+  2: ['Bateria crítica', 'red'],
+  3: ['Hibernação por bateria', 'red'],
+  4: ['Bateria recuperada', 'green'],
+  5: ['Estação silenciosa', 'red'],
+  6: ['Estação voltou ao ar', 'green'],
+  7: ['Reboots anômalos', 'amber'],
+  8: ['Falha de comando (sem ACK)', 'red'],
+  9: ['Config adotada do serviço', 'green'],
+};
+
+// Minutos até o próximo disparo de um programa, dado o relógio do CLIENTE (o celular tem
+// hora real mesmo se o gateway não tem RTC). daysMask bit0=dom..bit6=sáb. Infinity se nunca.
+function nextFireMinutes(mask, startMin, now) {
+  mask = num(mask) & 127;
+  if (!mask) return Infinity;
+  const dow = now.getDay(); // 0=domingo
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  for (let d = 0; d < 8; d++) {
+    const day = (dow + d) % 7;
+    if (!(mask & (1 << day))) continue;
+    if (d === 0 && startMin <= nowMin) continue; // já passou hoje
+    return d * 1440 + startMin - nowMin;
+  }
+  return Infinity;
+}
+
 async function renderOverview() {
-  const o = (await getJson('/overview')) || {};
-  syncChip.textContent = o.hasRtc ? 'com relógio' : 'sem relógio';
-  syncChip.className = 'chip ' + (o.hasRtc ? 'green' : 'amber');
+  const [o, alerts, stations, programs, zones] = await Promise.all([
+    getJson('/overview'),
+    getJson('/alerts').catch(() => []),
+    getJson('/stations').catch(() => []),
+    getJson('/programs').catch(() => []),
+    getJson('/zones').catch(() => []),
+  ]);
+  const ov = o || {};
+  syncChip.textContent = ov.hasRtc ? 'com relógio' : 'sem relógio';
+  syncChip.className = 'chip ' + (ov.hasRtc ? 'green' : 'amber');
 
-  const running = o.running
-    ? 'zona ' + num(o.runningZoneId) + ' · ' + num(o.runningRemainMin) + ' min'
-    : '—';
-
-  view.innerHTML =
+  const alertN = num(ov.alertCount);
+  let html =
     `<div class="row3">
-      <div class="card stat"><div class="lbl">Estações</div><div class="val">${num(o.stationCount)}</div></div>
-      <div class="card stat"><div class="lbl">Em execução</div><div class="val">${running}</div></div>
-      <div class="card stat"><div class="lbl">Alertas</div><div class="val warn">${num(o.alertCount)}</div></div>
-    </div>` +
-    (o.pairingPending
-      ? `<div class="card amberbox">Pareamento pendente — nó ${nodeHex(o.pairingNodeId)} · expira em ${num(o.pairingSecondsLeft)}s</div>`
-      : '') +
-    (!o.hasRtc
-      ? `<div class="card amberbox">Sem relógio — cronograma inativo. Modo espelho segue operando.</div>`
-      : '');
+      <div class="card stat"><div class="lbl">Estações</div><div class="val">${num(ov.stationCount)}</div></div>
+      <div class="card stat"><div class="lbl">Em execução</div><div class="val">${ov.running ? 'zona ' + num(ov.runningZoneId) : '—'}</div></div>
+      <div class="card stat"><div class="lbl">Alertas</div><div class="val${alertN ? ' warn' : ''}">${alertN}</div></div>
+    </div>`;
+
+  if (ov.running) {
+    html += `<div class="card greenbox exec">
+      <div class="lbl green">Em execução agora</div>
+      <div class="big">Zona ${num(ov.runningZoneId)} · restam ${num(ov.runningRemainMin)} min</div>
+      <div class="asub">Fecha sozinha pelo fail-safe local ao expirar.</div>
+    </div>`;
+  }
+
+  if (ov.pairingPending) {
+    html += `<div class="card amberbox">Pareamento pendente — nó ${nodeHex(ov.pairingNodeId)} · expira em ${num(ov.pairingSecondsLeft)}s</div>`;
+  }
+  if (!ov.hasRtc) {
+    html += `<div class="card amberbox">Sem relógio — cronograma inativo. Modo espelho segue operando.</div>`;
+  }
+
+  const al = Array.isArray(alerts) ? alerts : [];
+  html += `<div class="sec-title">Alertas não reconhecidos</div>`;
+  html += al.length
+    ? '<div class="alerts">' +
+      al
+        .map((a) => {
+          const info = ALERT_INFO[num(a.type)] || ['Alerta', 'amber'];
+          return `<div class="card alert">
+          <span class="dot ${info[1]}"></span>
+          <div class="ainfo"><div class="amsg">${esc(info[0])}</div><div class="asub">${esc(stationName(stations, a.node))} · ${fmtSince(a.ageS)}</div></div>
+          <button class="btn ghost sm" data-ackall>Reconhecer</button>
+        </div>`;
+        })
+        .join('') +
+      '</div>'
+    : '<div class="empty">Nenhum alerta pendente.</div>';
+
+  if (ov.hasRtc) {
+    const now = new Date();
+    const ups = (Array.isArray(programs) ? programs : [])
+      .filter((p) => p && p.enabled)
+      .map((p) => ({ p, inMin: nextFireMinutes(p.daysMask, num(p.startMinute), now) }))
+      .filter((x) => Number.isFinite(x.inMin))
+      .sort((a, b) => a.inMin - b.inMin)
+      .slice(0, 3);
+    if (ups.length) {
+      html +=
+        `<div class="sec-title">Próximas execuções</div>` +
+        ups
+          .map(
+            ({ p }) => `<div class="card">
+             <div class="amsg">${esc(diasLabel(p.daysMask))} · ${esc(minToTime(p.startMinute))}</div>
+             <div class="asub">${esc(seqText(p.steps, zones))}</div>
+           </div>`
+          )
+          .join('');
+    }
+  }
+
+  view.innerHTML = html;
+  view.querySelectorAll('[data-ackall]').forEach((b) =>
+    b.addEventListener('click', async () => {
+      await postJson('/command', { kind: 'ack' });
+      renderOverview().catch(() => {});
+    })
+  );
 }
 
 const SYNC_CLASS = { sincronizada: 'green', pendente: 'amber', inalcancavel: 'red' };
@@ -1365,7 +1454,48 @@ async function renderCobertura() {
     });
 }
 
-// Mapa extensível: programs adicionado na Task 13.
+// ===== "Mais" (menu de telas secundárias) =====
+function renderMais() {
+  const items = [
+    ['grupos', 'Grupos hidráulicos', 'Sequenciamento de bomba e válvula mestre'],
+    ['intertravamentos', 'Intertravamentos', 'Regras de bloqueio por sensor / simultaneidade'],
+    ['sensores', 'Sensores', 'Leituras e nomes por estação'],
+    ['gpo', 'Saídas (GPO)', 'Relés/MOSFET: portão, bomba auxiliar, luz, sirene'],
+    ['tamper', 'Tamper / manutenção', 'Violação de gabinete e janela de manutenção'],
+    ['auditlog', 'Log de auditoria', 'Histórico completo de ações e eventos'],
+    ['cobertura', 'Cobertura', 'Pesquisa de sinal (site survey)'],
+    ['sistema', 'Sistema', 'Backup e chave da rede'],
+  ];
+  view.innerHTML = items
+    .map(
+      ([k, t, s]) => `<div class="card navrow" data-sub="${k}">
+        <div class="navinfo"><div class="name">${esc(t)}</div><div class="sub">${esc(s)}</div></div>
+        <span class="chev">›</span>
+      </div>`
+    )
+    .join('');
+  view.querySelectorAll('[data-sub]').forEach((c) => c.addEventListener('click', () => showSub(c.dataset.sub)));
+}
+
+// ===== Sistema (backup, chave da fazenda, PIN) =====
+function renderSistema() {
+  view.innerHTML =
+    `<div class="card">
+       <div class="sens-hdr"><span class="name">Backup</span></div>
+       <div class="sub maint-sub">Exporta a configuração completa (§5.5): PSK, estações, zonas, programas, intertravamentos e grupos — para restaurar num gateway substituto ou cadastrar no cofre do device de serviço.</div>
+       <a class="btn solid big syslink" href="${API}/export" download="irrigacao-backup.json">⬇ Baixar backup (.json)</a>
+     </div>
+     <div class="card">
+       <div class="sens-hdr"><span class="name">Chave da fazenda</span></div>
+       <div class="sub">A PSK do canal (base64 + nome) é exportada apenas no dispositivo, por segurança: pressão longa no botão do gateway a despeja no console serial (§11.2). Necessária para cadastrar a fazenda no device de serviço.</div>
+     </div>
+     <div class="card">
+       <div class="sens-hdr"><span class="name">PIN de aplicação</span></div>
+       <div class="sub">O portal Wi-Fi exige WPA2 + PIN e o AP desliga após inatividade. O PIN é definido no provisionamento.</div>
+     </div>`;
+}
+
+// ===== Roteamento =====
 const RENDER = {
   overview: renderOverview,
   stations: renderStations,
@@ -1378,15 +1508,38 @@ const RENDER = {
   auditlog: renderAuditLog,
   tamper: renderTamper,
   cobertura: renderCobertura,
+  mais: renderMais,
+  sistema: renderSistema,
 };
 
-async function show(tab) {
-  current = tab;
+// Rótulo mostrado na barra de volta ao entrar numa tela secundária via "Mais".
+const SECTION_LABELS = {
+  grupos: 'Grupos', intertravamentos: 'Intertravamentos', sensores: 'Sensores',
+  gpo: 'Saídas (GPO)', tamper: 'Tamper', auditlog: 'Log', cobertura: 'Cobertura', sistema: 'Sistema',
+};
+// Telas que se auto-atualizam (poll 3 s) via re-render completo.
+const POLLED = { overview: 1, stations: 1, sensores: 1, cobertura: 1 };
+
+const subbar = document.getElementById('subbar');
+const subTitle = document.getElementById('subTitle');
+document.getElementById('subBack').addEventListener('click', () => show('mais'));
+
+function setActiveTab(tab) {
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === tab));
+}
+function clearTimer() {
   if (timer) {
     clearInterval(timer);
     timer = null;
   }
+}
+
+// Rota primária (botão da barra inferior).
+async function show(tab) {
+  current = tab;
+  setActiveTab(tab);
+  subbar.classList.add('hidden');
+  clearTimer();
   const fn = RENDER[tab];
   if (!fn) {
     view.innerHTML = '<div class="empty">Em breve.</div>';
@@ -1397,11 +1550,29 @@ async function show(tab) {
   } catch (e) {
     view.innerHTML = '<div class="empty">Erro ao carregar (' + esc(e.message) + ').</div>';
   }
-  if (tab === 'overview' || tab === 'stations' || tab === 'sensores' || tab === 'cobertura') {
-    timer = setInterval(() => fn().catch(() => {}), 3000);
-  } else if (tab === 'grupos') {
-    timer = setInterval(() => pollGroupStatus().catch(() => {}), 3000);
+  if (POLLED[tab]) timer = setInterval(() => fn().catch(() => {}), 3000);
+}
+
+// Sub-rota (item dentro de "Mais"). Mantém a aba "Mais" ativa e mostra a barra de volta.
+// O #subbar é irmão do #view, então sobrevive aos re-renders de poll.
+async function showSub(name) {
+  current = name;
+  setActiveTab('mais');
+  subTitle.textContent = SECTION_LABELS[name] || '';
+  subbar.classList.remove('hidden');
+  clearTimer();
+  const fn = RENDER[name];
+  if (!fn) {
+    view.innerHTML = '<div class="empty">Em breve.</div>';
+    return;
   }
+  try {
+    await fn();
+  } catch (e) {
+    view.innerHTML = '<div class="empty">Erro ao carregar (' + esc(e.message) + ').</div>';
+  }
+  if (name === 'grupos') timer = setInterval(() => pollGroupStatus().catch(() => {}), 3000);
+  else if (POLLED[name]) timer = setInterval(() => fn().catch(() => {}), 3000);
 }
 
 document.querySelectorAll('.tab').forEach((t) => {

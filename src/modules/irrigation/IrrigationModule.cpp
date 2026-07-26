@@ -231,6 +231,7 @@ IrrigationModule::IrrigationModule()
 {
     IrrigationSettings probe;
     safeMode = !loadIrrigationSettings(probe); // sem config persistida = modo seguro (spec §5.5)
+    provisioned = !safeMode;                   // sem config salva = nó de fábrica → wizard de 1º boot (§6)
     if (safeMode)
         gpos.allOff(); // §5.5 GPOs inativos em modo seguro
     driver.configure(settings);
@@ -2413,6 +2414,7 @@ void IrrigationModule::portalFillNodeState(IrrigationWeb::NodeStateCtx &out) con
     out.boundGateway = settings.boundGateway;
     out.configEpoch = settings.configEpoch;
     out.safeMode = safeMode;
+    out.provisioned = provisioned;
     out.numValves = settings.numValves;
     out.numGpos = countGpos(settings);
     out.valveStates = valves.stateBitmap();
@@ -2421,6 +2423,46 @@ void IrrigationModule::portalFillNodeState(IrrigationWeb::NodeStateCtx &out) con
     out.vpanelCentiV = 0; // tensão de painel não medida na estação por enquanto (follow-up)
     out.flags = safeMode ? HB_FLAG_SAFE_MODE : 0;
     out.apSecondsLeft = portal.secondsLeft(millis());
+}
+
+// Wizard de 1º boot (§6): grava o papel escolhido e reinicia. Um GATEWAY de fábrica
+// gera aqui a PSK AES-256 própria da fazenda (spec §3.2/§6) se o canal ainda não a tem.
+// provisioned=true no boot seguinte (config salva) faz o wizard nunca mais reaparecer.
+bool IrrigationModule::portalProvision(const IrrigationWeb::ProvisionReq &r)
+{
+    if (r.role > (uint8_t)IrrigationRole::SERVICO)
+        return false;
+    settings.role = r.role;
+    if (r.role == (uint8_t)IrrigationRole::GATEWAY) {
+        meshtastic_Channel ch = channels.getByIndex(channels.getPrimaryIndex());
+        if (ch.settings.psk.size != 32) {
+            for (int i = 0; i < 32; i++)
+                ch.settings.psk.bytes[i] = (uint8_t)random(256);
+            ch.settings.psk.size = 32;
+        }
+        if (r.hasFarmName) {
+            memset(ch.settings.name, 0, sizeof(ch.settings.name));
+            strncpy(ch.settings.name, r.farmName, sizeof(ch.settings.name) - 1);
+        }
+        channels.setChannel(ch);
+        channels.onConfigChanged();
+        service->reloadConfig(SEGMENT_CHANNELS);
+    }
+    if (!saveIrrigationSettings(settings)) {
+        LOG_ERROR("Irrigation: provision failed to persist");
+        return false;
+    }
+    provisioned = true;
+    safeMode = false;
+    auditEvent(AuditOrigin::SISTEMA, AuditAction::CONFIG_EPOCH, r.role, AuditResult::OK);
+    LOG_INFO("Irrigation: provisioned role=%u, rebooting in 3 s", r.role);
+    rebootAtMsec = millis() + 3000;
+    return true;
+}
+
+size_t IrrigationModule::gwBuildAlerts(char *buf, size_t cap)
+{
+    return IrrigationWeb::buildAlerts(gateway.alerts, millis(), lastAckAllMs, buf, cap);
 }
 
 bool IrrigationModule::portalPulse(const IrrigationWeb::PortalPulseReq &p)

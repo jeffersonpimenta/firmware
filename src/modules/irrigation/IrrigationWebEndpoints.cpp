@@ -72,6 +72,21 @@ static size_t readBody(HTTPRequest *req, char *buf, size_t cap)
 // GET handlers
 // ---------------------------------------------------------------------------
 
+static void hAlerts(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!gwReady()) {
+        res->setStatusCode(404);
+        return;
+    }
+    char buf[3072];
+    if (!irrigationModule->gwBuildAlerts(buf, sizeof(buf))) {
+        res->setStatusCode(500);
+        return;
+    }
+    sendJson(res, buf);
+}
+
 static void hOverview(HTTPRequest *req, HTTPResponse *res)
 {
     (void)req;
@@ -724,6 +739,7 @@ static void hSurveyClear(HTTPRequest *req, HTTPResponse *res)
 void registerIrrigationHandlers(HTTPServer *server)
 {
     server->registerNode(new ResourceNode("/api/irrigation/overview", "GET", &hOverview));
+    server->registerNode(new ResourceNode("/api/irrigation/alerts", "GET", &hAlerts));
     server->registerNode(new ResourceNode("/api/irrigation/stations", "GET", &hStations));
     server->registerNode(new ResourceNode("/api/irrigation/zones", "GET", &hZonesGet));
     server->registerNode(new ResourceNode("/api/irrigation/zones", "POST", &hZonesPost));

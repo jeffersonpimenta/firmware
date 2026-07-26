@@ -910,6 +910,22 @@ static void test_parseSurveyStart_clamps()
     TEST_ASSERT_EQUAL_UINT16(3600, r.timeoutS);
 }
 
+static void test_buildAlerts_filtersAcked()
+{
+    AlertCenter ac;
+    Alert a1 = {AlertType::SILENT, 0xAA, 0, 1000};
+    Alert a2 = {AlertType::BATT_CRITICO, 0xBB, 0, 5000};
+    ac.push(a1);
+    ac.push(a2);
+    char buf[512];
+    size_t n = buildAlerts(ac, 6000, 2000, buf, sizeof(buf)); // ack=2000 → a1(1000) reconhecido; a2(5000) fica
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_TRUE(contains(buf, "\"node\":187"));  // 0xBB
+    TEST_ASSERT_FALSE(contains(buf, "\"node\":170")); // 0xAA já reconhecido
+    TEST_ASSERT_TRUE(contains(buf, "\"ageS\":1"));    // (6000-5000)/1000
+    TEST_ASSERT_TRUE(contains(buf, "\"type\":2"));    // BATT_CRITICO
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -917,6 +933,7 @@ void setup()
     RUN_TEST(test_computeSync_states);
     RUN_TEST(test_buildOverview_json);
     RUN_TEST(test_buildOverview_truncationReturnsZero);
+    RUN_TEST(test_buildAlerts_filtersAcked);
     RUN_TEST(test_jsonWriter_scalarArrayCommas);
     RUN_TEST(test_jsonWriter_strEscaping);
     RUN_TEST(test_buildStations_json);

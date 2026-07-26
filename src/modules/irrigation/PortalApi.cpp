@@ -13,6 +13,7 @@ size_t buildNodeState(const NodeStateCtx &ctx, char *buf, size_t cap)
     w.keyNum("boundGateway", (int64_t)ctx.boundGateway);
     w.keyNum("configEpoch", (int64_t)ctx.configEpoch);
     w.keyBool("safeMode", ctx.safeMode);
+    w.keyBool("provisioned", ctx.provisioned);
     w.keyNum("numValves", ctx.numValves);
     w.keyNum("numGpos", ctx.numGpos);
     w.keyNum("valveStates", ctx.valveStates);
@@ -37,6 +38,25 @@ ParseResult parsePulse(const char *json, size_t len, PortalPulseReq &out)
     if (!r.ok) return r;
     out.valveId = (uint8_t)valveId;
     out.durationS = (uint16_t)dur;
+    return r;
+}
+
+ParseResult parseProvision(const char *json, size_t len, ProvisionReq &out)
+{
+    ParseResult r;
+    JsonReader rd(json, len);
+    int64_t role = 0;
+    if (!rd.getInt("role", role) || role < 0 || role > 3) {
+        r.fail("role fora de 0..3");
+        return r;
+    }
+    out.role = (uint8_t)role;
+    // farmName é opcional; ausência não é erro (só usado no papel GATEWAY p/ nomear o canal).
+    char fn[13] = {0};
+    if (rd.getStr("farmName", fn, sizeof(fn))) {
+        memcpy(out.farmName, fn, sizeof(out.farmName));
+        out.hasFarmName = fn[0] != '\0';
+    }
     return r;
 }
 

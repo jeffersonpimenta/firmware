@@ -15,6 +15,7 @@ struct NodeStateCtx {
     uint32_t boundGateway = 0; // 0 = não pareado
     uint32_t configEpoch = 0;
     bool safeMode = false;
+    bool provisioned = false; // false = nó de fábrica (sem config salva) → wizard de 1º boot (§6)
     uint8_t numValves = 0;
     uint8_t numGpos = 0;
     uint8_t valveStates = 0;   // bitmap
@@ -31,6 +32,14 @@ struct PortalPulseReq {
     uint16_t durationS = 0;
 };
 ParseResult parsePulse(const char *json, size_t len, PortalPulseReq &out);
+
+// --- Provisionamento de 1º boot (wizard de papel, §6) ---
+struct ProvisionReq {
+    uint8_t role = 0;        // IrrigationRole 0..3
+    char farmName[13] = {0}; // opcional; vira o nome do canal quando role==GATEWAY
+    bool hasFarmName = false;
+};
+ParseResult parseProvision(const char *json, size_t len, ProvisionReq &out);
 
 // --- Aba "Rede" ---
 struct NetCommand {
