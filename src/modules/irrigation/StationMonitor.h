@@ -13,6 +13,7 @@ struct Alert {
     uint32_t node = 0;
     uint32_t arg = 0;
     uint32_t atMs = 0;
+    bool acked = false; // reconhecido individualmente pelo painel (ack por-alerta)
 };
 
 class AlertCenter {
@@ -22,6 +23,14 @@ class AlertCenter {
     void push(const Alert &a);
     size_t count() const;
     const Alert &at(size_t i) const;
+
+    // Marca acked=true no(s) alerta(s) cujo (node,type,arg,atMs) casa; retorna true se algum casou.
+    // Identidade = os 4 campos serializados por buildAlerts, ecoados pelo botão "Reconhecer".
+    bool ackMatch(uint32_t node, AlertType type, uint32_t arg, uint32_t atMs);
+
+    // Alertas pendentes = mesmo filtro de buildAlerts (exclui NONE, acked e atMs<=ackMs).
+    // Alimenta o badge "Alertas" do overview para bater com o tamanho da lista.
+    size_t unackedCount(uint32_t ackMs) const;
 
   private:
     Alert ring[MAX] = {};

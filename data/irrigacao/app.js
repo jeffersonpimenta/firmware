@@ -130,7 +130,7 @@ async function renderOverview() {
           return `<div class="card alert">
           <span class="dot ${info[1]}"></span>
           <div class="ainfo"><div class="amsg">${esc(info[0])}</div><div class="asub">${esc(stationName(stations, a.node))} · ${fmtSince(a.ageS)}</div></div>
-          <button class="btn ghost sm" data-ackall>Reconhecer</button>
+          <button class="btn ghost sm" data-ack data-node="${num(a.node)}" data-type="${num(a.type)}" data-arg="${num(a.arg)}" data-at="${num(a.atMs)}">Reconhecer</button>
         </div>`;
         })
         .join('') +
@@ -160,9 +160,16 @@ async function renderOverview() {
   }
 
   view.innerHTML = html;
-  view.querySelectorAll('[data-ackall]').forEach((b) =>
+  // Reconhece só o alerta clicado: ecoa sua identidade (node+type+arg+atMs) ao backend (ackMatch).
+  view.querySelectorAll('[data-ack]').forEach((b) =>
     b.addEventListener('click', async () => {
-      await postJson('/command', { kind: 'ack' });
+      await postJson('/command', {
+        kind: 'ack',
+        node: num(b.dataset.node),
+        type: num(b.dataset.type),
+        arg: num(b.dataset.arg),
+        atMs: num(b.dataset.at),
+      });
       renderOverview().catch(() => {});
     })
   );

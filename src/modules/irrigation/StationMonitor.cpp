@@ -26,6 +26,32 @@ const Alert &AlertCenter::at(size_t i) const
     return ring[actualIdx];
 }
 
+bool AlertCenter::ackMatch(uint32_t node, AlertType type, uint32_t arg, uint32_t atMs)
+{
+    bool matched = false;
+    for (size_t i = 0; i < numAlerts; i++) {
+        size_t idx = (writeIdx + MAX - 1 - i) % MAX; // mesma projeção lógica de at()
+        Alert &a = ring[idx];
+        if (a.type == type && a.node == node && a.arg == arg && a.atMs == atMs) {
+            a.acked = true;
+            matched = true;
+        }
+    }
+    return matched;
+}
+
+size_t AlertCenter::unackedCount(uint32_t ackMs) const
+{
+    size_t n = 0;
+    for (size_t i = 0; i < numAlerts; i++) {
+        const Alert &a = at(i);
+        if (a.type == AlertType::NONE || a.acked || a.atMs <= ackMs)
+            continue;
+        n++;
+    }
+    return n;
+}
+
 // ============================================================================
 // StationMonitor implementation
 // ============================================================================

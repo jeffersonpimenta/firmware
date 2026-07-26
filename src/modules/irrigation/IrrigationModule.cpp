@@ -2371,7 +2371,10 @@ bool IrrigationModule::gwRunCommand(const IrrigationWeb::WebCommand &c)
         return true;
     }
     if (c.kind == K::ACK_ALERT) {
-        lastAckAllMs = millis();
+        if (c.atMs != 0)
+            gateway.alerts.ackMatch(c.node, (AlertType)c.alertType, c.arg, c.atMs); // ack por-alerta (botão)
+        else
+            lastAckAllMs = millis(); // sem identidade ⇒ reconhecer todos (legado)
         return true;
     }
     const Zone *z = gateway.zones.byId(c.zoneId);

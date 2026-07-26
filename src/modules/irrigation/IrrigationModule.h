@@ -75,6 +75,8 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     // --- Serviço do painel web (gateway). Chamados pela cola HTTP (IrrigationWebEndpoints). ---
     bool gwIsGateway() const;
     const IrrigationGateway &gwState() const { return gateway; }
+    // Badge "Alertas" do overview: conta pendentes (aplica a mesma régua de reconhecimento de gwBuildAlerts).
+    uint16_t gwUnackedAlertCount() const { return (uint16_t)gateway.alerts.unackedCount(lastAckAllMs); }
     bool gwHasRtc() const;
     uint32_t gwLocalSecs() const;
     bool gwApplyZoneUpsert(const Zone &z);

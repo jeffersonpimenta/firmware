@@ -91,13 +91,16 @@ size_t buildAlerts(const AlertCenter &ac, uint32_t nowMs, uint32_t ackMs, char *
         const Alert &a = ac.at(i);
         if (a.type == AlertType::NONE)
             continue;
+        if (a.acked)
+            continue; // reconhecido individualmente pelo painel (ackMatch)
         if (a.atMs <= ackMs)
-            continue; // já reconhecido (ACK_ALERT registrou lastAckAllMs)
+            continue; // reconhecido em massa (ACK_ALERT sem identidade registrou lastAckAllMs)
         uint32_t ageS = nowMs >= a.atMs ? (nowMs - a.atMs) / 1000 : 0;
         w.beginObject();
         w.keyNum("type", (int64_t)(int)a.type);
         w.keyNum("node", (int64_t)a.node);
         w.keyNum("arg", (int64_t)a.arg);
+        w.keyNum("atMs", (int64_t)a.atMs); // identidade ecoada pelo botão "Reconhecer" (ack por-alerta)
         w.keyNum("ageS", (int64_t)ageS);
         w.endObject();
     }
@@ -379,12 +382,18 @@ ParseResult parseCommand(const char *json, size_t len, WebCommand &out)
     char kind[20] = {0};
     if (!rd.getStr("kind", kind, sizeof(kind))) { r.fail("kind ausente"); return r; }
     WebCommand c = WebCommand{};
-    int64_t zoneId = 0, dur = 0, node = 0;
+    int64_t zoneId = 0, dur = 0, node = 0, atype = 0, arg = 0, atMs = 0;
     rd.getInt("zoneId", zoneId);
     rd.getInt("durationS", dur);
     rd.getInt("node", node);
+    rd.getInt("type", atype);  // ACK_ALERT: identidade do alerta (ausente ⇒ 0)
+    rd.getInt("arg", arg);
+    rd.getInt("atMs", atMs);
     c.zoneId = (uint8_t)zoneId;
     c.node = (uint32_t)node;
+    c.alertType = (uint8_t)atype;
+    c.arg = (uint32_t)arg;
+    c.atMs = (uint32_t)atMs;
     if (strcmp(kind, "pulse") == 0) {
         if (zoneId < 1 || zoneId > 255) r.fail("zoneId invalido");
         c.kind = CmdKind::PULSE_TEST;

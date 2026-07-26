@@ -123,6 +123,10 @@ struct WebCommand {
     uint8_t zoneId = 0;
     uint16_t durationS = 0;
     uint32_t node = 0;
+    // ACK_ALERT: identidade do alerta clicado (node acima + estes 3). atMs==0 ⇒ reconhecer todos (legado).
+    uint8_t alertType = 0;
+    uint32_t arg = 0;
+    uint32_t atMs = 0;
 };
 ParseResult parseCommand(const char *json, size_t len, WebCommand &out);
 

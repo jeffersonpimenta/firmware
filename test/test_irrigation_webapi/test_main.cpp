@@ -294,6 +294,26 @@ static void test_parseCommand_kinds()
     TEST_ASSERT_FALSE(parseCommand(jbad, strlen(jbad), c).ok); // zoneId 0
 }
 
+// ack carrega a identidade do alerta clicado (node+type+arg+atMs) para ack por-alerta.
+static void test_parseCommand_ackIdentity()
+{
+    WebCommand c;
+    const char *j = "{\"kind\":\"ack\",\"node\":187,\"type\":2,\"arg\":7,\"atMs\":5000}";
+    TEST_ASSERT_TRUE(parseCommand(j, strlen(j), c).ok);
+    TEST_ASSERT_EQUAL(CmdKind::ACK_ALERT, c.kind);
+    TEST_ASSERT_EQUAL_UINT32(187, c.node);
+    TEST_ASSERT_EQUAL_UINT8(2, c.alertType);
+    TEST_ASSERT_EQUAL_UINT32(7, c.arg);
+    TEST_ASSERT_EQUAL_UINT32(5000, c.atMs);
+
+    // ack sem identidade (legado) continua válido → atMs 0 sinaliza "reconhecer todos".
+    WebCommand c2;
+    const char *j2 = "{\"kind\":\"ack\"}";
+    TEST_ASSERT_TRUE(parseCommand(j2, strlen(j2), c2).ok);
+    TEST_ASSERT_EQUAL(CmdKind::ACK_ALERT, c2.kind);
+    TEST_ASSERT_EQUAL_UINT32(0, c2.atMs);
+}
+
 // ── buildInterlocks ──────────────────────────────────────────────────────────
 
 static void test_buildInterlocks_basic()
@@ -924,6 +944,42 @@ static void test_buildAlerts_filtersAcked()
     TEST_ASSERT_FALSE(contains(buf, "\"node\":170")); // 0xAA já reconhecido
     TEST_ASSERT_TRUE(contains(buf, "\"ageS\":1"));    // (6000-5000)/1000
     TEST_ASSERT_TRUE(contains(buf, "\"type\":2"));    // BATT_CRITICO
+    TEST_ASSERT_TRUE(contains(buf, "\"atMs\":5000")); // identidade p/ ack por-alerta
+}
+
+// ackMatch reconhece só o alerta cujo (node,type,arg,atMs) casa; os demais permanecem.
+static void test_ackMatch_singleAlert()
+{
+    AlertCenter ac;
+    Alert a1 = {AlertType::SILENT, 0xAA, 0, 1000};
+    Alert a2 = {AlertType::BATT_CRITICO, 0xBB, 0, 5000};
+    ac.push(a1);
+    ac.push(a2);
+
+    TEST_ASSERT_TRUE(ac.ackMatch(0xBB, AlertType::BATT_CRITICO, 0, 5000)); // casa a2
+    char buf[512];
+    size_t n = buildAlerts(ac, 6000, 0, buf, sizeof(buf)); // watermark 0 → nada filtrado por tempo
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_TRUE(contains(buf, "\"node\":170"));   // 0xAA continua pendente
+    TEST_ASSERT_FALSE(contains(buf, "\"node\":187"));  // 0xBB reconhecido → some
+
+    TEST_ASSERT_FALSE(ac.ackMatch(0xCC, AlertType::SILENT, 0, 9999)); // nada casa → false
+}
+
+// unackedCount espelha o filtro de buildAlerts: exclui NONE, acked e atMs<=watermark.
+// Alimenta o badge "Alertas" do overview → tem de bater com o tamanho da lista.
+static void test_unackedCount_matchesAlertsFilter()
+{
+    AlertCenter ac;
+    ac.push({AlertType::SILENT, 0xAA, 0, 1000, false});
+    ac.push({AlertType::BATT_CRITICO, 0xBB, 0, 5000, false});
+    ac.push({AlertType::CMD_FAIL, 0xCC, 0, 8000, false});
+
+    TEST_ASSERT_EQUAL_UINT(3, ac.unackedCount(0));      // nada reconhecido
+    TEST_ASSERT_EQUAL_UINT(2, ac.unackedCount(2000));   // watermark oculta a1(1000)
+
+    ac.ackMatch(0xCC, AlertType::CMD_FAIL, 0, 8000);    // ack individual do 0xCC
+    TEST_ASSERT_EQUAL_UINT(1, ac.unackedCount(2000));   // resta só 0xBB
 }
 
 void setup()
@@ -934,6 +990,8 @@ void setup()
     RUN_TEST(test_buildOverview_json);
     RUN_TEST(test_buildOverview_truncationReturnsZero);
     RUN_TEST(test_buildAlerts_filtersAcked);
+    RUN_TEST(test_ackMatch_singleAlert);
+    RUN_TEST(test_unackedCount_matchesAlertsFilter);
     RUN_TEST(test_jsonWriter_scalarArrayCommas);
     RUN_TEST(test_jsonWriter_strEscaping);
     RUN_TEST(test_buildStations_json);
@@ -951,6 +1009,7 @@ void setup()
     RUN_TEST(test_jsonReader_respectsLen);
     RUN_TEST(test_parseProgramToggle_ok);
     RUN_TEST(test_parseCommand_kinds);
+    RUN_TEST(test_parseCommand_ackIdentity);
     // Fase 6b — Task 17
     RUN_TEST(test_buildInterlocks_basic);
     RUN_TEST(test_buildInterlocks_todas_semZonas);

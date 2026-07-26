@@ -100,7 +100,7 @@ static void hOverview(HTTPRequest *req, HTTPResponse *res)
     c.stationCount = (uint16_t)g.stations.count();
     c.running = g.scheduler.running() ? 1 : 0;
     c.runningZoneId = g.scheduler.currentZone();
-    c.alertCount = (uint16_t)g.alerts.count();
+    c.alertCount = irrigationModule->gwUnackedAlertCount(); // pendentes (não o total do ring)
     // pairing* ficam nos defaults: o estado de pareamento não é exposto por gwState().
     char buf[512];
     if (!buildOverview(c, buf, sizeof(buf))) {

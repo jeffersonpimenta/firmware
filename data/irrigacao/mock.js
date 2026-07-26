@@ -203,8 +203,8 @@ const MOCK_DATA = {
   ],
   // Alertas não-reconhecidos (§8.1–§8.3). type = AlertType (StationMonitor.h).
   alerts: [
-    { type: 5, node: 0xe5f6a7b8, arg: 0, ageS: 2400 }, // Estação silenciosa
-    { type: 1, node: 0xa1b2c3d4, arg: 0, ageS: 300 },  // Bateria em aviso
+    { type: 5, node: 0xe5f6a7b8, arg: 0, atMs: 1000, ageS: 2400 }, // Estação silenciosa
+    { type: 1, node: 0xa1b2c3d4, arg: 0, atMs: 2000, ageS: 300 },  // Bateria em aviso
   ],
   // Portal do nó (/api/portal/*). provisioned é ajustado abaixo por ?wizard=1.
   portalNode: {
@@ -338,7 +338,18 @@ function handlePost(path, body) {
   // Comando (abrir/fechar zona)
   if (path === '/command') {
     console.log('[MOCK] Comando:', body);
-    if (body.kind === 'ack') { STATE.alerts = []; STATE.overview.alertCount = 0; return mockResponse({ ok: true }); }
+    if (body.kind === 'ack') {
+      if (body.atMs) {
+        // ack por-alerta: remove só o alerta cuja identidade (node+type+arg+atMs) casa.
+        STATE.alerts = STATE.alerts.filter(
+          (a) => !(a.node === body.node && a.type === body.type && a.arg === body.arg && a.atMs === body.atMs)
+        );
+      } else {
+        STATE.alerts = []; // sem identidade ⇒ reconhecer todos (legado)
+      }
+      STATE.overview.alertCount = STATE.alerts.length;
+      return mockResponse({ ok: true });
+    }
     STATE.overview.running = body.kind === 'open';
     if (body.kind === 'open') {
       STATE.overview.runningZoneId = body.zoneId;
