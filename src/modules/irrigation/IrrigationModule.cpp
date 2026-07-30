@@ -2037,6 +2037,124 @@ bool IrrigationModule::saveLevels()
 }
 
 // ---------------------------------------------------------------------------
+// Task 5: controle de nível por boia — executor de zona, tick, apply-helpers.
+// ---------------------------------------------------------------------------
+
+// Abre/fecha uma zona pelo caminho canônico: grupo hidráulico se for zona-membro,
+// senão comando direto de válvula/GPO. Espelha o bloco OPEN/CLOSE do scheduler.
+void IrrigationModule::gwDriveZone(uint8_t zoneId, bool open, uint16_t durS)
+{
+    const Zone *z = gateway.zones.byId(zoneId);
+    if (!z)
+        return;
+    const StationEntry *st = gateway.stations.byNode(z->node);
+    uint8_t attempts = (st && st->retries > 0) ? st->retries : 3;
+    if (open) {
+        if (routeZoneToGroup(zoneId, true, durS)) // grupo cuida da coreografia da bomba
+            return;
+        gwSendValveCmd(z->node, z->index, z->tipo, 1, durS, z->id, attempts);
+    } else {
+        if (routeZoneToGroup(zoneId, false, 0))
+            return;
+        gateway.openGate.release(zoneId);
+        gwSendValveCmd(z->node, z->index, z->tipo, 0, 0, z->id, 1);
+    }
+}
+
+// Avalia as regras de controle de nível 1×/tick. Resolve cada boia no cache de
+// telemetria (leitura digital + frescor via atMs) e executa os intents do engine.
+void IrrigationModule::gwLevelTick(uint32_t nowMs)
+{
+    if (gateway.levels.count() == 0)
+        return;
+
+    LevelInput inputs[LevelControlTable::MAX];
+    for (size_t i = 0; i < gateway.levels.count() && i < LevelControlTable::MAX; i++) {
+        const LevelRule *r = gateway.levels.ruleAt(i);
+        LevelInput in{};
+        const StationTelemetry *t = gateway.telemetry.byNode(r->sensorNode);
+        if (t && t->node) {
+            for (uint8_t k = 0; k < t->sensorCount && k < IrrigationProto::HB_MAX_SENSORS; k++)
+                if (t->sensors[k].id == r->sensorIdx) {
+                    in.present = true;
+                    in.active = (t->sensors[k].valueCenti != 0);
+                    break;
+                }
+            in.fresh = ((uint32_t)(nowMs - t->atMs) <= (uint32_t)r->staleTimeoutS * 1000u);
+        }
+        inputs[i] = in;
+    }
+
+    LevelIntent out[LevelControlTable::MAX];
+    size_t n = gateway.levelEngine.evaluate(gateway.levels, inputs, gateway.levels.count(), nowMs, out,
+                                            LevelControlTable::MAX);
+    for (size_t i = 0; i < n; i++) {
+        const LevelIntent &it = out[i];
+        switch (it.act) {
+        case LevelIntent::Act::START:
+        case LevelIntent::Act::RENEW:
+            gwDriveZone(it.zoneId, true, it.durS);
+            if (it.act == LevelIntent::Act::START) {
+                const Zone *z = gateway.zones.byId(it.zoneId);
+                auditEvent(AuditOrigin::NIVEL, AuditAction::ABRIR, it.zoneId, AuditResult::OK, z ? z->node : 0);
+            }
+            break;
+        case LevelIntent::Act::STOP:
+            gwDriveZone(it.zoneId, false, 0);
+            {
+                const Zone *z = gateway.zones.byId(it.zoneId);
+                auditEvent(AuditOrigin::NIVEL, AuditAction::FECHAR, it.zoneId, AuditResult::OK, z ? z->node : 0);
+            }
+            break;
+        case LevelIntent::Act::STALE_STOP: {
+            gwDriveZone(it.zoneId, false, 0);
+            const Zone *z = gateway.zones.byId(it.zoneId);
+            auditEvent(AuditOrigin::NIVEL, AuditAction::FECHAR, it.zoneId, AuditResult::TIMEOUT, z ? z->node : 0);
+            const LevelRule *r = gateway.levels.byId(it.ruleId);
+            Alert a{};
+            a.type = AlertType::NIVEL_BOIA_MUDA;
+            a.node = r ? r->sensorNode : 0;
+            a.arg = it.zoneId;
+            a.atMs = nowMs;
+            gateway.alerts.push(a);
+            break;
+        }
+        case LevelIntent::Act::NONE:
+            break;
+        }
+    }
+}
+
+bool IrrigationModule::gwApplyLevelUpsert(LevelRule &r, char *err, size_t errCap)
+{
+    if (r.id == 0) { // aloca menor id livre 1..MAX
+        for (uint8_t cand = 1; cand <= LevelControlTable::MAX; cand++)
+            if (!gateway.levels.byId(cand)) {
+                r.id = cand;
+                break;
+            }
+        if (r.id == 0) {
+            snprintf(err, errCap, "tabela de niveis cheia");
+            return false;
+        }
+    }
+    if (!gateway.levels.upsert(r)) {
+        snprintf(err, errCap, "tabela de niveis cheia");
+        return false;
+    }
+    saveLevels();
+    return true;
+}
+
+bool IrrigationModule::gwApplyLevelDelete(uint8_t id)
+{
+    if (!gateway.levels.removeById(id))
+        return false;
+    saveLevels();
+    return true;
+}
+
+// ---------------------------------------------------------------------------
 // Fase 6b, Task 14b: reconstrói e empurra regras locais de intertravamento
 // para cada estação conhecida. Deve ser chamado no init (após loadInterlocks +
 // loadGatewayState) e após mutações na tabela de interlocks (Task 18).
@@ -2696,6 +2814,9 @@ void IrrigationModule::gwTick()
             }
         }
     }
+
+    // --- Controle de nível por boia (enchimento) — após intertravamentos ---
+    gwLevelTick(millis());
 
     // --- Scheduler (programa/cronograma) ---
     // RTC-OPTIONAL: se não há RTC válido, idle com LOG_WARN 1×/h.

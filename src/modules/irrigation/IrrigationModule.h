@@ -96,6 +96,11 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     bool gwApplyGroupUpsert(HydraulicGroup &g, char *err, size_t errCap); // valida + aloca id se 0 + saveGroups()
     bool gwApplyGroupDelete(uint8_t id);                                  // removeById + saveGroups()
     bool gwRunGroupCommand(uint8_t id, bool open, uint16_t durationS);    // controle manual do grupo
+    // Controle de nível por boia (Task 5): avaliação, executor e CRUD.
+    void gwLevelTick(uint32_t nowMs);
+    void gwDriveZone(uint8_t zoneId, bool open, uint16_t durS);
+    bool gwApplyLevelUpsert(LevelRule &r, char *err, size_t errCap); // aloca id se 0; salva
+    bool gwApplyLevelDelete(uint8_t id);
     bool gwApplySensorName(uint32_t node, uint8_t sensorIdx, const char *name); // set + saveSensorNames()
     void gwOpenMaintWindow(uint32_t node, uint16_t minutes); // chama gwSendMaintWindow() privado
     // Acesso de leitura ao log de auditoria flash do gateway (Task 16). GATEWAY-only.
