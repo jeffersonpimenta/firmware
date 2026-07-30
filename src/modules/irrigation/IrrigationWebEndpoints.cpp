@@ -666,6 +666,64 @@ static void hGroupsCommand(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, "{\"ok\":true}");
 }
 
+// ---------------------------------------------------------------------------
+// Fase 8b (Task 7): controle de nível por boia
+// ---------------------------------------------------------------------------
+
+// GET /api/irrigation/levels — lista de regras de controle de nível
+static void hLevelsGet(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!gwReady()) { res->setStatusCode(404); return; }
+    char buf[1024];
+    size_t n = buildLevelControls(irrigationModule->gwState().levels, buf, sizeof(buf));
+    if (!n) { res->setStatusCode(500); return; }
+    sendJson(res, buf);
+}
+
+// POST /api/irrigation/levels — upsert (id=0 => servidor aloca)
+static void hLevelsPost(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!gwReady()) { res->setStatusCode(404); return; }
+    char body[512];
+    size_t nb = readBody(req, body, sizeof(body));
+    LevelRule r;
+    ParseResult pr = parseLevelUpsert(body, nb, r);
+    if (!pr.ok) { sendParseErrors(res, pr); return; }
+    char err[48] = {0};
+    if (!irrigationModule->gwApplyLevelUpsert(r, err, sizeof(err))) {
+        char out[128];
+        JsonWriter w(out, sizeof(out));
+        w.beginObject(); w.key("errors"); w.beginArray(); w.str(err[0] ? err : "erro"); w.endArray(); w.endObject();
+        w.done();
+        sendJson(res, out, 400);
+        return;
+    }
+    char out[1024];
+    size_t n = buildLevelControls(irrigationModule->gwState().levels, out, sizeof(out));
+    if (!n) { res->setStatusCode(500); return; }
+    sendJson(res, out);
+}
+
+// POST /api/irrigation/levels/delete — remove por id
+static void hLevelsDelete(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!gwReady()) { res->setStatusCode(404); return; }
+    char body[128];
+    size_t nb = readBody(req, body, sizeof(body));
+    uint8_t id = 0;
+    ParseResult pr = parseLevelDelete(body, nb, id);
+    if (!pr.ok) { sendParseErrors(res, pr); return; }
+    if (!irrigationModule->gwApplyLevelDelete(id)) {
+        sendJson(res, "{\"errors\":[\"regra inexistente\"]}", 400);
+        return;
+    }
+    char out[1024];
+    size_t n = buildLevelControls(irrigationModule->gwState().levels, out, sizeof(out));
+    if (!n) { res->setStatusCode(500); return; }
+    sendJson(res, out);
+}
+
 // GET /api/irrigation/export — backup §5.5 completo (PSK + tabelas) num envelope
 // multi-cliente, para o cofre do device SERVICO (Fase 8b §11.7).
 static void hExport(HTTPRequest *req, HTTPResponse *res)
@@ -763,6 +821,10 @@ void registerIrrigationHandlers(HTTPServer *server)
     server->registerNode(new ResourceNode("/api/irrigation/groups", "POST", &hGroupsPost));
     server->registerNode(new ResourceNode("/api/irrigation/groups/delete", "POST", &hGroupsDelete));
     server->registerNode(new ResourceNode("/api/irrigation/groups/command", "POST", &hGroupsCommand));
+    // Fase 8b (Task 7): controle de nível por boia
+    server->registerNode(new ResourceNode("/api/irrigation/levels", "GET", &hLevelsGet));
+    server->registerNode(new ResourceNode("/api/irrigation/levels", "POST", &hLevelsPost));
+    server->registerNode(new ResourceNode("/api/irrigation/levels/delete", "POST", &hLevelsDelete));
     // Fase 8b: export §5.5 completo (PSK + tabelas) p/ o cofre do device SERVICO
     server->registerNode(new ResourceNode("/api/irrigation/export", "GET", &hExport));
     // Fase 8d: site survey (§8.5)

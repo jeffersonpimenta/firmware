@@ -67,6 +67,7 @@ const ALERT_INFO = {
   7: ['Reboots anômalos', 'amber'],
   8: ['Falha de comando (sem ACK)', 'red'],
   9: ['Config adotada do serviço', 'green'],
+  10: ['Boia sem sinal — bomba desligada', 'red'],
 };
 
 // Minutos até o próximo disparo de um programa, dado o relógio do CLIENTE (o celular tem
@@ -715,8 +716,8 @@ function programEditForm(p, zones) {
 }
 
 // ===== Labels de auditoria — contrato 3-vias com AuditLog.h (append-only; não reordenar) =====
-// AuditOrigin: SISTEMA=0,CRONOGRAMA=1,PAINEL=2,PORTAL_CAMPO=3,BOTAO_FISICO=4,ENTRADA_FISICA=5,INTERTRAVAMENTO=6,FAILSAFE_TIMER=7,SERVICO=8
-const ORIGENS_LABEL = ['Sistema','Cronograma','Painel','Portal campo','Botão físico','Entrada física','Intertravamento','Failsafe timer','Serviço'];
+// AuditOrigin: SISTEMA=0,CRONOGRAMA=1,PAINEL=2,PORTAL_CAMPO=3,BOTAO_FISICO=4,ENTRADA_FISICA=5,INTERTRAVAMENTO=6,FAILSAFE_TIMER=7,SERVICO=8,GRUPO_HIDRAULICO=9,NIVEL=10
+const ORIGENS_LABEL = ['Sistema','Cronograma','Painel','Portal campo','Botão físico','Entrada física','Intertravamento','Failsafe timer','Serviço','Grupo hidráulico','Nível'];
 // AuditAction: ABRIR=0,FECHAR=1,PULSO=2,GPO_ON=3,GPO_OFF=4,PAREAR=5,FACTORY_RESET=6,CONFIG_EPOCH=7,SAFE_MODE_IN=8,SAFE_MODE_OUT=9,TAMPER=10,REBOOT=11,HIBERNA_IN=12,HIBERNA_OUT=13,CMD_REJEITADO=14
 const ACOES_LABEL = ['Abrir','Fechar','Pulso','GPO ligar','GPO desligar','Parear','Factory reset','Config epoch','Safe mode in','Safe mode out','Tamper','Reboot','Hibernar in','Hibernar out','Cmd rejeitado'];
 // AuditResult: OK=0,NACK=1,TIMEOUT=2
@@ -1430,6 +1431,89 @@ function groupForm(group, zones) {
   render();
 }
 
+// ===== Controle de nível por boia =====
+async function renderNiveis() {
+  const rules = (await getJson('/levels')) || [];
+  const rows = (Array.isArray(rules) ? rules : []).map((r) => {
+    r = r || {};
+    const boia = `${nodeHex(r.sensorNode)} / s${num(r.sensorIdx)}`;
+    const liga = r.ligaQuandoAtivo ? 'ativo=baixo' : 'inativo=baixo';
+    return `<tr>
+      <td class="mono">${esc(boia)}</td>
+      <td>zona ${num(r.targetZoneId)}</td>
+      <td>${esc(liga)}</td>
+      <td>${num(r.minOnS)}s / ${num(r.minOffS)}s</td>
+      <td>${num(r.staleTimeoutS)}s</td>
+      <td>${esc(r.mensagem || '')}</td>
+      <td><button class="btn dangerline sm" data-ndel="${num(r.id)}">Excluir</button></td>
+    </tr>`;
+  }).join('');
+
+  const form = `
+    <div class="form">
+      <div class="sec-title">Nova / editar regra</div>
+      <label class="fld"><span class="flbl">ID (0 = alocar)</span>
+        <input class="finput" id="nv-id" type="number" min="0" max="4" value="0"></label>
+      <label class="fld"><span class="flbl">Nó da boia (hex ou decimal)</span>
+        <input class="finput" id="nv-node" placeholder="ex: 0x1a2b3c4d" value=""></label>
+      <label class="fld"><span class="flbl">Índice do sensor (0–3)</span>
+        <input class="finput" id="nv-sidx" type="number" min="0" max="3" value="0"></label>
+      <label class="fld"><span class="flbl">Liga quando boia</span>
+        <select class="finput" id="nv-liga">
+          <option value="1">ativo (nível baixo)</option>
+          <option value="0">inativo (nível baixo)</option>
+        </select></label>
+      <label class="fld"><span class="flbl">Zona / bomba (ID)</span>
+        <input class="finput" id="nv-zone" type="number" min="1" value="1"></label>
+      <div class="frow">
+        <label class="fld"><span class="flbl">Min-on (s)</span>
+          <input class="finput" id="nv-minon" type="number" min="0" value="30"></label>
+        <label class="fld"><span class="flbl">Min-off (s)</span>
+          <input class="finput" id="nv-minoff" type="number" min="0" value="30"></label>
+      </div>
+      <label class="fld"><span class="flbl">Timeout sem sinal (s)</span>
+        <input class="finput" id="nv-stale" type="number" min="1" value="90"></label>
+      <label class="fld"><span class="flbl">Mensagem (opcional)</span>
+        <input class="finput" id="nv-msg" maxlength="23" value=""></label>
+      <div class="frow">
+        <button class="btn" id="nv-save">Salvar</button>
+      </div>
+    </div>`;
+
+  view.innerHTML =
+    `<div class="log-table-wrap"><table class="log-table">
+      <thead><tr><th>Boia</th><th>Bomba</th><th>Liga</th><th>Min on/off</th><th>Timeout</th><th>Msg</th><th></th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="7" class="empty">Nenhuma regra de nível.</td></tr>'}</tbody>
+    </table></div>` + form;
+
+  view.querySelectorAll('[data-ndel]').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm('Excluir esta regra?')) return;
+    const r = await postJson('/levels/delete', { id: num(b.dataset.ndel) });
+    if (r.ok) renderNiveis().catch(() => {});
+    else alert('Falha ao excluir: ' + ((r.body && Array.isArray(r.body.errors)) ? r.body.errors.join(', ') : 'erro'));
+  }));
+
+  view.querySelector('#nv-save').addEventListener('click', async () => {
+    const nodeStr = (view.querySelector('#nv-node').value || '').trim();
+    const nodeVal = nodeStr.startsWith('0x') || nodeStr.startsWith('0X')
+      ? parseInt(nodeStr, 16) : parseInt(nodeStr, 10);
+    const body = {
+      id: num(view.querySelector('#nv-id').value),
+      sensorNode: nodeVal || 0,
+      sensorIdx: num(view.querySelector('#nv-sidx').value),
+      ligaQuandoAtivo: num(view.querySelector('#nv-liga').value) === 1,
+      targetZoneId: num(view.querySelector('#nv-zone').value),
+      minOnS: num(view.querySelector('#nv-minon').value),
+      minOffS: num(view.querySelector('#nv-minoff').value),
+      staleTimeoutS: num(view.querySelector('#nv-stale').value),
+      mensagem: view.querySelector('#nv-msg').value.slice(0, 23),
+    };
+    const r = await postJson('/levels', body);
+    if (r.ok) renderNiveis().catch(() => {});
+    else alert('Falha: ' + ((r.body && Array.isArray(r.body.errors)) ? r.body.errors.join(', ') : 'erro'));
+  });
+}
+
 // ===== Cobertura (site survey §8.5) =====
 async function renderCobertura() {
   const COV_ROLES = ['Estação', 'Gateway', 'Repetidor', 'Serviço'];
@@ -1465,6 +1549,7 @@ async function renderCobertura() {
 function renderMais() {
   const items = [
     ['grupos', 'Grupos hidráulicos', 'Sequenciamento de bomba e válvula mestre'],
+    ['niveis', 'Controle de nível', 'Controle de bomba por boia flutuante'],
     ['intertravamentos', 'Intertravamentos', 'Regras de bloqueio por sensor / simultaneidade'],
     ['sensores', 'Sensores', 'Leituras e nomes por estação'],
     ['gpo', 'Saídas (GPO)', 'Relés/MOSFET: portão, bomba auxiliar, luz, sirene'],
@@ -1511,6 +1596,7 @@ const RENDER = {
   sensores: renderSensores,
   gpo: renderGpo,
   grupos: renderGrupos,
+  niveis: renderNiveis,
   intertravamentos: renderIntertravamentos,
   auditlog: renderAuditLog,
   tamper: renderTamper,
@@ -1521,7 +1607,7 @@ const RENDER = {
 
 // Rótulo mostrado na barra de volta ao entrar numa tela secundária via "Mais".
 const SECTION_LABELS = {
-  grupos: 'Grupos', intertravamentos: 'Intertravamentos', sensores: 'Sensores',
+  grupos: 'Grupos', niveis: 'Nível', intertravamentos: 'Intertravamentos', sensores: 'Sensores',
   gpo: 'Saídas (GPO)', tamper: 'Tamper', auditlog: 'Log', cobertura: 'Cobertura', sistema: 'Sistema',
 };
 // Telas que se auto-atualizam (poll 3 s) via re-render completo.
