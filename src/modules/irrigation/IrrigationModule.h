@@ -217,6 +217,8 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     bool saveSensorNames();     // Fase 6b Task 18: persiste nomes de sensores (staged-write)
     bool loadGroups();          // Fase 7a: carrega tabela de grupos hidráulicos do flash
     bool saveGroups();          // Fase 7a: persiste tabela de grupos hidráulicos (staged-write)
+    bool loadLevels();          // controle de nível: carrega tabela do flash
+    bool saveLevels();          // controle de nível: persiste tabela (staged-write)
     IrrigationSettings mergeRemoteConfig(const IrrigationSettings &fresh, uint32_t newEpoch) const;
     void activateSettings(const IrrigationSettings &merged);
     void sendAck(uint32_t to, uint32_t ackedSeq, uint8_t status, uint8_t reason);

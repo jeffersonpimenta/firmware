@@ -7,6 +7,8 @@
 #include "modules/irrigation/GatewayTables.h"
 #include "modules/irrigation/HydraulicGroupEngine.h"
 #include "modules/irrigation/HydraulicGroupTable.h"
+#include "modules/irrigation/LevelControlEngine.h"
+#include "modules/irrigation/LevelControlTable.h"
 #include "modules/irrigation/InterlockEngine.h"
 #include "modules/irrigation/InterlockTable.h"
 #include "modules/irrigation/MirrorMode.h"
@@ -34,4 +36,7 @@ struct IrrigationGateway {
     // Fase 7a: grupos hidráulicos (bomba/válvula) — orquestração + config.
     HydraulicGroupTable groups;
     HydraulicGroupEngine groupEngine;
+    // Controle de nível por boia (enchimento automático).
+    LevelControlTable levels;
+    LevelControlEngine levelEngine;
 };

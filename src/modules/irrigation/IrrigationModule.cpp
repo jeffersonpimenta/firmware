@@ -44,6 +44,9 @@ static const char *GW_SENSORNAMES_TMP = "/prefs/irrigation_sensornames.tmp";
 // Fase 7a: grupos hidráulicos (bomba/válvula).
 static const char *GW_GRUPOS_PATH = "/prefs/irrigation_grupos.dat";
 static const char *GW_GRUPOS_TMP = "/prefs/irrigation_grupos.tmp";
+// controle de nível por boia (enchimento automático).
+static const char *GW_NIVEIS_PATH = "/prefs/irrigation_niveis.dat";
+static const char *GW_NIVEIS_TMP = "/prefs/irrigation_niveis.tmp";
 
 // Cooldown de reconciliação de epoch por nó (30 s)
 static constexpr uint32_t EPOCH_COOLDOWN_MS = 30000;
@@ -252,6 +255,7 @@ IrrigationModule::IrrigationModule()
         loadInterlocks();            // Fase 6b: carrega regras de intertravamento salvas
         loadSensorNames();           // Fase 6b Task 18: carrega nomes de sensores salvos
         loadGroups();                // Fase 7a: carrega grupos hidráulicos salvos
+        loadLevels();                // controle de nível: carrega regras salvas
         gwRebuildLocalInterlocks();  // Fase 6b Task 14b: monta réplicas locais v5 e empurra via epoch
         // Fase 6b Task 16: inicializa o log de auditoria persistente em flash do gateway.
         auditFlashStore.ensureAllocated();
@@ -2013,6 +2017,23 @@ bool IrrigationModule::saveGroups()
     uint8_t buf[6 + HydraulicGroupTable::MAX * 41 + 4];
     size_t n = gateway.groups.serialize(buf, sizeof(buf));
     return stagedWrite(GW_GRUPOS_TMP, GW_GRUPOS_PATH, buf, n);
+}
+
+// Persistência da tabela de controle de nível (arquivo separado). Espelha loadGroups/saveGroups.
+bool IrrigationModule::loadLevels()
+{
+    size_t n = 0;
+    uint8_t buf[6 + LevelControlTable::MAX * sizeof(LevelRule) + 4];
+    if (!stagedRead(GW_NIVEIS_PATH, buf, sizeof(buf), n))
+        return false; // ausente na 1ª init — ok, tabela vazia
+    return gateway.levels.deserialize(buf, n);
+}
+
+bool IrrigationModule::saveLevels()
+{
+    uint8_t buf[6 + LevelControlTable::MAX * sizeof(LevelRule) + 4];
+    size_t n = gateway.levels.serialize(buf, sizeof(buf));
+    return stagedWrite(GW_NIVEIS_TMP, GW_NIVEIS_PATH, buf, n);
 }
 
 // ---------------------------------------------------------------------------

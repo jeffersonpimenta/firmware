@@ -5,7 +5,8 @@
 
 enum class AlertType : uint8_t {
     NONE = 0, BATT_AVISO, BATT_CRITICO, BATT_HIBERNACAO, BATT_RECUPEROU,
-    SILENT, BACK_ONLINE, REBOOT_ANOMALY, CMD_FAIL, CONFIG_ADOPTED
+    SILENT, BACK_ONLINE, REBOOT_ANOMALY, CMD_FAIL, CONFIG_ADOPTED,
+    NIVEL_BOIA_MUDA // = 10 — boia muda além do timeout (fail-safe desligou a bomba)
 };
 
 struct Alert {
