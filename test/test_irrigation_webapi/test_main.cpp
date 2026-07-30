@@ -4,6 +4,7 @@
 #include "modules/irrigation/HydraulicGroupTable.h"
 #include "modules/irrigation/InterlockTable.h"
 #include "modules/irrigation/IrrigationWebApi.h"
+#include "modules/irrigation/LevelControlTable.h"
 #include "modules/irrigation/ProgramScheduler.h"
 #include <string.h>
 #include <unity.h>
@@ -982,6 +983,66 @@ static void test_unackedCount_matchesAlertsFilter()
     TEST_ASSERT_EQUAL_UINT(1, ac.unackedCount(2000));   // resta só 0xBB
 }
 
+// ── Fase 8b — controle de nível (boia) ───────────────────────────────────────
+
+static void test_buildLevelControls_shape()
+{
+    LevelControlTable t;
+    LevelRule r{};
+    r.id = 1;
+    r.sensorNode = 0xa1b2c3d4;
+    r.sensorIdx = 2;
+    r.ligaQuandoAtivo = true;
+    r.targetZoneId = 5;
+    r.minOnS = 45;
+    r.minOffS = 60;
+    r.staleTimeoutS = 120;
+    strncpy(r.mensagem, "cisterna baixa", sizeof(r.mensagem) - 1);
+    t.upsert(r);
+    char buf[512];
+    size_t n = IrrigationWeb::buildLevelControls(t, buf, sizeof(buf));
+    TEST_ASSERT_TRUE(n > 0);
+    buf[n] = 0;
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"targetZoneId\":5"));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"sensorIdx\":2"));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"ligaQuandoAtivo\":true"));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"minOffS\":60"));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "cisterna baixa"));
+}
+
+static void test_parseLevelUpsert_ok()
+{
+    const char *j = "{\"id\":0,\"sensorNode\":2712847316,\"sensorIdx\":2,\"ligaQuandoAtivo\":true,"
+                    "\"targetZoneId\":5,\"minOnS\":45,\"minOffS\":60,\"staleTimeoutS\":120,"
+                    "\"mensagem\":\"poco\"}";
+    LevelRule out{};
+    IrrigationWeb::ParseResult pr = IrrigationWeb::parseLevelUpsert(j, strlen(j), out);
+    TEST_ASSERT_TRUE(pr.ok);
+    TEST_ASSERT_EQUAL_UINT8(0, out.id); // id 0 = servidor aloca
+    TEST_ASSERT_EQUAL_HEX32(0xa1b2c3d4, out.sensorNode);
+    TEST_ASSERT_EQUAL_UINT8(5, out.targetZoneId);
+    TEST_ASSERT_TRUE(out.ligaQuandoAtivo);
+    TEST_ASSERT_EQUAL_UINT16(60, out.minOffS);
+    TEST_ASSERT_EQUAL_STRING("poco", out.mensagem);
+}
+
+static void test_parseLevelUpsert_rejects_no_target()
+{
+    const char *j = "{\"id\":1,\"sensorNode\":1,\"sensorIdx\":0,\"targetZoneId\":0}";
+    LevelRule out{};
+    IrrigationWeb::ParseResult pr = IrrigationWeb::parseLevelUpsert(j, strlen(j), out);
+    TEST_ASSERT_FALSE(pr.ok);
+}
+
+static void test_parseLevelDelete_ok()
+{
+    const char *j = "{\"id\":3}";
+    uint8_t id = 0;
+    IrrigationWeb::ParseResult pr = IrrigationWeb::parseLevelDelete(j, strlen(j), id);
+    TEST_ASSERT_TRUE(pr.ok);
+    TEST_ASSERT_EQUAL_UINT8(3, id);
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -1057,6 +1118,11 @@ void setup()
     RUN_TEST(test_parseSurveyStart_full);
     RUN_TEST(test_parseSurveyStart_defaults_and_nocoord);
     RUN_TEST(test_parseSurveyStart_clamps);
+    // Fase 8b — controle de nível
+    RUN_TEST(test_buildLevelControls_shape);
+    RUN_TEST(test_parseLevelUpsert_ok);
+    RUN_TEST(test_parseLevelUpsert_rejects_no_target);
+    RUN_TEST(test_parseLevelDelete_ok);
     exit(UNITY_END());
 }
 

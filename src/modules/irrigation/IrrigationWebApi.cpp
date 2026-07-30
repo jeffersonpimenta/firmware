@@ -824,6 +824,87 @@ size_t buildGroupsStatus(const GroupStatusView *views, size_t n, char *buf, size
     return w.done();
 }
 
+// ── Fase 8b — controle de nível (boia) ───────────────────────────────────────
+
+size_t buildLevelControls(const LevelControlTable &tbl, char *buf, size_t cap)
+{
+    JsonWriter w(buf, cap);
+    w.beginArray();
+    for (size_t i = 0; i < tbl.count(); i++) {
+        const LevelRule *r = tbl.ruleAt(i);
+        if (!r)
+            break;
+        w.beginObject();
+        w.keyNum("id", r->id);
+        w.keyNum("sensorNode", r->sensorNode);
+        w.keyNum("sensorIdx", r->sensorIdx);
+        w.keyBool("ligaQuandoAtivo", r->ligaQuandoAtivo);
+        w.keyNum("targetZoneId", r->targetZoneId);
+        w.keyNum("minOnS", r->minOnS);
+        w.keyNum("minOffS", r->minOffS);
+        w.keyNum("staleTimeoutS", r->staleTimeoutS);
+        w.keyStr("mensagem", r->mensagem);
+        w.endObject();
+    }
+    w.endArray();
+    return w.done();
+}
+
+ParseResult parseLevelUpsert(const char *json, size_t len, LevelRule &out)
+{
+    ParseResult r;
+    JsonReader rd(json, len);
+    int64_t id = -1, node = 0, sidx = 0, target = 0;
+    int64_t minOn = 30, minOff = 30, stale = 90;
+    bool liga = true;
+    char msg[24] = {0};
+
+    if (!rd.getInt("id", id) || id < 0 || id > (int64_t)LevelControlTable::MAX)
+        r.fail("id invalido (0..4)");
+    rd.getInt("sensorNode", node);
+    rd.getInt("sensorIdx", sidx);
+    rd.getBool("ligaQuandoAtivo", liga); // aceita true/false JSON
+    rd.getInt("targetZoneId", target);
+    rd.getInt("minOnS", minOn);
+    rd.getInt("minOffS", minOff);
+    rd.getInt("staleTimeoutS", stale);
+    rd.getStr("mensagem", msg, sizeof(msg));
+
+    if (sidx < 0 || sidx > 3)
+        r.fail("sensorIdx invalido (0..3)");
+    if (node == 0)
+        r.fail("sensorNode ausente");
+    if (target < 1 || target > 255)
+        r.fail("targetZoneId ausente");
+    if (!r.ok)
+        return r;
+
+    out = LevelRule{};
+    out.id = (uint8_t)id;
+    out.sensorNode = (uint32_t)node;
+    out.sensorIdx = (uint8_t)sidx;
+    out.ligaQuandoAtivo = liga;
+    out.targetZoneId = (uint8_t)target;
+    out.minOnS = (uint16_t)(minOn < 0 ? 0 : minOn);
+    out.minOffS = (uint16_t)(minOff < 0 ? 0 : minOff);
+    out.staleTimeoutS = (uint16_t)(stale <= 0 ? 90 : stale);
+    snprintf(out.mensagem, sizeof(out.mensagem), "%s", msg);
+    return r;
+}
+
+ParseResult parseLevelDelete(const char *json, size_t len, uint8_t &outId)
+{
+    ParseResult r;
+    JsonReader rd(json, len);
+    int64_t id = 0;
+    if (!rd.getInt("id", id) || id < 1 || id > (int64_t)LevelControlTable::MAX) {
+        r.fail("id invalido (1..4)");
+        return r;
+    }
+    outId = (uint8_t)id;
+    return r;
+}
+
 // ── Fase 8d — site survey (§8.5) ─────────────────────────────────────────────
 
 size_t buildSurvey(const SurveyPoint *pts, size_t n, uint32_t nowS, char *buf, size_t cap)

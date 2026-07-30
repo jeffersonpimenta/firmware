@@ -3,6 +3,7 @@
 #include "modules/irrigation/HydraulicGroupTable.h"
 #include "modules/irrigation/InterlockTable.h"
 #include "modules/irrigation/IrrigationProtocol.h"
+#include "modules/irrigation/LevelControlTable.h"
 #include "modules/irrigation/ProgramScheduler.h"
 #include "modules/irrigation/StationMonitor.h" // AlertCenter/Alert p/ buildAlerts
 #include "modules/irrigation/SurveyLog.h"
@@ -191,6 +192,12 @@ struct GroupStatusView {
     uint8_t openCount = 0;
 };
 size_t buildGroupsStatus(const GroupStatusView *views, size_t n, char *buf, size_t cap);
+
+// ── Fase 8b — controle de nível (boia) ───────────────────────────────────────
+
+size_t buildLevelControls(const LevelControlTable &tbl, char *buf, size_t cap);
+ParseResult parseLevelUpsert(const char *json, size_t len, LevelRule &out);
+ParseResult parseLevelDelete(const char *json, size_t len, uint8_t &outId);
 
 // ── Fase 8d — site survey (§8.5) ─────────────────────────────────────────────
 // Serializa pontos de survey p/ a tabela Cobertura do painel. idadeS = nowS - uptimeS.
