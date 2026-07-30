@@ -2054,6 +2054,13 @@ void IrrigationModule::gwDriveZone(uint8_t zoneId, bool open, uint16_t durS)
     if (open) {
         if (routeZoneToGroup(zoneId, true, durS)) // grupo cuida da coreografia da bomba
             return;
+        // Zona livre (bomba fora de grupo): o caminho direto NÃO passa por routeZoneToGroup,
+        // então repete aqui o veto de intertravamento que todo open canônico aplica — senão o
+        // controle de nível reabriria uma bomba fechada+bloqueada por segurança (review I1).
+        if (gateway.interlockEngine.zoneVerdict(zoneId).bloqueada) {
+            auditEvent(AuditOrigin::INTERTRAVAMENTO, AuditAction::CMD_REJEITADO, zoneId, AuditResult::NACK, z->node);
+            return;
+        }
         gwSendValveCmd(z->node, z->index, z->tipo, 1, durS, z->id, attempts);
     } else {
         if (routeZoneToGroup(zoneId, false, 0))
