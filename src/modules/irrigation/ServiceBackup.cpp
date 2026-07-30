@@ -421,6 +421,8 @@ size_t buildClientBackup(const BackupSource &s, char *buf, size_t cap)
     w.raw(s.gruposJson ? s.gruposJson : "[]");
     w.key("sensorNames");
     w.raw(s.sensorNamesJson ? s.sensorNamesJson : "[]");
+    w.key("niveis");
+    w.raw(s.niveisJson ? s.niveisJson : "[]");
     w.endObject();
     w.endObject();
     return w.done();

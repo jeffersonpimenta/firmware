@@ -1535,11 +1535,12 @@ size_t IrrigationModule::gwBuildBackup(char *buf, size_t cap)
     if (!gwIsGateway())
         return 0;
     // Sub-arrays de config via os builders existentes do painel (DRY, Fase 5a-7b).
-    static char zonasB[900], progB[800], interB[700], grupB[700];
+    static char zonasB[900], progB[800], interB[700], grupB[700], niveisB[512];
     IrrigationWeb::buildZones(gateway.zones, zonasB, sizeof zonasB);
     IrrigationWeb::buildPrograms(gateway.scheduler, progB, sizeof progB);
     IrrigationWeb::buildInterlocks(gateway.interlocks, interB, sizeof interB);
     IrrigationWeb::buildGroups(gateway.groups, grupB, sizeof grupB);
+    IrrigationWeb::buildLevelControls(gateway.levels, niveisB, sizeof niveisB);
     // estacoes[] + snapshot_epoch{} a partir do registro de estações.
     static char estB[1200], epoB[600];
     {
@@ -1595,6 +1596,7 @@ size_t IrrigationModule::gwBuildBackup(char *buf, size_t cap)
     s.intertravamentosJson = interB;
     s.gruposJson = grupB;
     s.sensorNamesJson = "[]"; // nomes de sensor: follow-up (sem builder dedicado)
+    s.niveisJson = niveisB;
     static char clientB[6144];
     size_t cn = IrrigationService::buildClientBackup(s, clientB, sizeof clientB);
     if (!cn)

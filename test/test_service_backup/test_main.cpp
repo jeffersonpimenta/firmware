@@ -174,6 +174,34 @@ static void test_buildClientBackup_roundtrips_through_extractLight()
     TEST_ASSERT_TRUE(cfg.n > 0);
 }
 
+static void test_buildClientBackup_carries_niveis()
+{
+    BackupSource s{};
+    s.id = "f1";
+    s.nome = "A";
+    s.canalNome = "c1";
+    s.pskB64 = "1PG7Og==";
+    s.preset = 0;
+    s.gateway = 0xa1b2c3d4;
+    s.estacoesJson = "[]";
+    s.snapshotEpochJson = "{}";
+    s.zonasJson = "[]";
+    s.programasJson = "[]";
+    s.intertravamentosJson = "[]";
+    s.gruposJson = "[]";
+    s.sensorNamesJson = "[]";
+    s.niveisJson = "[{\"id\":1,\"targetZoneId\":5}]";
+    s.seqJson = "";
+    char buf[1024];
+    size_t n = buildClientBackup(s, buf, sizeof buf);
+    TEST_ASSERT_TRUE(n > 0);
+    IrrigationService::Slice cfg;
+    TEST_ASSERT_TRUE(jsonMember(buf, n, "config", cfg));
+    IrrigationService::Slice niveis;
+    TEST_ASSERT_TRUE(jsonMember(cfg.p, cfg.n, "niveis", niveis));
+    TEST_ASSERT_TRUE(niveis.n > 2); // não é "[]"
+}
+
 struct RmCtx {
     char removed[8][32];
     int n;
@@ -219,6 +247,7 @@ void setup()
     RUN_TEST(test_extractLight_fields);
     RUN_TEST(test_preset_roundtrip);
     RUN_TEST(test_buildClientBackup_roundtrips_through_extractLight);
+    RUN_TEST(test_buildClientBackup_carries_niveis);
     RUN_TEST(test_planMerge_keeps_others_when_not_replace);
     RUN_TEST(test_planMerge_replace_removes_absent);
     exit(UNITY_END());
