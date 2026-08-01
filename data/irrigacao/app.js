@@ -115,7 +115,7 @@ async function renderOverview() {
   }
 
   if (ov.pairingPending) {
-    html += `<div class="card amberbox">Pareamento pendente — nó ${nodeHex(ov.pairingNodeId)} · expira em ${num(ov.pairingSecondsLeft)}s</div>`;
+    html += `<div class="card amberbox pair-goto" data-goto-stations role="button" tabindex="0">Pareamento pendente — nó ${nodeHex(ov.pairingNodeId)} · expira em ${num(ov.pairingSecondsLeft)}s <span class="chev">›</span></div>`;
   }
   if (!ov.hasRtc) {
     html += `<div class="card amberbox">Sem relógio — cronograma inativo. Modo espelho segue operando.</div>`;
@@ -161,6 +161,9 @@ async function renderOverview() {
   }
 
   view.innerHTML = html;
+  // Card de pareamento pendente → leva à aba Estações (onde fica o botão Aprovar).
+  const pgoto = view.querySelector('[data-goto-stations]');
+  if (pgoto) pgoto.addEventListener('click', () => show('stations'));
   // Reconhece só o alerta clicado: ecoa sua identidade (node+type+arg+atMs) ao backend (ackMatch).
   view.querySelectorAll('[data-ack]').forEach((b) =>
     b.addEventListener('click', async () => {
@@ -206,9 +209,23 @@ function stationByNode(list, node) {
 }
 
 async function renderStations() {
-  const list = (await getJson('/stations')) || [];
+  const [list, ov] = await Promise.all([getJson('/stations'), getJson('/overview').catch(() => ({}))]);
   const rows = Array.isArray(list) ? list : [];
-  view.innerHTML =
+
+  // §6: card de pareamento pendente (nó anunciou com a janela fechada) + botão Aprovar.
+  let pairHtml = '';
+  if (ov && ov.pairingPending) {
+    pairHtml = `<div class="card pairbox">
+      <div class="pairhdr">
+        <div class="pairtitle">Nó novo detectado</div>
+        <div class="pairsec">${num(ov.pairingSecondsLeft)}s</div>
+      </div>
+      <div class="pairsub">${esc(nodeHex(ov.pairingNodeId))} · janela de pareamento</div>
+      <button class="btn solid big" id="pairApprove" data-node="${num(ov.pairingNodeId)}">Aprovar pareamento</button>
+    </div>`;
+  }
+
+  const cards =
     rows
       .map((s) => {
         s = s || {};
@@ -223,6 +240,16 @@ async function renderStations() {
     </div>`;
       })
       .join('') || '<div class="empty">Nenhuma estação registrada.</div>';
+  view.innerHTML = pairHtml + cards;
+
+  const approve = view.querySelector('#pairApprove');
+  if (approve) {
+    approve.addEventListener('click', async () => {
+      approve.disabled = true;
+      await postJson('/command', { kind: 'approve_pairing', node: num(approve.dataset.node) });
+      renderStations().catch(() => {});
+    });
+  }
 
   view.querySelectorAll('.card.station').forEach((el) => {
     const node = parseInt(el.dataset.node, 16);

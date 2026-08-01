@@ -409,6 +409,52 @@ body {
   flex: 1;
 }
 
+/* ===== Pareamento (§6) ===== */
+.pair-goto {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pairbox {
+  background: oklch(0.65 0.15 75 / 0.1);
+  border: 1px solid oklch(0.65 0.15 75 / 0.4);
+  border-radius: var(--radius-card);
+  padding: 14px 16px;
+}
+
+.pairhdr {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pairtitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.pairsec {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: oklch(0.65 0.15 75);
+  white-space: nowrap;
+}
+
+.pairsub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.pairbox .btn.big {
+  margin-top: 12px;
+}
+
 /* ===== Buttons ===== */
 .btn {
   font-family: inherit;

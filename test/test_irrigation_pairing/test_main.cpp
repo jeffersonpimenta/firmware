@@ -64,6 +64,28 @@ static void test_gateway_windowAndCooldown()
     TEST_ASSERT_FALSE(gp.approveAnnounce(0x33, 200000));
 }
 
+static void test_gateway_pendingTracking()
+{
+    GatewayPairing gp;
+    TEST_ASSERT_FALSE(gp.hasPending(0));
+    // §6: announce com janela fechada → registra pendente p/ o painel.
+    gp.notePending(0xC0FFEE, 1000);
+    TEST_ASSERT_TRUE(gp.hasPending(2000));
+    TEST_ASSERT_EQUAL_HEX32(0xC0FFEE, gp.pendingNode());
+    TEST_ASSERT_TRUE(gp.pendingSecondsLeft(2000) > 0);
+    // node==0 é ignorado (não sobrescreve pendente válido).
+    gp.notePending(0, 2500);
+    TEST_ASSERT_EQUAL_HEX32(0xC0FFEE, gp.pendingNode());
+    // Expira após o TTL.
+    TEST_ASSERT_FALSE(gp.hasPending(1000 + GatewayPairing::PENDING_TTL_MS + 1));
+    TEST_ASSERT_EQUAL_UINT16(0, gp.pendingSecondsLeft(1000 + GatewayPairing::PENDING_TTL_MS + 1));
+    // Conceder limpa o pendente.
+    gp.notePending(0xAB, 5000);
+    TEST_ASSERT_TRUE(gp.hasPending(5000));
+    gp.clearPending();
+    TEST_ASSERT_FALSE(gp.hasPending(5000));
+}
+
 static void test_allowlist_addRemoveContainsIdempotent()
 {
     Allowlist al;
@@ -126,6 +148,7 @@ void setup()
     RUN_TEST(test_station_grantOnlyInsideWindow);
     RUN_TEST(test_station_resetAllowsRepairAfterCommit);
     RUN_TEST(test_gateway_windowAndCooldown);
+    RUN_TEST(test_gateway_pendingTracking);
     RUN_TEST(test_allowlist_addRemoveContainsIdempotent);
     RUN_TEST(test_allowlist_fullRejects);
     RUN_TEST(test_allowlist_serializeRoundTripAndRejectsGarbage);

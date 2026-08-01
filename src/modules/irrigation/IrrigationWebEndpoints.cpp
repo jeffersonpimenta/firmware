@@ -102,7 +102,10 @@ static void hOverview(HTTPRequest *req, HTTPResponse *res)
     c.running = g.scheduler.running() ? 1 : 0;
     c.runningZoneId = g.scheduler.currentZone();
     c.alertCount = irrigationModule->gwUnackedAlertCount(); // pendentes (não o total do ring)
-    // pairing* ficam nos defaults: o estado de pareamento não é exposto por gwState().
+    // Fase 9: estado de pareamento pendente (§6) — announce recebido com a janela fechada.
+    c.pairingPending = irrigationModule->gwPairingPending();
+    c.pairingNodeId = irrigationModule->gwPairingNode();
+    c.pairingSecondsLeft = irrigationModule->gwPairingSecondsLeft();
     char buf[512];
     if (!buildOverview(c, buf, sizeof(buf))) {
         res->setStatusCode(500);

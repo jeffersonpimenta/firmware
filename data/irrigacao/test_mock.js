@@ -55,6 +55,12 @@ check(
   'audit deve ter >=1 entrada do node da estação 0 (mini-log do sheet)'
 );
 
+// Fase 9: overview expõe estado de pareamento; quando pendente, tem nó válido.
+check(typeof STATE.overview.pairingPending === 'boolean', 'overview.pairingPending deve ser boolean');
+if (STATE.overview.pairingPending) {
+  check(STATE.overview.pairingNodeId > 0, 'pairingPending=true exige pairingNodeId > 0 (card mostra o nó)');
+}
+
 // Fase 9: sheet de estação usa campos ricos + saídas p/ o teste de pulso.
 STATE.stations.forEach((s, i) => {
   check(typeof s.hbMinutes === 'number', `estação ${i}: hbMinutes numérico`);

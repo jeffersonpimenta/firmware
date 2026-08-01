@@ -1019,9 +1019,11 @@ void IrrigationModule::handlePairAnnounce(const meshtastic_MeshPacket &mp, const
     if (!decodePairAnnounce(mp.decoded.payload.bytes, mp.decoded.payload.size, pa))
         return;
     if (!gatewayPairing.approveAnnounce(mp.from, millis())) {
-        LOG_INFO("Irrigation: announce from 0x%08x (%.*s) ignored, window closed", mp.from, (int)pa.nameLen, pa.name);
+        gatewayPairing.notePending(mp.from, millis()); // §6: painel mostra "nó novo detectado" p/ o operador aprovar
+        LOG_INFO("Irrigation: announce from 0x%08x (%.*s) pending, window closed", mp.from, (int)pa.nameLen, pa.name);
         return;
     }
+    gatewayPairing.clearPending(); // concedendo: o nó deixa de estar pendente
     // Decision §2: PSK must be exactly 32 bytes (own farm key); default/well-known PSK must not be granted.
     const meshtastic_ChannelSettings &prim = channels.getPrimary();
     if (prim.psk.size != 32) {
@@ -2448,6 +2450,18 @@ bool IrrigationModule::gwHasRtc() const
 {
     uint32_t s = 0;
     return computeLocalSecs(s);
+}
+bool IrrigationModule::gwPairingPending() const
+{
+    return gatewayPairing.hasPending(millis());
+}
+uint32_t IrrigationModule::gwPairingNode() const
+{
+    return gatewayPairing.pendingNode();
+}
+uint16_t IrrigationModule::gwPairingSecondsLeft() const
+{
+    return gatewayPairing.pendingSecondsLeft(millis());
 }
 uint32_t IrrigationModule::gwLocalSecs() const
 {

@@ -79,6 +79,10 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     uint16_t gwUnackedAlertCount() const { return (uint16_t)gateway.alerts.unackedCount(lastAckAllMs); }
     bool gwHasRtc() const;
     uint32_t gwLocalSecs() const;
+    // Fase 9: estado de pareamento pendente (§6) para o overview/painel.
+    bool gwPairingPending() const;
+    uint32_t gwPairingNode() const;
+    uint16_t gwPairingSecondsLeft() const;
     bool gwApplyZoneUpsert(const Zone &z);
     bool gwApplyZoneDelete(uint8_t id);
     bool gwApplyProgramUpsert(const Program &p);

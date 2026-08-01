@@ -35,9 +35,32 @@ class GatewayPairing
     bool windowOpen() const { return open; }
     bool approveAnnounce(uint32_t nodeId, uint32_t nowMs);
 
+    // §6: announce chegando com a janela FECHADA não é concedido, mas é registrado como
+    // "pendente" para o painel mostrar "nó novo detectado". O usuário aprova (openWindow) e o
+    // nó — que reanuncia a cada 10 s enquanto a janela dele está aberta — é concedido.
+    static constexpr uint32_t PENDING_TTL_MS = 2 * 60 * 1000; // vida do pendente (= janela do nó)
+    void notePending(uint32_t nodeId, uint32_t nowMs)
+    {
+        if (nodeId == 0)
+            return;
+        pendingNodeId = nodeId;
+        pendingAtMs = nowMs;
+    }
+    void clearPending() { pendingNodeId = 0; }
+    bool hasPending(uint32_t nowMs) const { return pendingNodeId != 0 && (nowMs - pendingAtMs) < PENDING_TTL_MS; }
+    uint32_t pendingNode() const { return pendingNodeId; }
+    uint16_t pendingSecondsLeft(uint32_t nowMs) const
+    {
+        if (!hasPending(nowMs))
+            return 0;
+        return (uint16_t)((PENDING_TTL_MS - (nowMs - pendingAtMs)) / 1000);
+    }
+
   private:
     bool open = false;
     uint32_t windowStartMs = 0;
+    uint32_t pendingNodeId = 0;
+    uint32_t pendingAtMs = 0;
     struct Recent {
         uint32_t node = 0;
         uint32_t atMs = 0;

@@ -10,9 +10,9 @@ const MOCK_DATA = {
     runningZoneId: 1,
     runningRemainMin: 25,
     alertCount: 2,
-    pairingPending: false,
-    pairingNodeId: 0,
-    pairingSecondsLeft: 0,
+    pairingPending: true,
+    pairingNodeId: 0xc0ffee01,
+    pairingSecondsLeft: 90,
   },
   stations: [
     {
@@ -403,6 +403,34 @@ function handlePost(path, body) {
   // Comando (abrir/fechar zona)
   if (path === '/command') {
     console.log('[MOCK] Comando:', body);
+    if (body.kind === 'approve_pairing') {
+      // §6: aprova → abre janela; simula o nó pareando (vira estação nova "pendente").
+      const node = STATE.overview.pairingNodeId;
+      STATE.overview.pairingPending = false;
+      STATE.overview.pairingSecondsLeft = 0;
+      if (node && !STATE.stations.some((s) => s.node === node)) {
+        STATE.stations.push({
+          node,
+          name: 'Nova estação',
+          sync: 'pendente',
+          secsSinceHeard: 0,
+          vbatCentiV: 0,
+          vpanelCentiV: 0,
+          snrQuarterDb: 0,
+          rssiDbm: 0,
+          rebootCount: 0,
+          flags: 0,
+          lat: 0,
+          lon: 0,
+          hbMinutes: 10,
+          vbatAvisoCentiV: 1220,
+          vbatCriticaCentiV: 1180,
+          outputs: [],
+        });
+        STATE.overview.stationCount = STATE.stations.length;
+      }
+      return mockResponse({ ok: true });
+    }
     if (body.kind === 'ack') {
       if (body.atMs) {
         // ack por-alerta: remove só o alerta cuja identidade (node+type+arg+atMs) casa.
