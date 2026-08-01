@@ -21,6 +21,20 @@ const MOCK_DATA = {
       sync: 'sincronizada',
       secsSinceHeard: 45,
       vbatCentiV: 1250,
+      vpanelCentiV: 1380,
+      snrQuarterDb: 33,
+      rssiDbm: -72,
+      rebootCount: 2,
+      flags: 0,
+      lat: -2290680,
+      lon: -4706160,
+      hbMinutes: 15,
+      vbatAvisoCentiV: 1220,
+      vbatCriticaCentiV: 1180,
+      outputs: [
+        { tipo: 0, index: 0, label: 'Válvula 1' },
+        { tipo: 0, index: 1, label: 'Válvula 2' },
+      ],
     },
     {
       node: 0xe5f6a7b8,
@@ -28,6 +42,20 @@ const MOCK_DATA = {
       sync: 'pendente',
       secsSinceHeard: 180,
       vbatCentiV: 1100,
+      vpanelCentiV: 1210,
+      snrQuarterDb: 10,
+      rssiDbm: -94,
+      rebootCount: 0,
+      flags: 0,
+      lat: -2212350,
+      lon: -4765430,
+      hbMinutes: 30,
+      vbatAvisoCentiV: 1220,
+      vbatCriticaCentiV: 1180,
+      outputs: [
+        { tipo: 0, index: 0, label: 'Válvula 1' },
+        { tipo: 1, index: 0, label: 'GPO 1' },
+      ],
     },
     {
       node: 0x12345678,
@@ -35,6 +63,17 @@ const MOCK_DATA = {
       sync: 'sincronizada',
       secsSinceHeard: 12,
       vbatCentiV: 1320,
+      vpanelCentiV: 1400,
+      snrQuarterDb: 20,
+      rssiDbm: -85,
+      rebootCount: 1,
+      flags: 0,
+      lat: 0,
+      lon: 0,
+      hbMinutes: 30,
+      vbatAvisoCentiV: 1220,
+      vbatCriticaCentiV: 1180,
+      outputs: [{ tipo: 1, index: 0, label: 'GPO 1' }],
     },
   ],
   zones: [
@@ -391,6 +430,36 @@ function handlePost(path, body) {
       const sen = st.sensores.find(s => s.idx === body.sensor);
       if (sen) sen.nome = body.nome;
     }
+    return mockResponse({ ok: true });
+  }
+
+  // Estações (Fase 9)
+  if (path === '/stations/config') {
+    const st = STATE.stations.find((s) => s.node === body.node);
+    if (!st) return mockResponse({ errors: ['estação inexistente'] }, 400);
+    const aviso = Math.round(Number(body.vbatAvisoV) * 100);
+    const critica = Math.round(Number(body.vbatCriticaV) * 100);
+    const hb = Number(body.hbMinutes);
+    if (!(hb >= 1 && hb <= 1440)) return mockResponse({ errors: ['Heartbeat deve ser 1..1440 min.'] }, 400);
+    if (!(aviso > critica)) return mockResponse({ errors: ['Limiar de aviso deve ser maior que o crítico.'] }, 400);
+    st.hbMinutes = hb;
+    st.vbatAvisoCentiV = aviso;
+    st.vbatCriticaCentiV = critica;
+    st.lat = Math.round(Number(body.lat) * 1e5);
+    st.lon = Math.round(Number(body.lon) * 1e5);
+    st.sync = 'pendente'; // re-push muda o epoch → estação aguarda ACK do nó
+    return mockResponse({ ok: true });
+  }
+  if (path === '/stations/delete') {
+    const deps = STATE.zones.filter((z) => z.node === body.node);
+    if (deps.length) {
+      return mockResponse({ errors: ['zonas vinculadas: ' + deps.map((z) => z.name).join(', ')] }, 400);
+    }
+    STATE.stations = STATE.stations.filter((s) => s.node !== body.node);
+    return mockResponse({ ok: true });
+  }
+  if (path === '/stations/pulse') {
+    console.log('[MOCK] Pulso de teste:', body);
     return mockResponse({ ok: true });
   }
 

@@ -55,5 +55,19 @@ check(
   'audit deve ter >=1 entrada do node da estação 0 (mini-log do sheet)'
 );
 
+// Fase 9: sheet de estação usa campos ricos + saídas p/ o teste de pulso.
+STATE.stations.forEach((s, i) => {
+  check(typeof s.hbMinutes === 'number', `estação ${i}: hbMinutes numérico`);
+  check(typeof s.rssiDbm === 'number', `estação ${i}: rssiDbm numérico`);
+  check(
+    s.vbatAvisoCentiV > s.vbatCriticaCentiV,
+    `estação ${i}: aviso (${s.vbatAvisoCentiV}) deve ser > crítica (${s.vbatCriticaCentiV})`
+  );
+  check(
+    Array.isArray(s.outputs) && s.outputs.length >= 1 && s.outputs.every((o) => typeof o.index === 'number'),
+    `estação ${i}: outputs[] com pelo menos 1 saída p/ o teste de pulso`
+  );
+});
+
 if (fail) { console.error(`\n${fail} verificação(ões) falharam`); process.exit(1); }
 console.log('OK: mock levels consistente');

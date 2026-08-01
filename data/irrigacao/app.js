@@ -236,8 +236,9 @@ async function renderStations() {
     });
   });
 
-  // Poll re-render: se um sheet está aberto, atualiza com o dado fresco.
-  if (openStationNode != null) {
+  // Poll re-render: se um sheet está aberto em modo leitura, atualiza com o dado fresco.
+  // Em edição, não re-renderiza (preservaria o form/inputs do usuário).
+  if (openStationNode != null && stSheetMode === 'view') {
     const s = stationByNode(rows, openStationNode);
     if (s) renderStationSheet(s);
     else closeStationSheet();
@@ -247,9 +248,22 @@ async function renderStations() {
 // ===== Sheet de detalhe da estação (overlay no body, sobrevive ao poll do #view) =====
 let openStationNode = null;
 let stSheetAudit = [];
+let stSheetStation = null; // última estação renderizada (p/ transições sem refetch)
+let stSheetMode = 'view'; // 'view' | 'edit'
+let stSheetDraft = null; // rascunho do form em edição
+let stSheetErrors = []; // erros do último salvar
+let stSheetDeleteConfirm = false;
+let stSheetPulse = 'idle'; // 'idle' | 'enviando' | 'aberto' | 'fechado'
+let stSheetPulseSel = 0; // índice da saída escolhida em s.outputs
 
 async function openStationSheet(node) {
   openStationNode = node;
+  stSheetMode = 'view';
+  stSheetDraft = null;
+  stSheetErrors = [];
+  stSheetDeleteConfirm = false;
+  stSheetPulse = 'idle';
+  stSheetPulseSel = 0;
   const [list, audit] = await Promise.all([
     getJson('/stations').catch(() => []),
     getJson('/audit?fmt=json&n=500').catch(() => []),
@@ -265,6 +279,7 @@ async function openStationSheet(node) {
 
 function closeStationSheet() {
   openStationNode = null;
+  stSheetStation = null;
   const el = document.getElementById('stSheet');
   if (el) el.remove();
 }
@@ -281,49 +296,256 @@ function stationMiniLog(node) {
     .join('');
 }
 
+// Rótulo de uma saída física da estação (outputs[]).
+function outputLabel(o) {
+  if (o && o.label) return esc(o.label);
+  const t = num(o && o.tipo) === 1 ? 'GPO' : 'Válvula';
+  return esc(t + ' ' + (num(o && o.index) + 1));
+}
+
+// Bloco do teste de pulso (view): seletor de saída + botão com estados.
+function pulseBlock(s) {
+  const outs = Array.isArray(s.outputs) ? s.outputs : [];
+  if (!outs.length) return '';
+  const chips = outs
+    .map(
+      (o, i) =>
+        `<button class="oput ${i === stSheetPulseSel ? 'sel' : ''}" data-out="${i}">${outputLabel(o)}</button>`
+    )
+    .join('');
+  let action;
+  if (stSheetPulse === 'enviando') action = '<div class="pulse-state">Enviando comando…</div>';
+  else if (stSheetPulse === 'aberto') action = '<div class="pulse-state open">Aberto — fechará automaticamente</div>';
+  else if (stSheetPulse === 'fechado') action = '<div class="pulse-state">Fechado — teste concluído</div>';
+  else action = '<button class="btn outline big" id="stPulse">Teste de pulso (10 s)</button>';
+  return `<div class="ml-wrap">
+      <div class="sg-lbl">Teste de pulso</div>
+      <div class="oput-row">${chips}</div>
+      ${action}
+    </div>`;
+}
+
 function renderStationSheet(s) {
+  stSheetStation = s;
   const name = s.name ? esc(s.name) : nodeHex(s.node);
   const [syncCls, syncTxt] = stationSyncLabel(s.sync);
-  const lat = num(s.lat);
-  const lon = num(s.lon);
-  const coords = lat || lon ? `${(lat / 1e5).toFixed(5)}, ${(lon / 1e5).toFixed(5)}` : '—';
-  const snr = s.snrQuarterDb != null ? (num(s.snrQuarterDb) / 4).toFixed(1) + ' dB' : '—';
+  const inner = stSheetMode === 'edit' ? stationSheetEdit(s) : stationSheetView(s, name, syncCls, syncTxt);
 
   const html = `
     <div class="sheet-backdrop" id="stSheet">
       <div class="sheet" role="dialog" aria-label="Detalhe da estação">
         <div class="sheet-grip"></div>
-        <div class="sheet-hdr">
-          <div class="sheet-hmain">
-            <div class="sheet-title">${name}</div>
-            <div class="sheet-sub">${esc(nodeHex(s.node))} · último contato ${fmtSince(s.secsSinceHeard)}</div>
-          </div>
-        </div>
-        <div class="sheet-sync ${syncCls}">${syncTxt}</div>
-        <div class="sheet-grid">
-          <div class="sg-box"><div class="sg-lbl">Bateria</div><div class="sg-val">${fmtVolts(s.vbatCentiV)}</div></div>
-          <div class="sg-box"><div class="sg-lbl">Painel solar</div><div class="sg-val">${fmtVolts(s.vpanelCentiV)}</div></div>
-          <div class="sg-box"><div class="sg-lbl">SNR</div><div class="sg-val">${snr}</div></div>
-          <div class="sg-box"><div class="sg-lbl">Reboots</div><div class="sg-val">${num(s.rebootCount)}</div></div>
-        </div>
-        <div class="sg-box wide"><div class="sg-lbl">Coordenadas</div><div class="sg-val sm">${esc(coords)}</div></div>
-        <div class="ml-wrap">
-          <div class="sg-lbl">Log remoto — esta estação</div>
-          <div class="ml-list">${stationMiniLog(s.node)}</div>
-        </div>
-        <button class="btn solid big" id="stClose">Fechar</button>
+        ${inner}
       </div>
     </div>`;
 
   const existing = document.getElementById('stSheet');
   if (existing) existing.outerHTML = html;
   else document.body.insertAdjacentHTML('beforeend', html);
+  wireStationSheet(s);
+}
 
+function stationSheetView(s, name, syncCls, syncTxt) {
+  const lat = num(s.lat);
+  const lon = num(s.lon);
+  const coords = lat || lon ? `${(lat / 1e5).toFixed(5)}, ${(lon / 1e5).toFixed(5)}` : '—';
+  const snr = s.snrQuarterDb != null ? (num(s.snrQuarterDb) / 4).toFixed(1) + ' dB' : '—';
+  const rssi = s.rssiDbm != null ? num(s.rssiDbm) + ' dBm' : '—';
+  const hb = s.hbMinutes != null ? 'A cada ' + num(s.hbMinutes) + ' min' : '—';
+  const limiares =
+    s.vbatAvisoCentiV != null
+      ? `Aviso ${fmtVolts(s.vbatAvisoCentiV)} · crítica ${fmtVolts(s.vbatCriticaCentiV)}`
+      : '';
+  return `
+    <div class="sheet-hdr">
+      <div class="sheet-hmain">
+        <div class="sheet-title">${name}</div>
+        <div class="sheet-sub">${esc(nodeHex(s.node))} · último contato ${fmtSince(s.secsSinceHeard)}</div>
+      </div>
+      <button class="btn ghost sm" id="stEdit">Editar</button>
+    </div>
+    <div class="sheet-sync ${syncCls}">${syncTxt}</div>
+    <div class="sheet-grid">
+      <div class="sg-box"><div class="sg-lbl">Bateria</div><div class="sg-val">${fmtVolts(s.vbatCentiV)}</div></div>
+      <div class="sg-box"><div class="sg-lbl">Painel solar</div><div class="sg-val">${fmtVolts(s.vpanelCentiV)}</div></div>
+      <div class="sg-box"><div class="sg-lbl">SNR / RSSI</div><div class="sg-val sm">${snr} / ${rssi}</div></div>
+      <div class="sg-box"><div class="sg-lbl">Reboots</div><div class="sg-val">${num(s.rebootCount)}</div></div>
+    </div>
+    <div class="sg-box wide"><div class="sg-lbl">Coordenadas</div><div class="sg-val sm">${esc(coords)}</div></div>
+    <div class="sg-box wide">
+      <div class="sg-lbl">Heartbeat &amp; limiares de bateria</div>
+      <div class="sg-val sm">${hb}</div>
+      ${limiares ? `<div class="sg-note">${limiares}</div>` : ''}
+    </div>
+    ${pulseBlock(s)}
+    <div class="ml-wrap">
+      <div class="sg-lbl">Log remoto — esta estação</div>
+      <div class="ml-list">${stationMiniLog(s.node)}</div>
+    </div>
+    <button class="btn solid big" id="stClose">Fechar</button>`;
+}
+
+function stationSheetEdit(s) {
+  const d = stSheetDraft;
+  const errs = stSheetErrors.length
+    ? `<div class="card redbox sheet-errs">${stSheetErrors.map((e) => `<div>${esc(e)}</div>`).join('')}</div>`
+    : '';
+  let del = '';
+  if (stSheetDeleteConfirm) {
+    del = `<div class="card redbox">
+        <div class="qtext">Remover esta estação? Esta ação não pode ser desfeita.</div>
+        <div class="btnrow">
+          <button class="btn ghost sm" id="stDelCancel">Cancelar</button>
+          <button class="btn danger sm" id="stDelConfirm">Remover</button>
+        </div>
+      </div>`;
+  } else {
+    del = '<button class="btn dangerline" id="stDelReq">Remover estação</button>';
+  }
+  return `
+    <div class="sheet-hdr">
+      <div class="sheet-hmain">
+        <div class="sheet-title">${s.name ? esc(s.name) : nodeHex(s.node)}</div>
+        <div class="sheet-sub">${esc(nodeHex(s.node))}</div>
+      </div>
+    </div>
+    ${errs}
+    <div class="card form sheet-form">
+      <label class="fld"><span class="flbl">Heartbeat (min)</span>
+        <input class="finput" id="edHb" type="number" min="1" max="1440" value="${esc(d.hbMinutes)}"></label>
+      <div class="frow">
+        <label class="fld"><span class="flbl">Aviso (V)</span>
+          <input class="finput" id="edAviso" type="number" step="0.1" value="${esc(d.vbatAvisoV)}"></label>
+        <label class="fld"><span class="flbl">Crítica (V)</span>
+          <input class="finput" id="edCritica" type="number" step="0.1" value="${esc(d.vbatCriticaV)}"></label>
+      </div>
+      <div class="frow">
+        <label class="fld"><span class="flbl">Latitude</span>
+          <input class="finput" id="edLat" type="number" step="0.00001" value="${esc(d.lat)}"></label>
+        <label class="fld"><span class="flbl">Longitude</span>
+          <input class="finput" id="edLon" type="number" step="0.00001" value="${esc(d.lon)}"></label>
+      </div>
+    </div>
+    <div class="frow sheet-actions">
+      <button class="btn ghost sm" id="stEditCancel">Cancelar</button>
+      <button class="btn solid sm grow" id="stEditSave">Salvar</button>
+    </div>
+    ${del}`;
+}
+
+function enterStationEdit(s) {
+  stSheetMode = 'edit';
+  stSheetErrors = [];
+  stSheetDeleteConfirm = false;
+  stSheetDraft = {
+    hbMinutes: s.hbMinutes != null ? num(s.hbMinutes) : 10,
+    vbatAvisoV: ((s.vbatAvisoCentiV != null ? num(s.vbatAvisoCentiV) : 1220) / 100).toFixed(1),
+    vbatCriticaV: ((s.vbatCriticaCentiV != null ? num(s.vbatCriticaCentiV) : 1180) / 100).toFixed(1),
+    lat: (num(s.lat) / 1e5).toFixed(5),
+    lon: (num(s.lon) / 1e5).toFixed(5),
+  };
+  renderStationSheet(s);
+}
+
+async function saveStationEdit() {
+  const g = (id) => document.getElementById(id);
+  const payload = {
+    node: openStationNode,
+    hbMinutes: Number(g('edHb').value),
+    vbatAvisoV: Number(g('edAviso').value),
+    vbatCriticaV: Number(g('edCritica').value),
+    lat: Number(g('edLat').value),
+    lon: Number(g('edLon').value),
+  };
+  const r = await postJson('/stations/config', payload);
+  if (!r.ok) {
+    stSheetErrors = (r.body && r.body.errors) || ['Falha ao salvar.'];
+    renderStationSheet(stSheetStation);
+    return;
+  }
+  stSheetMode = 'view';
+  stSheetErrors = [];
+  await openStationSheet(openStationNode); // recarrega com dado fresco (sync → pendente)
+}
+
+async function requestStationDelete() {
+  const r = await postJson('/stations/delete', { node: openStationNode });
+  if (!r.ok) {
+    stSheetErrors = (r.body && r.body.errors) || ['Não foi possível remover.'];
+    stSheetDeleteConfirm = false;
+    renderStationSheet(stSheetStation);
+    return;
+  }
+  closeStationSheet();
+  if (current === 'stations') renderStations();
+}
+
+async function runStationPulse() {
+  const s = stSheetStation;
+  const outs = Array.isArray(s.outputs) ? s.outputs : [];
+  const o = outs[stSheetPulseSel];
+  if (!o) return;
+  stSheetPulse = 'enviando';
+  renderStationSheet(s);
+  const r = await postJson('/stations/pulse', {
+    node: openStationNode,
+    tipo: num(o.tipo),
+    index: num(o.index),
+    durationS: 10,
+  });
+  if (!r.ok) {
+    stSheetPulse = 'idle';
+    renderStationSheet(s);
+    return;
+  }
+  stSheetPulse = 'aberto';
+  renderStationSheet(s);
+  setTimeout(() => {
+    if (openStationNode == null) return;
+    stSheetPulse = 'fechado';
+    renderStationSheet(stSheetStation);
+    setTimeout(() => {
+      if (openStationNode == null) return;
+      stSheetPulse = 'idle';
+      renderStationSheet(stSheetStation);
+    }, 1600);
+  }, 1600);
+}
+
+function wireStationSheet(s) {
   const root = document.getElementById('stSheet');
+  if (!root) return;
   root.addEventListener('click', (e) => {
     if (e.target === root) closeStationSheet();
   });
-  root.querySelector('#stClose').addEventListener('click', closeStationSheet);
+  const on = (id, ev, fn) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener(ev, fn);
+  };
+  on('stClose', 'click', closeStationSheet);
+  on('stEdit', 'click', () => enterStationEdit(s));
+  on('stEditCancel', 'click', () => {
+    stSheetMode = 'view';
+    stSheetErrors = [];
+    renderStationSheet(s);
+  });
+  on('stEditSave', 'click', saveStationEdit);
+  on('stDelReq', 'click', () => {
+    stSheetDeleteConfirm = true;
+    renderStationSheet(s);
+  });
+  on('stDelCancel', 'click', () => {
+    stSheetDeleteConfirm = false;
+    renderStationSheet(s);
+  });
+  on('stDelConfirm', 'click', requestStationDelete);
+  on('stPulse', 'click', runStationPulse);
+  root.querySelectorAll('.oput').forEach((el) => {
+    el.addEventListener('click', () => {
+      stSheetPulseSel = num(el.dataset.out);
+      renderStationSheet(stSheetStation);
+    });
+  });
 }
 
 // ===== Zonas =====
