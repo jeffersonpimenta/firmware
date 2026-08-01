@@ -67,3 +67,6 @@ t(L.fmtDur(0) === '0s', 'fmtDur 0 -> 0s');
 
 if (fail) { console.error(`\n${fail} verificação(ões) falharam`); process.exit(1); }
 console.log('OK: helpers de nível');
+// eval de app.js agenda setInterval (poll da Visão Geral) que mantém o event loop vivo;
+// saída explícita p/ o teste terminar em CI em vez de pendurar.
+process.exit(0);
