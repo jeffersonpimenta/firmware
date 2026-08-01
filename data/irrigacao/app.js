@@ -1528,85 +1528,80 @@ function niveisFormHtml(stations, zones, sensors, r) {
 }
 
 // ===== Controle de nível por boia =====
-async function renderNiveis() {
-  const rules = (await getJson('/levels')) || [];
-  const rows = (Array.isArray(rules) ? rules : []).map((r) => {
-    r = r || {};
-    const boia = `${nodeHex(r.sensorNode)} / s${num(r.sensorIdx)}`;
-    const liga = r.ligaQuandoAtivo ? 'ativo=baixo' : 'inativo=baixo';
-    return `<tr>
-      <td class="mono">${esc(boia)}</td>
-      <td>zona ${num(r.targetZoneId)}</td>
-      <td>${esc(liga)}</td>
-      <td>${num(r.minOnS)}s / ${num(r.minOffS)}s</td>
-      <td>${num(r.staleTimeoutS)}s</td>
-      <td>${esc(r.mensagem || '')}</td>
-      <td><button class="btn dangerline sm" data-ndel="${num(r.id)}">Excluir</button></td>
-    </tr>`;
-  }).join('');
+async function renderNiveis(editId) {
+  const [rules, stations, zones, sensors] = await Promise.all([
+    getJson('/levels').catch(() => []),
+    getJson('/stations').catch(() => []),
+    getJson('/zones').catch(() => []),
+    getJson('/sensors').catch(() => []),
+  ]);
+  const list = Array.isArray(rules) ? rules : [];
+  const editRule = editId != null ? list.find((x) => x && num(x.id) === num(editId)) : null;
+  const cards = list.length
+    ? list.map((r) => niveisCardHtml(r, stations, zones, sensors)).join('')
+    : '<div class="empty">Nenhuma regra de nível.</div>';
+  view.innerHTML = `<div class="lvl-list">${cards}</div>` + niveisFormHtml(stations, zones, sensors, editRule);
+  wireNiveis(stations, zones, sensors, list);
+  if (editRule) {
+    const f = view.querySelector('.lvl-form');
+    if (f) f.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+}
 
-  const form = `
-    <div class="form">
-      <div class="sec-title">Nova / editar regra</div>
-      <label class="fld"><span class="flbl">ID (0 = alocar)</span>
-        <input class="finput" id="nv-id" type="number" min="0" max="4" value="0"></label>
-      <label class="fld"><span class="flbl">Nó da boia (hex ou decimal)</span>
-        <input class="finput" id="nv-node" placeholder="ex: 0x1a2b3c4d" value=""></label>
-      <label class="fld"><span class="flbl">Índice do sensor (0–3)</span>
-        <input class="finput" id="nv-sidx" type="number" min="0" max="3" value="0"></label>
-      <label class="fld"><span class="flbl">Liga quando boia</span>
-        <select class="finput" id="nv-liga">
-          <option value="1">ativo (nível baixo)</option>
-          <option value="0">inativo (nível baixo)</option>
-        </select></label>
-      <label class="fld"><span class="flbl">Zona / bomba (ID)</span>
-        <input class="finput" id="nv-zone" type="number" min="1" value="1"></label>
-      <div class="frow">
-        <label class="fld"><span class="flbl">Min-on (s)</span>
-          <input class="finput" id="nv-minon" type="number" min="0" value="30"></label>
-        <label class="fld"><span class="flbl">Min-off (s)</span>
-          <input class="finput" id="nv-minoff" type="number" min="0" value="30"></label>
-      </div>
-      <label class="fld"><span class="flbl">Timeout sem sinal (s)</span>
-        <input class="finput" id="nv-stale" type="number" min="1" value="90"></label>
-      <label class="fld"><span class="flbl">Mensagem (opcional)</span>
-        <input class="finput" id="nv-msg" maxlength="23" value=""></label>
-      <div class="frow">
-        <button class="btn" id="nv-save">Salvar</button>
-      </div>
-    </div>`;
+function errText(r) {
+  return (r.body && Array.isArray(r.body.errors)) ? r.body.errors.join(', ') : 'erro';
+}
 
-  view.innerHTML =
-    `<div class="log-table-wrap"><table class="log-table">
-      <thead><tr><th>Boia</th><th>Bomba</th><th>Liga</th><th>Min on/off</th><th>Timeout</th><th>Msg</th><th></th></tr></thead>
-      <tbody>${rows || '<tr><td colspan="7" class="empty">Nenhuma regra de nível.</td></tr>'}</tbody>
-    </table></div>` + form;
+function wireNiveis(stations, zones, sensors, list) {
+  const q = (sel) => view.querySelector(sel);
+
+  const nodeSel = q('#nv-node');
+  if (nodeSel) nodeSel.addEventListener('change', () => {
+    const sidx = q('#nv-sidx');
+    if (sidx) sidx.innerHTML = sensorOptionsHtml(sensors, num(nodeSel.value), -1);
+  });
+
+  const advToggle = q('#nv-adv-toggle');
+  if (advToggle) advToggle.addEventListener('click', () => {
+    const box = q('#nv-adv');
+    if (!box) return;
+    const nowHidden = box.classList.toggle('hidden');
+    advToggle.textContent = (nowHidden ? '▸' : '▾') + ' Ajustes avançados';
+  });
 
   view.querySelectorAll('[data-ndel]').forEach((b) => b.addEventListener('click', async () => {
     if (!confirm('Excluir esta regra?')) return;
     const r = await postJson('/levels/delete', { id: num(b.dataset.ndel) });
     if (r.ok) renderNiveis().catch(() => {});
-    else alert('Falha ao excluir: ' + ((r.body && Array.isArray(r.body.errors)) ? r.body.errors.join(', ') : 'erro'));
+    else alert('Falha ao excluir: ' + errText(r));
   }));
 
-  view.querySelector('#nv-save').addEventListener('click', async () => {
-    const nodeStr = (view.querySelector('#nv-node').value || '').trim();
-    const nodeVal = nodeStr.startsWith('0x') || nodeStr.startsWith('0X')
-      ? parseInt(nodeStr, 16) : parseInt(nodeStr, 10);
+  view.querySelectorAll('[data-nedit]').forEach((b) => b.addEventListener('click', () => {
+    renderNiveis(num(b.dataset.nedit)).catch(() => {});
+  }));
+
+  const cancel = q('#nv-cancel');
+  if (cancel) cancel.addEventListener('click', () => renderNiveis().catch(() => {}));
+
+  const save = q('#nv-save');
+  if (save) save.addEventListener('click', async () => {
+    const node = num(q('#nv-node').value);
+    const sidxRaw = q('#nv-sidx').value;
+    if (!node || sidxRaw === '') { alert('Selecione a estação e a boia.'); return; }
     const body = {
-      id: num(view.querySelector('#nv-id').value),
-      sensorNode: nodeVal || 0,
-      sensorIdx: num(view.querySelector('#nv-sidx').value),
-      ligaQuandoAtivo: num(view.querySelector('#nv-liga').value) === 1,
-      targetZoneId: num(view.querySelector('#nv-zone').value),
-      minOnS: num(view.querySelector('#nv-minon').value),
-      minOffS: num(view.querySelector('#nv-minoff').value),
-      staleTimeoutS: num(view.querySelector('#nv-stale').value),
-      mensagem: view.querySelector('#nv-msg').value.slice(0, 23),
+      id: num(q('#nv-id').value),
+      sensorNode: node,
+      sensorIdx: num(sidxRaw),
+      ligaQuandoAtivo: num(q('#nv-liga').value) === 1,
+      targetZoneId: num(q('#nv-zone').value),
+      minOnS: num(q('#nv-minon').value),
+      minOffS: num(q('#nv-minoff').value),
+      staleTimeoutS: num(q('#nv-stale').value),
+      mensagem: q('#nv-msg').value.slice(0, 23),
     };
     const r = await postJson('/levels', body);
     if (r.ok) renderNiveis().catch(() => {});
-    else alert('Falha: ' + ((r.body && Array.isArray(r.body.errors)) ? r.body.errors.join(', ') : 'erro'));
+    else alert('Falha: ' + errText(r));
   });
 }
 
