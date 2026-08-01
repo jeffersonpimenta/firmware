@@ -49,5 +49,11 @@ STATE.levels.forEach((r, i) => {
 });
 check(polarities.size === 2, 'levels deve cobrir ambas polaridades (true e false)');
 
+// Fase 9: mini-log da estação = /audit filtrado por node. Estação 0 precisa de >=1 evento.
+check(
+  Array.isArray(STATE.audit) && STATE.audit.some((a) => a.node === STATE.stations[0].node),
+  'audit deve ter >=1 entrada do node da estação 0 (mini-log do sheet)'
+);
+
 if (fail) { console.error(`\n${fail} verificação(ões) falharam`); process.exit(1); }
 console.log('OK: mock levels consistente');
