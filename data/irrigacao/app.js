@@ -449,13 +449,14 @@ function enterStationEdit(s) {
 
 async function saveStationEdit() {
   const g = (id) => document.getElementById(id);
+  // Contrato inteiro (o parser do firmware é int-only): volts→centiV, graus→×1e7.
   const payload = {
     node: openStationNode,
     hbMinutes: Number(g('edHb').value),
-    vbatAvisoV: Number(g('edAviso').value),
-    vbatCriticaV: Number(g('edCritica').value),
-    lat: Number(g('edLat').value),
-    lon: Number(g('edLon').value),
+    vbatAvisoCentiV: Math.round(Number(g('edAviso').value) * 100),
+    vbatCriticaCentiV: Math.round(Number(g('edCritica').value) * 100),
+    latE7: Math.round(Number(g('edLat').value) * 1e7),
+    lonE7: Math.round(Number(g('edLon').value) * 1e7),
   };
   const r = await postJson('/stations/config', payload);
   if (!r.ok) {

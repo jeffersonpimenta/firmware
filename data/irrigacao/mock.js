@@ -437,16 +437,16 @@ function handlePost(path, body) {
   if (path === '/stations/config') {
     const st = STATE.stations.find((s) => s.node === body.node);
     if (!st) return mockResponse({ errors: ['estação inexistente'] }, 400);
-    const aviso = Math.round(Number(body.vbatAvisoV) * 100);
-    const critica = Math.round(Number(body.vbatCriticaV) * 100);
+    const aviso = Number(body.vbatAvisoCentiV);
+    const critica = Number(body.vbatCriticaCentiV);
     const hb = Number(body.hbMinutes);
     if (!(hb >= 1 && hb <= 1440)) return mockResponse({ errors: ['Heartbeat deve ser 1..1440 min.'] }, 400);
     if (!(aviso > critica)) return mockResponse({ errors: ['Limiar de aviso deve ser maior que o crítico.'] }, 400);
     st.hbMinutes = hb;
     st.vbatAvisoCentiV = aviso;
     st.vbatCriticaCentiV = critica;
-    st.lat = Math.round(Number(body.lat) * 1e5);
-    st.lon = Math.round(Number(body.lon) * 1e5);
+    st.lat = Math.round(Number(body.latE7) / 100); // ×1e7 → ×1e5 (escala do /stations)
+    st.lon = Math.round(Number(body.lonE7) / 100);
     st.sync = 'pendente'; // re-push muda o epoch → estação aguarda ACK do nó
     return mockResponse({ ok: true });
   }

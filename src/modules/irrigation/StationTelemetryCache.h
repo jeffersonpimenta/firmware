@@ -8,6 +8,7 @@ struct StationTelemetry {
     uint16_t vbatCentiV = 0;
     uint16_t vpanelCentiV = 0;
     int8_t snrQuarterDb = 0;
+    int16_t rssiDbm = 0;
     uint16_t rebootCount = 0;
     uint8_t flags = 0;
     uint32_t configEpoch = 0;

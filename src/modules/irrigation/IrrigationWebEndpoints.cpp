@@ -2,6 +2,7 @@
 #if !MESHTASTIC_EXCLUDE_WEBSERVER
 
 #include "modules/irrigation/IrrigationModule.h"
+#include "modules/irrigation/IrrigationSettings.h" // migrateIrrigationSettings (hStations lê o blob)
 #include "modules/irrigation/IrrigationWebApi.h"
 
 #include <Arduino.h> // millis()
@@ -142,16 +143,112 @@ static void hStations(HTTPRequest *req, HTTPResponse *res)
         v.snrQuarterDb = tel ? tel->snrQuarterDb : 0;
         v.rebootCount = tel ? tel->rebootCount : 0;
         v.flags = tel ? tel->flags : 0;
+        v.rssiDbm = tel ? tel->rssiDbm : 0;
         v.lat = e->lat;
         v.lon = e->lon;
+
+        // Fase 9: config desejada (heartbeat + limiares) e saídas físicas, do blob adotado.
+        IrrigationSettings cfg;
+        if (e->desiredEpoch != 0 && migrateIrrigationSettings(e->blob, sizeof(e->blob), cfg)) {
+            v.hbMinutes = cfg.hbMinutes;
+            v.vbatAvisoCentiV = cfg.vbatAvisoCentiV;
+            v.vbatCriticaCentiV = cfg.vbatCriticaCentiV;
+            uint8_t oc = 0;
+            for (uint8_t k = 0; k < IrrigationSettings::MAX_VALVES && oc < StationView::MAX_OUTPUTS; k++)
+                if (cfg.pinsHbridgeA[k] >= 0) {
+                    v.outputs[oc].tipo = 0;
+                    v.outputs[oc].index = k;
+                    oc++;
+                }
+            for (uint8_t k = 0; k < IrrigationSettings::MAX_GPO && oc < StationView::MAX_OUTPUTS; k++)
+                if (cfg.pinsGpo[k] >= 0) {
+                    v.outputs[oc].tipo = 1;
+                    v.outputs[oc].index = k;
+                    oc++;
+                }
+            v.outputCount = oc;
+        }
     }
 
-    char buf[4096];
+    char buf[8192]; // Fase 9: campos extras (rssi/hb/limiares/outputs) por estação
     if (!buildStations(views, n, buf, sizeof(buf))) {
         res->setStatusCode(500);
         return;
     }
     sendJson(res, buf);
+}
+
+// POST /api/irrigation/stations/config — edita heartbeat/limiares/coords + re-push §5.4
+static void hStationsConfig(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!gwReady()) {
+        res->setStatusCode(404);
+        return;
+    }
+    char body[256];
+    size_t nb = readBody(req, body, sizeof(body));
+    StationConfigReq r;
+    ParseResult pr = parseStationConfig(body, nb, r);
+    if (!pr.ok) {
+        sendParseErrors(res, pr);
+        return;
+    }
+    if (!irrigationModule->gwApplyStationConfig(r)) {
+        sendJson(res, "{\"errors\":[\"estação sem config adotada\"]}", 400);
+        return;
+    }
+    sendJson(res, "{\"ok\":true}");
+}
+
+// POST /api/irrigation/stations/delete — remove estação (trava se há zonas vinculadas)
+static void hStationsDelete(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!gwReady()) {
+        res->setStatusCode(404);
+        return;
+    }
+    char body[128];
+    size_t nb = readBody(req, body, sizeof(body));
+    uint32_t node = 0;
+    ParseResult pr = parseStationDelete(body, nb, node);
+    if (!pr.ok) {
+        sendParseErrors(res, pr);
+        return;
+    }
+    int deps = irrigationModule->gwCountZonesForNode(node);
+    if (deps > 0) {
+        char out[96];
+        snprintf(out, sizeof(out), "{\"errors\":[\"%d zona(s) vinculada(s) — mova-as primeiro\"]}", deps);
+        sendJson(res, out, 400);
+        return;
+    }
+    if (!irrigationModule->gwRemoveStation(node)) {
+        sendJson(res, "{\"errors\":[\"estação inexistente\"]}", 400);
+        return;
+    }
+    sendJson(res, "{\"ok\":true}");
+}
+
+// POST /api/irrigation/stations/pulse — teste de pulso por saída física
+static void hStationsPulse(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!gwReady()) {
+        res->setStatusCode(404);
+        return;
+    }
+    char body[128];
+    size_t nb = readBody(req, body, sizeof(body));
+    StationPulseReq r;
+    ParseResult pr = parseStationPulse(body, nb, r);
+    if (!pr.ok) {
+        sendParseErrors(res, pr);
+        return;
+    }
+    if (!irrigationModule->gwStationPulse(r)) {
+        sendJson(res, "{\"errors\":[\"saída inexistente\"]}", 400);
+        return;
+    }
+    sendJson(res, "{\"ok\":true}");
 }
 
 static void hZonesGet(HTTPRequest *req, HTTPResponse *res)
@@ -799,6 +896,9 @@ void registerIrrigationHandlers(HTTPServer *server)
     server->registerNode(new ResourceNode("/api/irrigation/overview", "GET", &hOverview));
     server->registerNode(new ResourceNode("/api/irrigation/alerts", "GET", &hAlerts));
     server->registerNode(new ResourceNode("/api/irrigation/stations", "GET", &hStations));
+    server->registerNode(new ResourceNode("/api/irrigation/stations/config", "POST", &hStationsConfig));
+    server->registerNode(new ResourceNode("/api/irrigation/stations/delete", "POST", &hStationsDelete));
+    server->registerNode(new ResourceNode("/api/irrigation/stations/pulse", "POST", &hStationsPulse));
     server->registerNode(new ResourceNode("/api/irrigation/zones", "GET", &hZonesGet));
     server->registerNode(new ResourceNode("/api/irrigation/zones", "POST", &hZonesPost));
     server->registerNode(new ResourceNode("/api/irrigation/zones/delete", "POST", &hZonesDelete));

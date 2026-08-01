@@ -2557,6 +2557,79 @@ bool IrrigationModule::gwRunCommand(const IrrigationWeb::WebCommand &c)
     return false;
 }
 
+// --- Fase 9: painel de estação (config / remoção / pulso) ---
+
+bool IrrigationModule::gwApplyStationConfig(const IrrigationWeb::StationConfigReq &r)
+{
+    StationEntry *e = gateway.stations.mutableByNode(r.node);
+    if (!e || e->desiredEpoch == 0)
+        return false; // sem blob adotado ainda (§5.4): nada a editar/empurrar
+    IrrigationSettings cfg;
+    if (!migrateIrrigationSettings(e->blob, sizeof(e->blob), cfg))
+        return false;
+    cfg.hbMinutes = r.hbMinutes;
+    cfg.vbatAvisoCentiV = r.vbatAvisoCentiV;
+    cfg.vbatCriticaCentiV = r.vbatCriticaCentiV;
+    cfg.latE7 = r.latE7;
+    cfg.lonE7 = r.lonE7;
+    memcpy(e->blob, &cfg, sizeof(e->blob));
+    e->desiredEpoch += 1;   // §5.4: bump → estação fica "pendente" até ACKar o novo epoch
+    e->lat = r.latE7 / 100; // ×1e7 (blob) → ×1e5 (exibição do /stations)
+    e->lon = r.lonE7 / 100;
+    saveGatewayState();
+    const StationTelemetry *tel = gateway.telemetry.byNode(r.node);
+    gwReconcileEpoch(r.node, tel ? tel->configEpoch : 0); // push imediato do SET_CONFIG (respeita cooldown)
+    return true;
+}
+
+int IrrigationModule::gwCountZonesForNode(uint32_t node) const
+{
+    int n = 0;
+    for (size_t i = 0; i < gateway.zones.count(); i++) {
+        const Zone *z = gateway.zones.zoneAt(i);
+        if (z && z->node == node)
+            n++;
+    }
+    return n;
+}
+
+bool IrrigationModule::gwRemoveStation(uint32_t node)
+{
+    if (gwCountZonesForNode(node) > 0)
+        return false; // trava: mova as zonas vinculadas primeiro
+    if (!gateway.stations.removeByNode(node))
+        return false;
+    // Limpa cooldown de epoch do nó (telemetria é só-RAM e expira sozinha).
+    for (uint8_t i = 0; i < StationRegistry::MAX; i++)
+        if (epochCooldowns[i].node == node) {
+            epochCooldowns[i].node = 0;
+            epochCooldowns[i].lastMs = 0;
+        }
+    saveGatewayState();
+    return true;
+}
+
+bool IrrigationModule::gwStationPulse(const IrrigationWeb::StationPulseReq &r)
+{
+    const StationEntry *e = gateway.stations.byNode(r.node);
+    if (!e)
+        return false;
+    // Valida que a saída existe no blob desejado (pino configurado != -1), quando há blob.
+    IrrigationSettings cfg;
+    if (e->desiredEpoch != 0 && migrateIrrigationSettings(e->blob, sizeof(e->blob), cfg)) {
+        if (r.tipo == 1) {
+            if (r.index >= IrrigationSettings::MAX_GPO || cfg.pinsGpo[r.index] < 0)
+                return false;
+        } else {
+            if (r.index >= IrrigationSettings::MAX_VALVES || cfg.pinsHbridgeA[r.index] < 0)
+                return false;
+        }
+    }
+    uint8_t attempts = e->retries > 0 ? e->retries : 3;
+    gwSendValveCmd(r.node, r.index, r.tipo, 1 /*abrir*/, r.durationS, 0 /*sem zona*/, attempts);
+    return true;
+}
+
 // --- Serviço do portal de campo (Fase 5b). Role-agnóstico. ---
 void IrrigationModule::portalFillNodeState(IrrigationWeb::NodeStateCtx &out) const
 {
@@ -3201,6 +3274,7 @@ void IrrigationModule::handleGwHeartbeat(const meshtastic_MeshPacket &mp, const 
     tel.vbatCentiV = hb.vbatCentiV;
     tel.vpanelCentiV = hb.vpanelCentiV;
     tel.snrQuarterDb = hb.snrQuarterDb;
+    tel.rssiDbm = hb.rssi;
     tel.rebootCount = hb.rebootCount;
     tel.flags = hb.flags;
     tel.configEpoch = hb.configEpoch;

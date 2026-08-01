@@ -67,6 +67,12 @@ size_t buildOverview(const OverviewCtx &ctx, char *buf, size_t cap);
 // ageS = (nowMs - atMs)/1000. JSON: [{type,node,arg,ageS}]. "[]" se nada pendente.
 size_t buildAlerts(const AlertCenter &ac, uint32_t nowMs, uint32_t ackMs, char *buf, size_t cap);
 
+// Saída física de uma estação (deriva dos pinos configurados no blob). tipo: 0=válvula, 1=gpo.
+struct StationOutput {
+    uint8_t tipo = 0;
+    uint8_t index = 0;
+};
+
 struct StationView {
     uint32_t node = 0;
     const char *name = "";
@@ -75,9 +81,18 @@ struct StationView {
     uint16_t vbatCentiV = 0;
     uint16_t vpanelCentiV = 0;
     int8_t snrQuarterDb = 0;
+    int16_t rssiDbm = 0;
     uint16_t rebootCount = 0;
     uint8_t flags = 0; // HbFlags: tamper/safe/hibernation
     int32_t lat = 0, lon = 0;
+    // Fase 9: config desejada (do blob) exposta p/ leitura/edição no sheet.
+    uint16_t hbMinutes = 0;
+    uint16_t vbatAvisoCentiV = 0;
+    uint16_t vbatCriticaCentiV = 0;
+    // Fase 9: saídas físicas p/ o teste de pulso.
+    static constexpr uint8_t MAX_OUTPUTS = 10; // MAX_VALVES(8) + MAX_GPO(2)
+    StationOutput outputs[MAX_OUTPUTS];
+    uint8_t outputCount = 0;
 };
 size_t buildStations(const StationView *views, size_t n, char *buf, size_t cap);
 
@@ -130,6 +145,29 @@ struct WebCommand {
     uint32_t atMs = 0;
 };
 ParseResult parseCommand(const char *json, size_t len, WebCommand &out);
+
+// ── Fase 9 — configuração/remoção/pulso de estação ───────────────────────────
+// Config de estação (POST /stations/config). Tudo inteiro (JsonReader é int-only):
+// volts em centi-volt, coordenadas em graus×1e7 (mesma escala do blob latE7/lonE7).
+struct StationConfigReq {
+    uint32_t node = 0;
+    uint16_t hbMinutes = 10;
+    uint16_t vbatAvisoCentiV = 1220;
+    uint16_t vbatCriticaCentiV = 1180;
+    int32_t latE7 = 0;
+    int32_t lonE7 = 0;
+};
+ParseResult parseStationConfig(const char *json, size_t len, StationConfigReq &out);
+ParseResult parseStationDelete(const char *json, size_t len, uint32_t &outNode);
+
+// Teste de pulso por saída (POST /stations/pulse).
+struct StationPulseReq {
+    uint32_t node = 0;
+    uint8_t tipo = 0; // 0=válvula, 1=gpo
+    uint8_t index = 0;
+    uint16_t durationS = 10;
+};
+ParseResult parseStationPulse(const char *json, size_t len, StationPulseReq &out);
 
 // ── Fase 6b — intertravamentos ───────────────────────────────────────────────
 

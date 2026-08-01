@@ -85,6 +85,11 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     bool gwApplyProgramToggle(uint8_t id, bool enabled);
     bool gwApplyProgramDelete(uint8_t id);
     bool gwRunCommand(const IrrigationWeb::WebCommand &c);
+    // Fase 9: painel de estação. config = muta blob desejado + bump epoch + re-push §5.4.
+    bool gwApplyStationConfig(const IrrigationWeb::StationConfigReq &r); // false se estação sem blob adotado
+    int gwCountZonesForNode(uint32_t node) const;                       // zonas vinculadas ao nó
+    bool gwRemoveStation(uint32_t node);                                // false se há zonas vinculadas
+    bool gwStationPulse(const IrrigationWeb::StationPulseReq &r);       // false se estação/saída ausente
     // Fase 6b, Task 14b: remonta e empurra regras locais de intertravamento para cada estação.
     // Deve ser chamado após loadInterlocks()+loadGatewayState() (init) e após CRUD de interlocks (Task 18).
     void gwRebuildLocalInterlocks(); // GATEWAY-only

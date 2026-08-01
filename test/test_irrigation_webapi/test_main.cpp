@@ -1043,6 +1043,100 @@ static void test_parseLevelDelete_ok()
     TEST_ASSERT_EQUAL_UINT8(3, id);
 }
 
+// ── Fase 9 — painel de estação ───────────────────────────────────────────────
+
+static void test_buildStations_emits_rssi_config_outputs()
+{
+    StationView v = {};
+    v.node = 0x3333;
+    v.name = "Casa";
+    v.rssiDbm = -72;
+    v.hbMinutes = 15;
+    v.vbatAvisoCentiV = 1220;
+    v.vbatCriticaCentiV = 1180;
+    v.outputCount = 2;
+    v.outputs[0] = {0, 0}; // válvula 0
+    v.outputs[1] = {1, 1}; // gpo 1
+    char buf[1024];
+    TEST_ASSERT_GREATER_THAN(0, buildStations(&v, 1, buf, sizeof(buf)));
+    TEST_ASSERT_TRUE(contains(buf, "\"rssiDbm\":-72"));
+    TEST_ASSERT_TRUE(contains(buf, "\"hbMinutes\":15"));
+    TEST_ASSERT_TRUE(contains(buf, "\"vbatAvisoCentiV\":1220"));
+    TEST_ASSERT_TRUE(contains(buf, "\"vbatCriticaCentiV\":1180"));
+    TEST_ASSERT_TRUE(contains(buf, "\"outputs\":[{\"tipo\":0,\"index\":0},{\"tipo\":1,\"index\":1}]"));
+}
+
+static void test_parseStationConfig_ok()
+{
+    const char *j =
+        "{\"node\":123,\"hbMinutes\":15,\"vbatAvisoCentiV\":1200,\"vbatCriticaCentiV\":1150,"
+        "\"latE7\":-229068000,\"lonE7\":-470616000}";
+    StationConfigReq r;
+    ParseResult pr = parseStationConfig(j, strlen(j), r);
+    TEST_ASSERT_TRUE(pr.ok);
+    TEST_ASSERT_EQUAL_UINT32(123, r.node);
+    TEST_ASSERT_EQUAL_UINT16(15, r.hbMinutes);
+    TEST_ASSERT_EQUAL_UINT16(1200, r.vbatAvisoCentiV);
+    TEST_ASSERT_EQUAL_UINT16(1150, r.vbatCriticaCentiV);
+    TEST_ASSERT_EQUAL_INT32(-229068000, r.latE7);
+    TEST_ASSERT_EQUAL_INT32(-470616000, r.lonE7);
+}
+
+static void test_parseStationConfig_rejects_aviso_le_critica()
+{
+    const char *j =
+        "{\"node\":1,\"hbMinutes\":10,\"vbatAvisoCentiV\":1150,\"vbatCriticaCentiV\":1200,\"latE7\":0,\"lonE7\":0}";
+    StationConfigReq r;
+    ParseResult pr = parseStationConfig(j, strlen(j), r);
+    TEST_ASSERT_FALSE(pr.ok);
+}
+
+static void test_parseStationConfig_rejects_bad_hb()
+{
+    const char *j =
+        "{\"node\":1,\"hbMinutes\":0,\"vbatAvisoCentiV\":1220,\"vbatCriticaCentiV\":1180,\"latE7\":0,\"lonE7\":0}";
+    StationConfigReq r;
+    ParseResult pr = parseStationConfig(j, strlen(j), r);
+    TEST_ASSERT_FALSE(pr.ok);
+}
+
+static void test_parseStationDelete_ok()
+{
+    const char *j = "{\"node\":48879}";
+    uint32_t node = 0;
+    ParseResult pr = parseStationDelete(j, strlen(j), node);
+    TEST_ASSERT_TRUE(pr.ok);
+    TEST_ASSERT_EQUAL_UINT32(48879, node);
+}
+
+static void test_parseStationDelete_rejects_zero()
+{
+    const char *j = "{\"node\":0}";
+    uint32_t node = 1;
+    ParseResult pr = parseStationDelete(j, strlen(j), node);
+    TEST_ASSERT_FALSE(pr.ok);
+}
+
+static void test_parseStationPulse_ok()
+{
+    const char *j = "{\"node\":7,\"tipo\":1,\"index\":0,\"durationS\":10}";
+    StationPulseReq r;
+    ParseResult pr = parseStationPulse(j, strlen(j), r);
+    TEST_ASSERT_TRUE(pr.ok);
+    TEST_ASSERT_EQUAL_UINT32(7, r.node);
+    TEST_ASSERT_EQUAL_UINT8(1, r.tipo);
+    TEST_ASSERT_EQUAL_UINT8(0, r.index);
+    TEST_ASSERT_EQUAL_UINT16(10, r.durationS);
+}
+
+static void test_parseStationPulse_rejects_bad_tipo()
+{
+    const char *j = "{\"node\":7,\"tipo\":2,\"index\":0}";
+    StationPulseReq r;
+    ParseResult pr = parseStationPulse(j, strlen(j), r);
+    TEST_ASSERT_FALSE(pr.ok);
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -1123,6 +1217,14 @@ void setup()
     RUN_TEST(test_parseLevelUpsert_ok);
     RUN_TEST(test_parseLevelUpsert_rejects_no_target);
     RUN_TEST(test_parseLevelDelete_ok);
+    RUN_TEST(test_buildStations_emits_rssi_config_outputs);
+    RUN_TEST(test_parseStationConfig_ok);
+    RUN_TEST(test_parseStationConfig_rejects_aviso_le_critica);
+    RUN_TEST(test_parseStationConfig_rejects_bad_hb);
+    RUN_TEST(test_parseStationDelete_ok);
+    RUN_TEST(test_parseStationDelete_rejects_zero);
+    RUN_TEST(test_parseStationPulse_ok);
+    RUN_TEST(test_parseStationPulse_rejects_bad_tipo);
     exit(UNITY_END());
 }
 

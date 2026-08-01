@@ -122,10 +122,23 @@ size_t buildStations(const StationView *views, size_t n, char *buf, size_t cap)
         w.keyNum("vbatCentiV", v.vbatCentiV);
         w.keyNum("vpanelCentiV", v.vpanelCentiV);
         w.keyNum("snrQuarterDb", v.snrQuarterDb);
+        w.keyNum("rssiDbm", v.rssiDbm);
         w.keyNum("rebootCount", v.rebootCount);
         w.keyNum("flags", v.flags);
         w.keyNum("lat", v.lat);
         w.keyNum("lon", v.lon);
+        w.keyNum("hbMinutes", v.hbMinutes);
+        w.keyNum("vbatAvisoCentiV", v.vbatAvisoCentiV);
+        w.keyNum("vbatCriticaCentiV", v.vbatCriticaCentiV);
+        w.key("outputs");
+        w.beginArray();
+        for (uint8_t k = 0; k < v.outputCount && k < StationView::MAX_OUTPUTS; k++) {
+            w.beginObject();
+            w.keyNum("tipo", v.outputs[k].tipo);
+            w.keyNum("index", v.outputs[k].index);
+            w.endObject();
+        }
+        w.endArray();
         w.endObject();
     }
     w.endArray();
@@ -415,6 +428,62 @@ ParseResult parseCommand(const char *json, size_t len, WebCommand &out)
     }
     if (!r.ok) return r;
     out = c;
+    return r;
+}
+
+// ── Fase 9 — parsers de estação ───────────────────────────────────────────────
+
+ParseResult parseStationConfig(const char *json, size_t len, StationConfigReq &out)
+{
+    ParseResult r;
+    JsonReader rd(json, len);
+    int64_t node = 0, hb = -1, aviso = -1, critica = -1, latE7 = 0, lonE7 = 0;
+    if (!rd.getInt("node", node) || node == 0) r.fail("node ausente/zero");
+    if (!rd.getInt("hbMinutes", hb) || hb < 1 || hb > 1440) r.fail("hbMinutes fora de 1..1440");
+    if (!rd.getInt("vbatAvisoCentiV", aviso) || aviso < 800 || aviso > 1500) r.fail("vbatAvisoCentiV fora de 800..1500");
+    if (!rd.getInt("vbatCriticaCentiV", critica) || critica < 800 || critica > 1500)
+        r.fail("vbatCriticaCentiV fora de 800..1500");
+    if (r.ok && !(aviso > critica)) r.fail("aviso deve ser maior que critica");
+    rd.getInt("latE7", latE7); // coords opcionais (0 = sem coordenada)
+    rd.getInt("lonE7", lonE7);
+    if (latE7 < -900000000 || latE7 > 900000000) r.fail("latE7 fora de faixa");
+    if (lonE7 < -1800000000 || lonE7 > 1800000000) r.fail("lonE7 fora de faixa");
+    if (!r.ok) return r;
+    out.node = (uint32_t)node;
+    out.hbMinutes = (uint16_t)hb;
+    out.vbatAvisoCentiV = (uint16_t)aviso;
+    out.vbatCriticaCentiV = (uint16_t)critica;
+    out.latE7 = (int32_t)latE7;
+    out.lonE7 = (int32_t)lonE7;
+    return r;
+}
+
+ParseResult parseStationDelete(const char *json, size_t len, uint32_t &outNode)
+{
+    ParseResult r;
+    JsonReader rd(json, len);
+    int64_t node = 0;
+    if (!rd.getInt("node", node) || node == 0) r.fail("node ausente/zero");
+    if (!r.ok) return r;
+    outNode = (uint32_t)node;
+    return r;
+}
+
+ParseResult parseStationPulse(const char *json, size_t len, StationPulseReq &out)
+{
+    ParseResult r;
+    JsonReader rd(json, len);
+    int64_t node = 0, tipo = 0, index = -1, dur = 10;
+    if (!rd.getInt("node", node) || node == 0) r.fail("node ausente/zero");
+    if (!rd.getInt("tipo", tipo) || tipo < 0 || tipo > 1) r.fail("tipo fora de 0..1");
+    if (!rd.getInt("index", index) || index < 0 || index > 7) r.fail("index fora de 0..7");
+    rd.getInt("durationS", dur);
+    if (dur < 1 || dur > 120) dur = 10; // teste de pulso: default/teto seguro
+    if (!r.ok) return r;
+    out.node = (uint32_t)node;
+    out.tipo = (uint8_t)tipo;
+    out.index = (uint8_t)index;
+    out.durationS = (uint16_t)dur;
     return r;
 }
 
