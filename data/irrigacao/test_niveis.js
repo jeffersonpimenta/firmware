@@ -55,7 +55,15 @@ const form = L.niveisFormHtml(stations, zones, sensors, null);
 t(form.includes('Nova regra') && form.includes('id="nv-zone"') && form.includes('id="nv-node"') && form.includes('id="nv-sidx"'), 'form nova tem selects');
 t(form.includes('reservatório baixo'), 'form tem a frase de polaridade');
 const formEdit = L.niveisFormHtml(stations, zones, sensors, rule);
-t(formEdit.includes('Editar regra') && formEdit.includes('value="1"'), 'form edição preenche id/valores');
+t(formEdit.includes('Editar regra') && formEdit.includes('id="nv-id" value="1"'), 'form edição preenche id do nv-id');
+
+// XSS / escaping (security constraint esc())
+const xssSensors = [{ node: 0xa1b2c3d4, sensores: [{ idx: 1, nome: '<img onerror=1>', tipo: 0 }] }];
+const xssCard = L.niveisCardHtml({ id: 9, sensorNode: 0xa1b2c3d4, sensorIdx: 1, ligaQuandoAtivo: true, targetZoneId: 1, minOnS: 30, minOffS: 30, staleTimeoutS: 90, mensagem: '' }, stations, zones, xssSensors);
+t(xssCard.includes('&lt;img onerror=1&gt;') && !xssCard.includes('<img onerror=1>'), 'card escapa nome de sensor (XSS)');
+
+// fmtDur(0) pins zero behavior
+t(L.fmtDur(0) === '0s', 'fmtDur 0 -> 0s');
 
 if (fail) { console.error(`\n${fail} verificação(ões) falharam`); process.exit(1); }
 console.log('OK: helpers de nível');
