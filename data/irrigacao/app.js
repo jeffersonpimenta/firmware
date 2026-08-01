@@ -176,7 +176,34 @@ async function renderOverview() {
   );
 }
 
-const SYNC_CLASS = { sincronizada: 'green', pendente: 'amber', inalcancavel: 'red' };
+// Estado do sync → [classe de cor, rótulo]. Fonte única p/ pills e sheet.
+function stationSyncLabel(sync) {
+  return (
+    {
+      sincronizada: ['green', 'Sincronizada'],
+      pendente: ['amber', 'Pendente'],
+      inalcancavel: ['red', 'Inalcançável'],
+    }[sync || 'inalcancavel'] || ['red', 'Inalcançável']
+  );
+}
+
+// Pills de estado derivadas do StationView (sem backend extra).
+function stationPills(s) {
+  const p = [stationSyncLabel(s.sync)];
+  const f = num(s.flags);
+  if (f & 1) p.push(['red', 'Tamper']);
+  if (f & 2) p.push(['red', 'Modo seguro']);
+  if (f & 4) p.push(['amber', 'Hibernando']);
+  const vb = num(s.vbatCentiV);
+  if (vb && vb < 1180) p.push(['red', 'Bateria crítica']);
+  else if (vb && vb < 1220) p.push(['amber', 'Bateria em aviso']);
+  if (s.snrQuarterDb != null && num(s.snrQuarterDb) / 4 < 3) p.push(['amber', 'Enlace degradando']);
+  return p.map(([c, t]) => `<span class="chip ${c}">${esc(t)}</span>`).join('');
+}
+
+function stationByNode(list, node) {
+  return (Array.isArray(list) ? list : []).find((x) => x && num(x.node) === num(node));
+}
 
 async function renderStations() {
   const list = (await getJson('/stations')) || [];
@@ -186,15 +213,117 @@ async function renderStations() {
       .map((s) => {
         s = s || {};
         const name = s.name ? esc(s.name) : nodeHex(s.node);
-        const cls = SYNC_CLASS[s.sync] || 'red';
-        const sync = esc(s.sync || 'inalcancavel');
-        return `<div class="card station">
-      <div class="name">${name}</div>
-      <div class="sub">${fmtSince(s.secsSinceHeard)} · ${fmtVolts(s.vbatCentiV)}</div>
-      <div class="chips"><span class="chip ${cls}">${sync}</span></div>
+        return `<div class="card station" data-node="${nodeHex(s.node)}" role="button" tabindex="0">
+      <div class="st-main">
+        <div class="name">${name}</div>
+        <div class="sub">${fmtSince(s.secsSinceHeard)} · ${fmtVolts(s.vbatCentiV)}</div>
+        <div class="chips">${stationPills(s)}</div>
+      </div>
+      <span class="chev">›</span>
     </div>`;
       })
       .join('') || '<div class="empty">Nenhuma estação registrada.</div>';
+
+  view.querySelectorAll('.card.station').forEach((el) => {
+    const node = parseInt(el.dataset.node, 16);
+    const open = () => openStationSheet(node);
+    el.addEventListener('click', open);
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        open();
+      }
+    });
+  });
+
+  // Poll re-render: se um sheet está aberto, atualiza com o dado fresco.
+  if (openStationNode != null) {
+    const s = stationByNode(rows, openStationNode);
+    if (s) renderStationSheet(s);
+    else closeStationSheet();
+  }
+}
+
+// ===== Sheet de detalhe da estação (overlay no body, sobrevive ao poll do #view) =====
+let openStationNode = null;
+let stSheetAudit = [];
+
+async function openStationSheet(node) {
+  openStationNode = node;
+  const [list, audit] = await Promise.all([
+    getJson('/stations').catch(() => []),
+    getJson('/audit?fmt=json&n=500').catch(() => []),
+  ]);
+  stSheetAudit = Array.isArray(audit) ? audit : [];
+  const s = stationByNode(list, node);
+  if (!s) {
+    closeStationSheet();
+    return;
+  }
+  renderStationSheet(s);
+}
+
+function closeStationSheet() {
+  openStationNode = null;
+  const el = document.getElementById('stSheet');
+  if (el) el.remove();
+}
+
+function stationMiniLog(node) {
+  const rows = stSheetAudit.filter((a) => a && num(a.node) === num(node)).slice(0, 8);
+  if (!rows.length) return '<div class="ml-empty">Sem eventos.</div>';
+  return rows
+    .map(
+      (a) =>
+        `<div class="ml-row"><span class="ml-ts">${esc(fmtEpoch(a.ts))}</span>` +
+        `<span class="ml-ac">${esc(ACOES_LABEL[num(a.acao)] || 'ação ' + num(a.acao))}</span></div>`
+    )
+    .join('');
+}
+
+function renderStationSheet(s) {
+  const name = s.name ? esc(s.name) : nodeHex(s.node);
+  const [syncCls, syncTxt] = stationSyncLabel(s.sync);
+  const lat = num(s.lat);
+  const lon = num(s.lon);
+  const coords = lat || lon ? `${(lat / 1e5).toFixed(5)}, ${(lon / 1e5).toFixed(5)}` : '—';
+  const snr = s.snrQuarterDb != null ? (num(s.snrQuarterDb) / 4).toFixed(1) + ' dB' : '—';
+
+  const html = `
+    <div class="sheet-backdrop" id="stSheet">
+      <div class="sheet" role="dialog" aria-label="Detalhe da estação">
+        <div class="sheet-grip"></div>
+        <div class="sheet-hdr">
+          <div class="sheet-hmain">
+            <div class="sheet-title">${name}</div>
+            <div class="sheet-sub">${esc(nodeHex(s.node))} · último contato ${fmtSince(s.secsSinceHeard)}</div>
+          </div>
+        </div>
+        <div class="sheet-sync ${syncCls}">${syncTxt}</div>
+        <div class="sheet-grid">
+          <div class="sg-box"><div class="sg-lbl">Bateria</div><div class="sg-val">${fmtVolts(s.vbatCentiV)}</div></div>
+          <div class="sg-box"><div class="sg-lbl">Painel solar</div><div class="sg-val">${fmtVolts(s.vpanelCentiV)}</div></div>
+          <div class="sg-box"><div class="sg-lbl">SNR</div><div class="sg-val">${snr}</div></div>
+          <div class="sg-box"><div class="sg-lbl">Reboots</div><div class="sg-val">${num(s.rebootCount)}</div></div>
+        </div>
+        <div class="sg-box wide"><div class="sg-lbl">Coordenadas</div><div class="sg-val sm">${esc(coords)}</div></div>
+        <div class="ml-wrap">
+          <div class="sg-lbl">Log remoto — esta estação</div>
+          <div class="ml-list">${stationMiniLog(s.node)}</div>
+        </div>
+        <button class="btn solid big" id="stClose">Fechar</button>
+      </div>
+    </div>`;
+
+  const existing = document.getElementById('stSheet');
+  if (existing) existing.outerHTML = html;
+  else document.body.insertAdjacentHTML('beforeend', html);
+
+  const root = document.getElementById('stSheet');
+  root.addEventListener('click', (e) => {
+    if (e.target === root) closeStationSheet();
+  });
+  root.querySelector('#stClose').addEventListener('click', closeStationSheet);
 }
 
 // ===== Zonas =====
