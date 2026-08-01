@@ -1431,7 +1431,15 @@ function groupForm(group, zones) {
   render();
 }
 
-// ===== Nível (boia) — helpers puros de HTML =====
+// ===== Nível (boia) — modelo de UI do mockup "Irrigacao Mobile.dc.html" =====
+// Telas separadas (lista ↔ edição), seleção por pills, polaridade em dois
+// botões, exclusão inline, mini-tanque no card. Estado no módulo (nvData cache
+// dos 4 endpoints + nvUI da tela de edição); interações re-renderizam de cache
+// sem novo fetch; salvar/excluir fazem POST e recarregam.
+const NV_MAX_RULES = 4;
+let nvData = { stations: [], zones: [], sensors: [], rules: [] };
+let nvUI = { screen: 'list', draft: null, errors: [], deleteConfirm: false };
+
 function fmtDur(s) {
   s = num(s);
   if (s >= 3600 && s % 3600 === 0) return (s / 3600) + 'h';
@@ -1450,159 +1458,294 @@ function zoneName(zones, id) {
 function polarityText(liga) {
   return (liga ? 'ATIVA' : 'INATIVA') + ' (= reservatório baixo)';
 }
-function stationOptionsHtml(stations, selNode) {
-  return (Array.isArray(stations) ? stations : []).map((s) =>
-    `<option value="${num(s.node)}"${num(s.node) === num(selNode) ? ' selected' : ''}>${s.name ? esc(s.name) : nodeHex(s.node)}</option>`).join('');
-}
-function sensorOptionsHtml(sensors, node, selIdx) {
+// Sensores digitais (tipo 0 = boia elegível) de um nó.
+function nvDigitalSensors(sensors, node) {
   const st = (Array.isArray(sensors) ? sensors : []).find((x) => x && num(x.node) === num(node));
-  const list = st && Array.isArray(st.sensores) ? st.sensores.filter((s) => s && num(s.tipo) === 0) : [];
-  if (!list.length) return '<option value="">(sem boia digital)</option>';
-  return list.map((s) =>
-    `<option value="${num(s.idx)}"${num(s.idx) === num(selIdx) ? ' selected' : ''}>${s.nome ? esc(s.nome) : ('s' + num(s.idx))}</option>`).join('');
+  return st && Array.isArray(st.sensores) ? st.sensores.filter((s) => s && num(s.tipo) === 0) : [];
 }
-function zoneOptionsHtml(zones, selId) {
-  return (Array.isArray(zones) ? zones : []).map((z) =>
-    `<option value="${num(z.id)}"${num(z.id) === num(selId) ? ' selected' : ''}>${z.name ? esc(z.name) : ('zona ' + num(z.id))}</option>`).join('');
-}
-function niveisCardHtml(r, stations, zones, sensors) {
+// Card de uma regra na lista (mini-tanque + resumo). Puro.
+function nvCardHtml(r, stations, zones, sensors) {
   r = r || {};
   const est = stationName(stations, r.sensorNode);
   const sen = sensorName(sensors, r.sensorNode, r.sensorIdx);
   const zon = zoneName(zones, r.targetZoneId);
-  const msg = r.mensagem ? `<div class="lvl-msg muted">"${esc(r.mensagem)}"</div>` : '';
-  return `<div class="card lvl-card" data-nid="${num(r.id)}">
-    <div class="lvl-hdr">${est} · boia "${sen}"</div>
-    <div class="lvl-line">liga bomba <span class="chev">▸</span> <b>${zon}</b></div>
-    <div class="lvl-line">quando boia ${polarityText(r.ligaQuandoAtivo)}</div>
-    <div class="lvl-chips">
-      <span class="chip gray">min ${fmtDur(r.minOnS)} on / ${fmtDur(r.minOffS)} off</span>
-      <span class="chip amber">sem sinal ${fmtDur(r.staleTimeoutS)} ⚠</span>
-    </div>${msg}
-    <div class="lvl-btns">
-      <button class="btn ghost sm" data-nedit="${num(r.id)}">Editar</button>
-      <button class="btn dangerline sm" data-ndel="${num(r.id)}">Excluir</button>
+  return `<div class="lvl-card" data-nedit="${num(r.id)}">
+    <div class="lvl-tank"></div>
+    <div class="lvl-cardbody">
+      <div class="lvl-hdr">${est} · boia "${sen}"</div>
+      <div class="lvl-line">liga bomba ▸ ${zon}</div>
+      <div class="lvl-pol">quando boia ${polarityText(r.ligaQuandoAtivo)}</div>
+      <div class="lvl-chips">
+        <span class="lvl-pill-chip">min ${fmtDur(r.minOnS)}/${fmtDur(r.minOffS)}</span>
+        <span class="lvl-pill-chip warn">sem sinal ${fmtDur(r.staleTimeoutS)} ⚠</span>
+      </div>
     </div>
   </div>`;
 }
-function niveisFormHtml(stations, zones, sensors, r) {
-  const firstNode = (Array.isArray(stations) && stations[0]) ? num(stations[0].node) : 0;
-  const firstZone = (Array.isArray(zones) && zones[0]) ? num(zones[0].id) : 1;
-  r = r || { id: 0, sensorNode: firstNode, sensorIdx: 0, ligaQuandoAtivo: true, targetZoneId: firstZone, minOnS: 30, minOffS: 30, staleTimeoutS: 90, mensagem: '' };
-  const advOpen = num(r.minOnS) !== 30 || num(r.minOffS) !== 30 || num(r.staleTimeoutS) !== 90 || (r.mensagem || '') !== '';
-  const editing = num(r.id) > 0;
-  return `<div class="card form lvl-form">
-    <div class="sec-title">${editing ? 'Editar regra' : 'Nova regra'}</div>
-    <input type="hidden" id="nv-id" value="${num(r.id)}">
-    <div class="lvl-sentence">
-      A bomba
-      <select class="finput" id="nv-zone">${zoneOptionsHtml(zones, r.targetZoneId)}</select>
-      liga quando a boia
-      <select class="finput" id="nv-node">${stationOptionsHtml(stations, r.sensorNode)}</select>
-      <select class="finput" id="nv-sidx">${sensorOptionsHtml(sensors, r.sensorNode, r.sensorIdx)}</select>
-      estiver
-      <select class="finput" id="nv-liga">
-        <option value="1"${r.ligaQuandoAtivo ? ' selected' : ''}>ativa</option>
-        <option value="0"${r.ligaQuandoAtivo ? '' : ' selected'}>inativa</option>
-      </select>
-      <span class="lvl-hint">→ reservatório baixo.</span>
-    </div>
-    <button class="btn ghost sm lvl-adv-toggle" id="nv-adv-toggle" type="button">${advOpen ? '▾' : '▸'} Ajustes avançados</button>
-    <div class="lvl-adv${advOpen ? '' : ' hidden'}" id="nv-adv">
-      <div class="frow">
-        <label class="fld"><span class="flbl">Min ligada (s)</span>
-          <input class="finput" id="nv-minon" type="number" min="0" value="${num(r.minOnS)}"></label>
-        <label class="fld"><span class="flbl">Min desligada (s)</span>
-          <input class="finput" id="nv-minoff" type="number" min="0" value="${num(r.minOffS)}"></label>
+// Tela-lista. `data` cai para nvData em produção; explícito nos testes. Puro.
+function nvListHtml(data) {
+  data = data || nvData;
+  const { stations, zones, sensors, rules } = data;
+  const atLimit = (rules || []).length >= NV_MAX_RULES;
+  const limit = atLimit ? `<div class="lvl-note">Limite de ${NV_MAX_RULES} regras atingido.</div>` : '';
+  const newBtn = atLimit ? '' : `<button class="lvl-newbtn" id="nv-new">+ Nova regra</button>`;
+  const cards = (rules || []).length
+    ? rules.map((r) => nvCardHtml(r, stations, zones, sensors)).join('')
+    : `<div class="lvl-empty">Nenhuma regra de nível.</div>`;
+  return `<div class="lvl-wrap">
+    <div class="lvl-title">Controle de nível</div>
+    <div class="lvl-sub">Liga/desliga a bomba conforme a boia do reservatório</div>
+    ${limit}${newBtn}
+    <div class="lvl-list">${cards}</div>
+  </div>`;
+}
+// Tela-edição. `draft`/`data`/`ui` caem para o estado do módulo em produção;
+// explícitos nos testes. Puro (não toca DOM).
+function nvEditHtml(draft, data, ui) {
+  const d = draft || nvUI.draft;
+  data = data || nvData;
+  ui = ui || nvUI;
+  const stations = data.stations || [];
+  const zones = data.zones || [];
+  const sensors = data.sensors || [];
+  const editing = num(d.id) > 0;
+  const digitals = nvDigitalSensors(sensors, d.sensorNode);
+  const errors = ui.errors || [];
+  const errBox = errors.length
+    ? `<div class="lvl-errbox">${errors.map((e) => `<div>${esc(e)}</div>`).join('')}</div>` : '';
+  const stPills = stations.map((s) =>
+    `<button class="lvl-pill${num(s.node) === num(d.sensorNode) ? ' sel' : ''}" data-nvst="${num(s.node)}">${s.name ? esc(s.name) : nodeHex(s.node)}</button>`).join('');
+  const boiaPills = digitals.length
+    ? digitals.map((s) => `<button class="lvl-pill${num(s.idx) === num(d.sensorIdx) ? ' sel' : ''}" data-nvboia="${num(s.idx)}">${s.nome ? esc(s.nome) : ('s' + num(s.idx))}</button>`).join('')
+    : `<div class="lvl-muted">Nenhuma boia (sensor digital) nesta estação.</div>`;
+  const bombaPills = zones.map((z) =>
+    `<button class="lvl-pill${num(z.id) === num(d.targetZoneId) ? ' sel' : ''}" data-nvzone="${num(z.id)}">${z.name ? esc(z.name) : ('zona ' + num(z.id))}</button>`).join('');
+  const advOpen = !!d.advancedOpen;
+  const msg = d.mensagem || '';
+  const delBlock = editing
+    ? (ui.deleteConfirm
+        ? `<div class="lvl-delbox">
+      <div>Excluir esta regra de nível?</div>
+      <div class="lvl-delbtns">
+        <button class="lvl-delcancel" id="nv-delcancel">Cancelar</button>
+        <button class="lvl-delconfirm" id="nv-delconfirm">Excluir</button>
       </div>
-      <label class="fld"><span class="flbl">Falha se sem sinal (s)</span>
-        <input class="finput" id="nv-stale" type="number" min="1" value="${num(r.staleTimeoutS)}"></label>
-      <label class="fld"><span class="flbl">Mensagem de alerta (opcional)</span>
-        <input class="finput" id="nv-msg" maxlength="23" value="${esc(r.mensagem || '')}"></label>
+    </div>`
+        : `<button class="lvl-delbtn" id="nv-delrequest">Excluir regra</button>`)
+    : '';
+  return `<div class="lvl-wrap">
+    <div class="lvl-back" id="nv-back">‹ Controle de nível</div>
+    <div class="lvl-title">${editing ? 'Editar regra' : 'Nova regra'}</div>
+    ${errBox}
+    <div class="lvl-panel">
+      <div class="lvl-sec">
+        <div class="lvl-seclbl">Estação</div>
+        <div class="lvl-pills">${stPills}</div>
+      </div>
+      <div class="lvl-sec">
+        <div class="lvl-seclbl">Boia</div>
+        <div class="lvl-pills">${boiaPills}</div>
+      </div>
+      <div class="lvl-sec">
+        <div class="lvl-seclbl">Polaridade — quando a bomba liga</div>
+        <div class="lvl-pol2">
+          <button class="lvl-polbtn${d.ligaQuandoAtivo ? ' sel' : ''}" data-nvpol="1">Boia ativa</button>
+          <button class="lvl-polbtn${d.ligaQuandoAtivo ? '' : ' sel'}" data-nvpol="0">Boia inativa</button>
+        </div>
+        <div class="lvl-polhint">quando boia ${d.ligaQuandoAtivo ? 'ativa' : 'inativa'} → reservatório baixo</div>
+      </div>
+      <div class="lvl-sec">
+        <div class="lvl-seclbl">Bomba a acionar</div>
+        <div class="lvl-pills">${bombaPills}</div>
+      </div>
     </div>
-    <div class="frow lvl-form-btns">
-      <button class="btn" id="nv-save">Salvar</button>
-      <button class="btn ghost${editing ? '' : ' hidden'}" id="nv-cancel" type="button">Cancelar</button>
+    <div class="lvl-advtoggle" id="nv-advtoggle">${advOpen ? '▾' : '▸'} Ajustes avançados</div>
+    <div class="lvl-adv${advOpen ? '' : ' hidden'}">
+      <div class="lvl-advrow">
+        <div class="lvl-advfld">
+          <div class="lvl-advlbl">Tempo mínimo ligada (s)</div>
+          <input class="lvl-input" id="nv-minon" type="number" min="0" value="${num(d.minOnS)}">
+        </div>
+        <div class="lvl-advfld">
+          <div class="lvl-advlbl">Tempo mínimo desligada (s)</div>
+          <input class="lvl-input" id="nv-minoff" type="number" min="0" value="${num(d.minOffS)}">
+        </div>
+      </div>
+      <div class="lvl-advfld">
+        <div class="lvl-advlbl">Falha se sem sinal por (s)</div>
+        <input class="lvl-input" id="nv-stale" type="number" min="1" value="${num(d.staleTimeoutS)}">
+      </div>
+      <div class="lvl-advfld">
+        <div class="lvl-advlblrow"><span class="lvl-advlbl">Mensagem de alerta</span><span class="lvl-counter">${msg.length}/23</span></div>
+        <input class="lvl-input" id="nv-msg" maxlength="23" placeholder="Ex.: Cisterna baixa" value="${esc(msg)}">
+      </div>
     </div>
+    <button class="lvl-save" id="nv-save">Salvar</button>
+    ${delBlock}
   </div>`;
 }
 
-// ===== Controle de nível por boia =====
-async function renderNiveis(editId) {
+// ===== Controle de nível por boia — controller + wiring =====
+// Entrada do roteador: carrega os 4 endpoints, cacheia e mostra a lista.
+async function renderNiveis() {
   const [rules, stations, zones, sensors] = await Promise.all([
     getJson('/levels').catch(() => []),
     getJson('/stations').catch(() => []),
     getJson('/zones').catch(() => []),
     getJson('/sensors').catch(() => []),
   ]);
-  const list = Array.isArray(rules) ? rules : [];
-  const editRule = editId != null ? list.find((x) => x && num(x.id) === num(editId)) : null;
-  const cards = list.length
-    ? list.map((r) => niveisCardHtml(r, stations, zones, sensors)).join('')
-    : '<div class="empty">Nenhuma regra de nível.</div>';
-  view.innerHTML = `<div class="lvl-list">${cards}</div>` + niveisFormHtml(stations, zones, sensors, editRule);
-  wireNiveis(stations, zones, sensors);
-  if (editRule) {
-    const f = view.querySelector('.lvl-form');
-    if (f) f.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }
+  nvData = {
+    stations: Array.isArray(stations) ? stations : [],
+    zones: Array.isArray(zones) ? zones : [],
+    sensors: Array.isArray(sensors) ? sensors : [],
+    rules: Array.isArray(rules) ? rules : [],
+  };
+  nvUI = { screen: 'list', draft: null, errors: [], deleteConfirm: false };
+  nvRender();
 }
 
-function errText(r) {
-  return (r.body && Array.isArray(r.body.errors)) ? r.body.errors.join(', ') : 'erro';
+function nvRender() {
+  view.innerHTML = nvUI.screen === 'edit' ? nvEditHtml() : nvListHtml();
+  nvWire();
 }
 
-function wireNiveis(stations, zones, sensors) {
+// Copia os inputs avançados atuais para o draft antes de qualquer re-render
+// disparado por pill/toggle (senão o que o usuário digitou se perde).
+function nvSyncInputs() {
+  const d = nvUI.draft;
+  if (!d) return;
+  const q = (sel) => view.querySelector(sel);
+  const mo = q('#nv-minon'); if (mo) d.minOnS = num(mo.value);
+  const mf = q('#nv-minoff'); if (mf) d.minOffS = num(mf.value);
+  const st = q('#nv-stale'); if (st) d.staleTimeoutS = num(st.value);
+  const mg = q('#nv-msg'); if (mg) d.mensagem = mg.value.slice(0, 23);
+}
+
+function nvOpenNew() {
+  if (nvData.rules.length >= NV_MAX_RULES) return;
+  const st = nvData.stations[0] || {};
+  const digs = nvDigitalSensors(nvData.sensors, st.node);
+  nvUI = {
+    screen: 'edit', errors: [], deleteConfirm: false,
+    draft: {
+      id: 0, sensorNode: num(st.node), sensorIdx: digs.length ? num(digs[0].idx) : '',
+      ligaQuandoAtivo: true, targetZoneId: null,
+      minOnS: 60, minOffS: 60, staleTimeoutS: 600, mensagem: '', advancedOpen: false,
+    },
+  };
+  nvRender();
+}
+
+function nvOpenEdit(id) {
+  const r = nvData.rules.find((x) => x && num(x.id) === num(id));
+  if (!r) return;
+  nvUI = {
+    screen: 'edit', errors: [], deleteConfirm: false,
+    draft: {
+      id: num(r.id), sensorNode: num(r.sensorNode), sensorIdx: num(r.sensorIdx),
+      ligaQuandoAtivo: !!r.ligaQuandoAtivo, targetZoneId: num(r.targetZoneId),
+      minOnS: num(r.minOnS), minOffS: num(r.minOffS), staleTimeoutS: num(r.staleTimeoutS),
+      mensagem: r.mensagem || '', advancedOpen: false,
+    },
+  };
+  nvRender();
+}
+
+function nvCancel() {
+  nvUI = { screen: 'list', draft: null, errors: [], deleteConfirm: false };
+  nvRender();
+}
+
+// Trocar estação: reposiciona a boia para o primeiro sensor digital do nó.
+function nvSetStation(node) {
+  nvSyncInputs();
+  const d = nvUI.draft;
+  d.sensorNode = node;
+  const digs = nvDigitalSensors(nvData.sensors, node);
+  d.sensorIdx = digs.length ? num(digs[0].idx) : '';
+  nvRender();
+}
+
+function nvValidate(d) {
+  const e = [];
+  if (!d.sensorNode || d.sensorIdx === '' || d.sensorIdx == null) e.push('Selecione a estação e a boia.');
+  if (!d.targetZoneId) e.push('Selecione a bomba a ser acionada.');
+  return e;
+}
+
+async function nvSave() {
+  nvSyncInputs();
+  const d = nvUI.draft;
+  const errors = nvValidate(d);
+  if (errors.length) { nvUI.errors = errors; nvRender(); return; }
+  const body = {
+    id: num(d.id),
+    sensorNode: num(d.sensorNode),
+    sensorIdx: num(d.sensorIdx),
+    ligaQuandoAtivo: !!d.ligaQuandoAtivo,
+    targetZoneId: num(d.targetZoneId),
+    minOnS: num(d.minOnS),
+    minOffS: num(d.minOffS),
+    staleTimeoutS: num(d.staleTimeoutS) || 1,
+    mensagem: (d.mensagem || '').slice(0, 23),
+  };
+  const r = await postJson('/levels', body);
+  if (r.ok) renderNiveis().catch(() => {});
+  else { nvUI.errors = (r.body && Array.isArray(r.body.errors)) ? r.body.errors : ['Falha ao salvar.']; nvRender(); }
+}
+
+async function nvDelete() {
+  const id = num(nvUI.draft.id);
+  const r = await postJson('/levels/delete', { id });
+  if (r.ok) renderNiveis().catch(() => {});
+  else { nvUI.deleteConfirm = false; nvUI.errors = ['Falha ao excluir.']; nvRender(); }
+}
+
+function nvWire() {
   const q = (sel) => view.querySelector(sel);
 
-  const nodeSel = q('#nv-node');
-  if (nodeSel) nodeSel.addEventListener('change', () => {
-    const sidx = q('#nv-sidx');
-    if (sidx) sidx.innerHTML = sensorOptionsHtml(sensors, num(nodeSel.value), -1);
-  });
+  if (nvUI.screen !== 'edit') {
+    const nb = q('#nv-new');
+    if (nb) nb.addEventListener('click', () => nvOpenNew());
+    view.querySelectorAll('[data-nedit]').forEach((c) =>
+      c.addEventListener('click', () => nvOpenEdit(num(c.dataset.nedit))));
+    return;
+  }
 
-  const advToggle = q('#nv-adv-toggle');
+  const back = q('#nv-back');
+  if (back) back.addEventListener('click', () => nvCancel());
+
+  view.querySelectorAll('[data-nvst]').forEach((b) =>
+    b.addEventListener('click', () => nvSetStation(num(b.dataset.nvst))));
+  view.querySelectorAll('[data-nvboia]').forEach((b) =>
+    b.addEventListener('click', () => { nvSyncInputs(); nvUI.draft.sensorIdx = num(b.dataset.nvboia); nvRender(); }));
+  view.querySelectorAll('[data-nvpol]').forEach((b) =>
+    b.addEventListener('click', () => { nvSyncInputs(); nvUI.draft.ligaQuandoAtivo = b.dataset.nvpol === '1'; nvRender(); }));
+  view.querySelectorAll('[data-nvzone]').forEach((b) =>
+    b.addEventListener('click', () => { nvSyncInputs(); nvUI.draft.targetZoneId = num(b.dataset.nvzone); nvRender(); }));
+
+  const advToggle = q('#nv-advtoggle');
   if (advToggle) advToggle.addEventListener('click', () => {
-    const box = q('#nv-adv');
-    if (!box) return;
-    const nowHidden = box.classList.toggle('hidden');
-    advToggle.textContent = (nowHidden ? '▸' : '▾') + ' Ajustes avançados';
+    nvSyncInputs();
+    nvUI.draft.advancedOpen = !nvUI.draft.advancedOpen;
+    nvRender();
   });
 
-  view.querySelectorAll('[data-ndel]').forEach((b) => b.addEventListener('click', async () => {
-    if (!confirm('Excluir esta regra?')) return;
-    const r = await postJson('/levels/delete', { id: num(b.dataset.ndel) });
-    if (r.ok) renderNiveis().catch(() => {});
-    else alert('Falha ao excluir: ' + errText(r));
-  }));
-
-  view.querySelectorAll('[data-nedit]').forEach((b) => b.addEventListener('click', () => {
-    renderNiveis(num(b.dataset.nedit)).catch(() => {});
-  }));
-
-  const cancel = q('#nv-cancel');
-  if (cancel) cancel.addEventListener('click', () => renderNiveis().catch(() => {}));
+  const msgIn = q('#nv-msg');
+  if (msgIn) msgIn.addEventListener('input', () => {
+    const c = view.querySelector('.lvl-counter');
+    if (c) c.textContent = msgIn.value.length + '/23';
+  });
 
   const save = q('#nv-save');
-  if (save) save.addEventListener('click', async () => {
-    const node = num(q('#nv-node').value);
-    const sidxRaw = q('#nv-sidx').value;
-    if (!node || sidxRaw === '') { alert('Selecione a estação e a boia.'); return; }
-    const body = {
-      id: num(q('#nv-id').value),
-      sensorNode: node,
-      sensorIdx: num(sidxRaw),
-      ligaQuandoAtivo: num(q('#nv-liga').value) === 1,
-      targetZoneId: num(q('#nv-zone').value),
-      minOnS: num(q('#nv-minon').value),
-      minOffS: num(q('#nv-minoff').value),
-      staleTimeoutS: num(q('#nv-stale').value),
-      mensagem: q('#nv-msg').value.slice(0, 23),
-    };
-    const r = await postJson('/levels', body);
-    if (r.ok) renderNiveis().catch(() => {});
-    else alert('Falha: ' + errText(r));
-  });
+  if (save) save.addEventListener('click', () => nvSave());
+
+  const delReq = q('#nv-delrequest');
+  if (delReq) delReq.addEventListener('click', () => { nvSyncInputs(); nvUI.deleteConfirm = true; nvRender(); });
+  const delCancel = q('#nv-delcancel');
+  if (delCancel) delCancel.addEventListener('click', () => { nvUI.deleteConfirm = false; nvRender(); });
+  const delConfirm = q('#nv-delconfirm');
+  if (delConfirm) delConfirm.addEventListener('click', () => nvDelete());
 }
 
 // ===== Cobertura (site survey §8.5) =====
