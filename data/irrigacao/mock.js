@@ -343,13 +343,31 @@ window.fetch = async function (url, opts) {
   if (path.startsWith('/audit')) return mockResponse(STATE.audit);
   if (path.startsWith('/groups/status')) return mockResponse(STATE.groupsStatus);
   if (path.startsWith('/groups')) return mockResponse(STATE.groups);
-  if (path.startsWith('/export')) return mockResponse({
-    psk_base64: 'QWJjREVGR0hJSktMTW4v',
-    zones: STATE.zones,
-    programs: STATE.programs,
-    stations: STATE.stations,
-    groups: STATE.groups,
-  });
+  if (path.startsWith('/export'))
+    return mockResponse({
+      fmt: 'irrig-vault',
+      version: 1,
+      clients: [
+        {
+          id: 'gateway',
+          nome: 'Fazenda Bela Vista',
+          canalNome: 'farm',
+          psk_base64: 'QWJjREVGR0hJSktMTW4v',
+          preset: 0,
+          gateway: STATE.stations[0] ? STATE.stations[0].node : 0,
+          estacoes: STATE.stations.map((s) => ({
+            no: '!' + (s.node >>> 0).toString(16).padStart(8, '0'),
+            nome: s.name,
+            lat: s.lat,
+            lon: s.lon,
+          })),
+          zonas: STATE.zones,
+          programas: STATE.programs,
+          grupos: STATE.groups,
+          niveis: STATE.levels,
+        },
+      ],
+    });
   if (path.startsWith('/survey')) return mockResponse(STATE.survey);
   if (path.startsWith('/levels')) return mockResponse(STATE.levels);
 

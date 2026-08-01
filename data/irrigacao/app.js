@@ -2183,12 +2183,41 @@ function renderMais() {
 }
 
 // ===== Sistema (backup, chave da fazenda, PIN) =====
+// Baixa o backup via fetch→Blob (robusto: dá feedback de erro e não depende do
+// comportamento de <a download> contra o webserver embarcado).
+async function downloadBackup(btn, statusEl) {
+  btn.disabled = true;
+  statusEl.textContent = 'Gerando backup…';
+  statusEl.className = 'sub';
+  try {
+    const r = await fetch(API + '/export');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const text = await r.text();
+    if (!text || text[0] !== '{') throw new Error('resposta vazia/inválida');
+    const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'irrigacao-backup.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    statusEl.textContent = 'Backup baixado (' + text.length + ' bytes).';
+  } catch (e) {
+    statusEl.textContent = 'Falha ao gerar backup (' + esc(e.message) + ').';
+    statusEl.className = 'sub err';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function renderSistema() {
   view.innerHTML =
     `<div class="card">
        <div class="sens-hdr"><span class="name">Backup</span></div>
        <div class="sub maint-sub">Exporta a configuração completa (§5.5): PSK, estações, zonas, programas, intertravamentos e grupos — para restaurar num gateway substituto ou cadastrar no cofre do device de serviço.</div>
-       <a class="btn solid big syslink" href="${API}/export" download="irrigacao-backup.json">⬇ Baixar backup (.json)</a>
+       <button class="btn solid big syslink" id="dlBackup">⬇ Baixar backup (.json)</button>
+       <div class="sub" id="dlStatus"></div>
      </div>
      <div class="card">
        <div class="sens-hdr"><span class="name">Chave da fazenda</span></div>
@@ -2198,6 +2227,10 @@ function renderSistema() {
        <div class="sens-hdr"><span class="name">PIN de aplicação</span></div>
        <div class="sub">O portal Wi-Fi exige WPA2 + PIN e o AP desliga após inatividade. O PIN é definido no provisionamento.</div>
      </div>`;
+
+  const btn = view.querySelector('#dlBackup');
+  const status = view.querySelector('#dlStatus');
+  btn.addEventListener('click', () => downloadBackup(btn, status));
 }
 
 // ===== Roteamento =====
