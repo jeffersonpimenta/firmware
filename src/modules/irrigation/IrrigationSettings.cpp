@@ -17,27 +17,36 @@ bool migrateIrrigationSettings(const uint8_t *raw, size_t n, IrrigationSettings 
     if (magic != IrrigationSettings::MAGIC)
         return false;
 
-    if (version == 5) {
+    if (version == 6) {
         if (n != sizeof(IrrigationSettings))
             return false;
         memcpy(&out, raw, sizeof(out));
         return true;
     }
+    if (version == 5) {
+        if (n != IRRIGATION_SETTINGS_V5_SIZE)
+            return false;
+        IrrigationSettings s; // defaults v6 (limiares de bateria)
+        memcpy(&s, raw, IRRIGATION_SETTINGS_V5_SIZE); // v5 é prefixo do v6
+        s.version = 6;
+        out = s;
+        return true;
+    }
     if (version == 4) {
         if (n != IRRIGATION_SETTINGS_V4_SIZE)
             return false;
-        IrrigationSettings s; // defaults v5 (localInterlocks zerados = inativos)
-        memcpy(&s, raw, IRRIGATION_SETTINGS_V4_SIZE); // v4 é prefixo do v5
-        s.version = 5;
+        IrrigationSettings s; // defaults v6 (localInterlocks zerados = inativos; limiares default)
+        memcpy(&s, raw, IRRIGATION_SETTINGS_V4_SIZE); // v4 é prefixo do v6
+        s.version = 6;
         out = s;
         return true;
     }
     if (version == 3 || version == 2) {
         if (n != IRRIGATION_SETTINGS_V3_SIZE)
             return false;
-        IrrigationSettings s; // defaults v5 nos campos novos
-        memcpy(&s, raw, IRRIGATION_SETTINGS_V3_SIZE); // layout v2/v3 é prefixo do v5
-        s.version = 5;
+        IrrigationSettings s; // defaults v6 nos campos novos
+        memcpy(&s, raw, IRRIGATION_SETTINGS_V3_SIZE); // layout v2/v3 é prefixo do v6
+        s.version = 6;
         if (version == 2) { // bytes de v3 eram padding no v2
             s.pinBtn = -1;
             s.pinLed = -1;
@@ -49,9 +58,9 @@ bool migrateIrrigationSettings(const uint8_t *raw, size_t n, IrrigationSettings 
     if (version == 1) {
         if (n != IRRIGATION_SETTINGS_V1_SIZE)
             return false;
-        IrrigationSettings s; // defaults v5 para os campos novos
-        memcpy(&s, raw, IRRIGATION_SETTINGS_V1_SIZE); // layout v1 é prefixo do v2/v3/v5
-        s.version = 5;
+        IrrigationSettings s; // defaults v6 para os campos novos
+        memcpy(&s, raw, IRRIGATION_SETTINGS_V1_SIZE); // layout v1 é prefixo do v2/v3/v6
+        s.version = 6;
         out = s;
         return true;
     }
@@ -72,15 +81,15 @@ bool loadIrrigationSettings(IrrigationSettings &s)
         LOG_WARN("Irrigation settings invalid (len=%u), using defaults", (unsigned)n);
         return false;
     }
-    // Detect upgrade: v1 (40 bytes), v2/v3 (52 bytes), v4 (128 bytes) ou versão anterior a 5
+    // Detect upgrade: v1 (40 B), v2/v3 (52 B), v4 (128 B), v5 (176 B) ou versão anterior a 6
     uint16_t rawVersion = 0;
     if (n >= 6) {
         memcpy(&rawVersion, raw + 4, 2);
     }
-    bool migrated = (n != sizeof(IrrigationSettings)) || (rawVersion < 5);
+    bool migrated = (n != sizeof(IrrigationSettings)) || (rawVersion < 6);
     s = tmp;
     if (migrated)
-        saveIrrigationSettings(s); // regrava já em v5
+        saveIrrigationSettings(s); // regrava já em v6
     return true;
 #else
     return false;

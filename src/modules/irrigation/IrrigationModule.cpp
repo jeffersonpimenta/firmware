@@ -1904,7 +1904,7 @@ bool IrrigationModule::loadGatewayState()
 
     // Stations
     {
-        uint8_t buf[6 + StationRegistry::MAX * 87];
+        uint8_t buf[StationRegistry::SERIALIZED_MAX];
         if (stagedRead(GW_STATIONS_PATH, buf, sizeof(buf), n))
             ok &= gateway.stations.deserialize(buf, n);
     }
@@ -1934,7 +1934,7 @@ bool IrrigationModule::saveGatewayState()
     bool ok = true;
     // Stations
     {
-        uint8_t buf[6 + StationRegistry::MAX * 87];
+        uint8_t buf[StationRegistry::SERIALIZED_MAX];
         size_t n = gateway.stations.serialize(buf, sizeof(buf));
         ok &= stagedWrite(GW_STATIONS_TMP, GW_STATIONS_PATH, buf, n);
     }

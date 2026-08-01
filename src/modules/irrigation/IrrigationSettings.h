@@ -4,7 +4,7 @@
 
 enum class IrrigationRole : uint8_t { ESTACAO = 0, GATEWAY = 1, REPETIDOR = 2, SERVICO = 3 };
 
-// Layout do blob on-disk/radio (176 bytes, ABI-locked v5):
+// Layout do blob on-disk/radio (180 bytes, ABI-locked v6):
 //   0  magic(4) | 4  version(2) | 6  role(1) | 7  numValves(1)
 //   8  boundGateway(4) | 12 hbMinutes(2) | 14 vbatMinAbrirCentiV(2) | 16 maxOpenConfigS(2)
 //  18  cmdRatePerMin(1) | 19 pad0(1) | 20 pulseMs(2)
@@ -16,14 +16,16 @@ enum class IrrigationRole : uint8_t { ESTACAO = 0, GATEWAY = 1, REPETIDOR = 2, S
 //  64  sensores[4]×16(64)
 // --- v5 (Fase 6b) ---
 // 128  localInterlocks[4]×12(48)
-// Total = 176.
+// --- v6 (Fase 9) ---
+// 176  vbatAvisoCentiV(2) | 178 vbatCriticaCentiV(2)
+// Total = 180.
 struct IrrigationSettings {
     static constexpr uint32_t MAGIC = 0x49525231; // "IRR1"
     static constexpr uint8_t MAX_VALVES = 8;
     static constexpr uint8_t MAX_DIGITAL_IN = 4;
 
     uint32_t magic = MAGIC;
-    uint16_t version = 5;
+    uint16_t version = 6;
     uint8_t role = (uint8_t)IrrigationRole::ESTACAO;
     uint8_t numValves = 2;
     uint32_t boundGateway = 0; // 0 = não pareado
@@ -84,23 +86,33 @@ struct IrrigationSettings {
         // slot inativo quando saidasValvMask==0 && saidasGpoMask==0
     };
     LocalInterlock localInterlocks[MAX_LOCAL_INTERLOCKS];
+
+    // v6 (Fase 9): limiares de bateria por-estação (centi-volt), avaliados gateway-side
+    // (StationMonitor) e disponíveis ao nó para auto-avaliação futura. Apêndice no FIM
+    // para preservar todos os offsets v5.
+    uint16_t vbatAvisoCentiV = 1220;   // default = StationMonitor::AVISO_CV
+    uint16_t vbatCriticaCentiV = 1180; // default = StationMonitor::CRITICO_CV
 };
 
 static constexpr size_t IRRIGATION_SETTINGS_V1_SIZE = 40;
 static constexpr size_t IRRIGATION_SETTINGS_V3_SIZE = 52;
 static constexpr size_t IRRIGATION_SETTINGS_V4_SIZE = 128;
+static constexpr size_t IRRIGATION_SETTINGS_V5_SIZE = 176;
 static_assert(sizeof(IrrigationSettings::SensorSlot) == 16, "SensorSlot é ABI on-disk");
 static_assert(sizeof(IrrigationSettings::LocalInterlock) == 12, "LocalInterlock é ABI on-disk");
 static_assert(offsetof(IrrigationSettings, localInterlocks) == 128, "ABI v5");
 
-// ABI lock v5: prefixo v4 (128 B) + localInterlocks[4×12](48) = 176.
+// ABI lock v6: prefixo v5 (176 B) + vbatAvisoCentiV(2) + vbatCriticaCentiV(2) = 180.
+// Prefixo v5 = prefixo v4 (128 B) + localInterlocks[4×12](48) = 176.
 // Prefixo v4: magic(4)+version(2)+role(1)+numValves(1)+boundGateway(4)+hbMinutes(2)+
 // vbatMinAbrirCentiV(2)+maxOpenConfigS(2)+cmdRatePerMin(1)+pad0(1)+pulseMs(2)+
 // pinsHbridgeA(8)+pinsHbridgeB(8)+pad1(2)+configEpoch(4)+pinsDigitalIn(4)+
 // digitalInActiveLow(1)+pinBtn(1)+pinLed(1)+pad2(1)+pinsGpo(2)+pinTamper(1)+hwFlags(1)+
 // latE7(4)+lonE7(4)+sensores[4×16](64) = 128. All padding explicit and zero-initialized.
-// Bump version AND this assert on any layout change.
-static_assert(sizeof(IrrigationSettings) == 176, "on-disk settings format is ABI-dependent; bump version on layout change");
+// Bump version AND these asserts on any layout change.
+static_assert(offsetof(IrrigationSettings, vbatAvisoCentiV) == 176, "ABI v6");
+static_assert(offsetof(IrrigationSettings, vbatCriticaCentiV) == 178, "ABI v6");
+static_assert(sizeof(IrrigationSettings) == 180, "on-disk settings format is ABI-dependent; bump version on layout change");
 
 // Pino de offsets do apêndice v4: drift silencioso de layout vira erro de compilação.
 static_assert(offsetof(IrrigationSettings, pinsGpo) == 52, "ABI v4");

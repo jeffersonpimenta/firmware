@@ -152,7 +152,9 @@ bool ZoneTable::deserialize(const uint8_t *buf, size_t n)
 }
 
 // ---- StationRegistry ----
-static constexpr size_t STATION_ENTRY = 211; // node(4)+name(16)+desiredEpoch(4)+blob(176)+retries(1)+silencioAlertaMin(2)+lat(4)+lon(4)
+// node(4)+name(16)+desiredEpoch(4)+blob(180)+retries(1)+silencioAlertaMin(2)+lat(4)+lon(4)
+static constexpr size_t STATION_ENTRY = StationRegistry::SERIALIZED_ENTRY; // 215
+static_assert(STATION_ENTRY == 215, "STATION_ENTRY deve casar com o layout serializado (blob v6 = 180)");
 
 bool StationRegistry::upsert(const StationEntry &e)
 {
@@ -231,7 +233,7 @@ void StationRegistry::adoptConfig(uint32_t node, const uint8_t *blobData, size_t
         return; // no-op se nó ausente
     // regra do maior epoch (§5.4): estritamente maior; mesmo epoch = já adotado, ignora
     if (epoch > e->desiredEpoch) {
-        // Migra o blob recebido (pode ser v4=128B ou v5=176B) para v5 canônico antes de armazenar.
+        // Migra o blob recebido (v4=128B, v5=176B ou v6=180B) para v6 canônico antes de armazenar.
         // Se a migração falhar (magic/versão/tamanho inválido), não adopta e deixa entrada intacta.
         IrrigationSettings tmp;
         if (!migrateIrrigationSettings(blobData, blobLen, tmp))
@@ -254,11 +256,11 @@ size_t StationRegistry::serialize(uint8_t *buf, size_t cap) const
         memcpy(buf + off, &e.node, 4);
         memcpy(buf + off + 4, e.name, 16);
         memcpy(buf + off + 20, &e.desiredEpoch, 4);
-        memcpy(buf + off + 24, e.blob, sizeof(e.blob));   // 176 bytes
-        buf[off + 200] = e.retries;
-        memcpy(buf + off + 201, &e.silencioAlertaMin, 2);
-        memcpy(buf + off + 203, &e.lat, 4);
-        memcpy(buf + off + 207, &e.lon, 4);
+        memcpy(buf + off + 24, e.blob, sizeof(e.blob));   // 180 bytes (v6)
+        buf[off + 204] = e.retries;
+        memcpy(buf + off + 205, &e.silencioAlertaMin, 2);
+        memcpy(buf + off + 207, &e.lat, 4);
+        memcpy(buf + off + 211, &e.lon, 4);
         off += STATION_ENTRY;
     }
     return need;
@@ -278,11 +280,11 @@ bool StationRegistry::deserialize(const uint8_t *buf, size_t n)
         memcpy(e.name, buf + off + 4, 16);
         e.name[15] = '\0';
         memcpy(&e.desiredEpoch, buf + off + 20, 4);
-        memcpy(e.blob, buf + off + 24, sizeof(e.blob)); // 176 bytes
-        e.retries = buf[off + 200];
-        memcpy(&e.silencioAlertaMin, buf + off + 201, 2);
-        memcpy(&e.lat, buf + off + 203, 4);
-        memcpy(&e.lon, buf + off + 207, 4);
+        memcpy(e.blob, buf + off + 24, sizeof(e.blob)); // 180 bytes (v6)
+        e.retries = buf[off + 204];
+        memcpy(&e.silencioAlertaMin, buf + off + 205, 2);
+        memcpy(&e.lat, buf + off + 207, 4);
+        memcpy(&e.lon, buf + off + 211, 4);
         stations[i] = e;
     }
     return true;
