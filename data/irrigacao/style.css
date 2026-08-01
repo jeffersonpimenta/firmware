@@ -579,6 +579,69 @@ body {
   text-align: center;
 }
 
+/* ===== Controle de nível (boia) ===== */
+.lvl-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.lvl-card .lvl-hdr {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.lvl-card .lvl-line {
+  font-size: 0.9em;
+  color: var(--muted);
+}
+.lvl-card .lvl-line b {
+  color: var(--text);
+  font-weight: 600;
+}
+.lvl-card .lvl-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.lvl-card .lvl-msg {
+  margin-top: 6px;
+  font-style: italic;
+  font-size: 0.85em;
+}
+.lvl-card .lvl-btns {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+.lvl-sentence {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  line-height: 2.2;
+}
+.lvl-sentence .finput {
+  width: auto;
+  display: inline-block;
+  padding: 4px 8px;
+}
+.lvl-hint {
+  color: var(--muted);
+}
+.lvl-adv {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.lvl-adv-toggle {
+  margin-top: 10px;
+}
+.lvl-form-btns {
+  margin-top: 12px;
+}
+
 /* ===== Portal field — utility classes ===== */
 .hidden { display: none !important; }
 .muted { color: var(--muted); font-size: 0.875em; }
