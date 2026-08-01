@@ -116,6 +116,7 @@ const MOCK_DATA = {
       tamper: false,
       sensores: [
         { idx: 0, nome: 'Pressão', tipo: 1, valor: 650 },
+        { idx: 1, nome: 'Boia caixa', tipo: 0, valor: 0 },
       ],
     },
   ],
@@ -177,6 +178,30 @@ const MOCK_DATA = {
       estado: 'rodando',
       bomba: true,
       abertas: 2,
+    },
+  ],
+  levels: [
+    {
+      id: 1,
+      sensorNode: 0xa1b2c3d4,
+      sensorIdx: 1,
+      ligaQuandoAtivo: true,
+      targetZoneId: 1,
+      minOnS: 300,
+      minOffS: 600,
+      staleTimeoutS: 3600,
+      mensagem: 'Cisterna baixa',
+    },
+    {
+      id: 2,
+      sensorNode: 0xe5f6a7b8,
+      sensorIdx: 1,
+      ligaQuandoAtivo: false,
+      targetZoneId: 3,
+      minOnS: 60,
+      minOffS: 120,
+      staleTimeoutS: 90,
+      mensagem: 'Caixa cheia',
     },
   ],
   survey: [
@@ -287,6 +312,7 @@ window.fetch = async function (url, opts) {
     groups: STATE.groups,
   });
   if (path.startsWith('/survey')) return mockResponse(STATE.survey);
+  if (path.startsWith('/levels')) return mockResponse(STATE.levels);
 
   // Fallback API real
   return origFetch(url, opts);
@@ -412,6 +438,19 @@ function handlePost(path, body) {
         g.abertas = 0;
       }
     }
+    return mockResponse({ ok: true });
+  }
+
+  // Controle de nível (boia)
+  if (path === '/levels') {
+    body.id = body.id || (Math.max(...STATE.levels.map(l => l.id), 0) + 1);
+    const idx = STATE.levels.findIndex(l => l.id === body.id);
+    if (idx >= 0) STATE.levels[idx] = body;
+    else STATE.levels.push(body);
+    return mockResponse({ ok: true });
+  }
+  if (path === '/levels/delete') {
+    STATE.levels = STATE.levels.filter(l => l.id !== body.id);
     return mockResponse({ ok: true });
   }
 
