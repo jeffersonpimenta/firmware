@@ -1541,7 +1541,7 @@ async function renderNiveis(editId) {
     ? list.map((r) => niveisCardHtml(r, stations, zones, sensors)).join('')
     : '<div class="empty">Nenhuma regra de nível.</div>';
   view.innerHTML = `<div class="lvl-list">${cards}</div>` + niveisFormHtml(stations, zones, sensors, editRule);
-  wireNiveis(stations, zones, sensors, list);
+  wireNiveis(stations, zones, sensors);
   if (editRule) {
     const f = view.querySelector('.lvl-form');
     if (f) f.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1552,7 +1552,7 @@ function errText(r) {
   return (r.body && Array.isArray(r.body.errors)) ? r.body.errors.join(', ') : 'erro';
 }
 
-function wireNiveis(stations, zones, sensors, list) {
+function wireNiveis(stations, zones, sensors) {
   const q = (sel) => view.querySelector(sel);
 
   const nodeSel = q('#nv-node');
