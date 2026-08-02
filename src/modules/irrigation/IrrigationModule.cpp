@@ -12,6 +12,7 @@
 #include "Throttle.h"
 #include "configuration.h"
 #include "gps/RTC.h"
+#include "modules/irrigation/IrrigationBoardDefaults.h"
 #include "main.h"
 #include "mesh/Channels.h"
 #include <string.h>
@@ -84,7 +85,8 @@ ArduinoSensorReader sensorReader;
 static IrrigationSettings loadIrrigationSettingsOrDefault()
 {
     IrrigationSettings s;
-    loadIrrigationSettings(s);
+    if (!loadIrrigationSettings(s))      // sem blob persistido = 1º boot / pós-factory-reset
+        applyBoardIrrigationDefaults(s); // aplica o mapa de pinos da board (no-op sem variant custom)
     if (s.pulseMs > 1000)
         s.pulseMs = 1000;
     return s;
