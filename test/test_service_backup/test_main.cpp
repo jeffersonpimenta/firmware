@@ -142,6 +142,24 @@ static void test_extractLight_fields()
     TEST_ASSERT_EQUAL_INT32(-221000000, p.estacoes[0].lat);
 }
 
+// Fase 9: backup estende estacoes[] com config v6 (hbMinutes/limiares). O importador
+// faz key-seek e deve IGNORAR as chaves novas, preservando node/lat/lon.
+static void test_extractLight_toleratesV6StationFields()
+{
+    const char *cl = "{\"id\":\"f9\",\"nome\":\"V6\","
+                     "\"canal\":{\"nome\":\"c\",\"psk_b64\":\"1PG7Og==\",\"modem_preset\":\"LONG_FAST\"},"
+                     "\"gateway\":\"!a1b2c3d4\","
+                     "\"estacoes\":[{\"no\":\"!e5f6a7b8\",\"nome\":\"Pasto\",\"lat\":-221000000,\"lon\":-476000000,"
+                     "\"hbMinutes\":15,\"vbatAvisoCentiV\":1220,\"vbatCriticaCentiV\":1180}]}";
+    Slice s{cl, strlen(cl)};
+    LightProfile p;
+    TEST_ASSERT_TRUE(extractLight(s, p));
+    TEST_ASSERT_EQUAL_UINT8(1, p.estacaoCount);
+    TEST_ASSERT_EQUAL_HEX32(0xe5f6a7b8, p.estacoes[0].node);
+    TEST_ASSERT_EQUAL_INT32(-221000000, p.estacoes[0].lat);
+    TEST_ASSERT_EQUAL_INT32(-476000000, p.estacoes[0].lon);
+}
+
 static void test_preset_roundtrip()
 {
     TEST_ASSERT_EQUAL_UINT8(1, presetFromString("LONG_SLOW"));
@@ -245,6 +263,7 @@ void setup()
     RUN_TEST(test_validate_rejects_bad_fmt);
     RUN_TEST(test_validate_rejects_bad_psk);
     RUN_TEST(test_extractLight_fields);
+    RUN_TEST(test_extractLight_toleratesV6StationFields);
     RUN_TEST(test_preset_roundtrip);
     RUN_TEST(test_buildClientBackup_roundtrips_through_extractLight);
     RUN_TEST(test_buildClientBackup_carries_niveis);

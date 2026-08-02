@@ -1544,7 +1544,7 @@ size_t IrrigationModule::gwBuildBackup(char *buf, size_t cap)
     IrrigationWeb::buildGroups(gateway.groups, grupB, sizeof grupB);
     IrrigationWeb::buildLevelControls(gateway.levels, niveisB, sizeof niveisB);
     // estacoes[] + snapshot_epoch{} a partir do registro de estações.
-    static char estB[1200], epoB[600];
+    static char estB[2048], epoB[600];
     {
         IrrigationWeb::JsonWriter w(estB, sizeof estB);
         w.beginArray();
@@ -1559,6 +1559,14 @@ size_t IrrigationModule::gwBuildBackup(char *buf, size_t cap)
             w.keyStr("nome", s->name);
             w.keyNum("lat", s->lat);
             w.keyNum("lon", s->lon);
+            // Fase 9: config v6 desejada (heartbeat + limiares de bateria) p/ backup lossless.
+            // Importador antigo ignora chaves desconhecidas (extractLight faz key-seek).
+            IrrigationSettings cfg;
+            if (s->desiredEpoch != 0 && migrateIrrigationSettings(s->blob, sizeof(s->blob), cfg)) {
+                w.keyNum("hbMinutes", cfg.hbMinutes);
+                w.keyNum("vbatAvisoCentiV", cfg.vbatAvisoCentiV);
+                w.keyNum("vbatCriticaCentiV", cfg.vbatCriticaCentiV);
+            }
             w.endObject();
         }
         w.endArray();
