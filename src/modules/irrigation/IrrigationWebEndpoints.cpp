@@ -939,6 +939,27 @@ static void hMirrorMappingDelete(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, buf);
 }
 
+// POST /api/irrigation/import — restaura as 4 tabelas de config de um envelope de backup (§5.5).
+// NÃO toca PSK/canal; NÃO reinicializa; NÃO bumpa epoch das estações. CI-only.
+static void hImport(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!gwReady()) {
+        res->setStatusCode(404);
+        return;
+    }
+    const size_t cap = 8192; // mesma capacidade que hExport/gwBuildBackup
+    char *body = (char *)malloc(cap);
+    if (!body) {
+        res->setStatusCode(500);
+        return;
+    }
+    size_t nb = readBody(req, body, cap);
+    char resp[128];
+    bool ok = irrigationModule->gwImportTables(body, nb, resp, sizeof(resp));
+    free(body);
+    sendJson(res, resp, ok ? 200 : 400);
+}
+
 // GET /api/irrigation/export — backup §5.5 completo (PSK + tabelas) num envelope
 // multi-cliente, para o cofre do device SERVICO (Fase 8b §11.7).
 static void hExport(HTTPRequest *req, HTTPResponse *res)
@@ -1048,6 +1069,8 @@ void registerIrrigationHandlers(HTTPServer *server)
     server->registerNode(new ResourceNode("/api/irrigation/mirror", "POST", &hMirrorToggle));
     server->registerNode(new ResourceNode("/api/irrigation/mirror/mapping", "POST", &hMirrorMapping));
     server->registerNode(new ResourceNode("/api/irrigation/mirror/mapping/delete", "POST", &hMirrorMappingDelete));
+    // Sistema restore: importa tabelas de config de um envelope de backup (NÃO toca PSK). CI-only.
+    server->registerNode(new ResourceNode("/api/irrigation/import", "POST", &hImport));
     // Fase 8b: export §5.5 completo (PSK + tabelas) p/ o cofre do device SERVICO
     server->registerNode(new ResourceNode("/api/irrigation/export", "GET", &hExport));
     // Fase 8d: site survey (§8.5)

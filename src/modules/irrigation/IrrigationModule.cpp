@@ -2795,6 +2795,34 @@ size_t IrrigationModule::gwBuildMirror(char *buf, size_t cap)
                                       settings.digitalInActiveLow, live);
 }
 
+// ---------------------------------------------------------------------------
+// Sistema restore — importa tabelas de config de um envelope de backup (§5.5).
+// NÃO toca PSK/canal, NÃO reinicializa, NÃO bump de epoch de estação.
+// ---------------------------------------------------------------------------
+
+bool IrrigationModule::gwImportTables(const char *json, size_t len, char *resp, size_t respCap)
+{
+    IrrigationWeb::ImportCounts c;
+    char err[48];
+    if (!IrrigationWeb::importConfigTablesFromBackup(json, len, gateway.zones, gateway.scheduler,
+                                                     gateway.interlocks, gateway.groups,
+                                                     c, err, sizeof(err))) {
+        snprintf(resp, respCap, "{\"ok\":false,\"err\":\"%s\"}", err);
+        return false;
+    }
+    // Persiste as quatro tabelas recém-importadas.
+    saveGatewayState();  // zonas + programas (+ stations + mirror — inofensivo, não foram tocados)
+    saveInterlocks();    // tabela de intertravamentos (arquivo separado)
+    saveGroups();        // tabela de grupos hidráulicos (arquivo separado)
+    // §8.9: audita importação de configuração — CONFIG_EPOCH é a ação existente mais próxima
+    // de "substituição em bloco das tabelas de config via painel".
+    auditEvent(AuditOrigin::PAINEL, AuditAction::CONFIG_EPOCH, 0, AuditResult::OK);
+    snprintf(resp, respCap,
+             "{\"ok\":true,\"zonas\":%u,\"programas\":%u,\"intertravamentos\":%u,\"grupos\":%u}",
+             c.zonas, c.programas, c.intertravamentos, c.grupos);
+    return true;
+}
+
 bool IrrigationModule::portalPulse(const IrrigationWeb::PortalPulseReq &p)
 {
     // Teste de pulso local: abre a válvula com fechamento automático pelo timer fail-safe.
