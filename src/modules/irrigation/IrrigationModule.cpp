@@ -1862,7 +1862,7 @@ bool IrrigationModule::saveAuditLog()
 // Staged-write genérico: serializa com fn, grava em tmp, rename.
 // Tamanho máximo dos buffers:
 //   stations: MAGIC(4)+ver(1)+count(1)+16*87 = 1398 bytes → 1400
-//   zones:    MAGIC(4)+ver(1)+count(1)+24*32 = 774  bytes → 800
+//   zones:    MAGIC(4)+ver(1)+count(1)+24*29 = 696  bytes → 800
 //   programs: MAGIC(4)+ver(1)+count(1)+8*... = ~600 bytes → 700
 //   mirror:   MAGIC(4)+ver(1)+1             = 6    bytes → 16
 
@@ -1922,7 +1922,7 @@ bool IrrigationModule::loadGatewayState()
     }
     // Zones
     {
-        uint8_t buf[6 + ZoneTable::MAX * 32];
+        uint8_t buf[6 + ZoneTable::MAX * 29];
         if (stagedRead(GW_ZONES_PATH, buf, sizeof(buf), n))
             ok &= gateway.zones.deserialize(buf, n);
     }
@@ -1952,7 +1952,7 @@ bool IrrigationModule::saveGatewayState()
     }
     // Zones
     {
-        uint8_t buf[6 + ZoneTable::MAX * 32];
+        uint8_t buf[6 + ZoneTable::MAX * 29];
         size_t n = gateway.zones.serialize(buf, sizeof(buf));
         ok &= stagedWrite(GW_ZONES_TMP, GW_ZONES_PATH, buf, n);
     }

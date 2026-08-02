@@ -201,6 +201,44 @@ static void test_entry_at_itera_ocupados()
     TEST_ASSERT_NULL(c.entryAt(StationTelemetryCache::MAX)); // fora de faixa
 }
 
+static void test_zone_fonteEnabled_roundtrip()
+{
+    ZoneTable t;
+    Zone z{}; z.id = 5; z.node = 0x1234; z.fonteInput = 2; z.fonteEnabled = 0;
+    strncpy(z.name, "Horta", sizeof(z.name) - 1);
+    TEST_ASSERT_TRUE(t.upsert(z));
+    uint8_t buf[800];
+    size_t n = t.serialize(buf, sizeof(buf));
+    TEST_ASSERT_TRUE(n > 0);
+    ZoneTable t2;
+    TEST_ASSERT_TRUE(t2.deserialize(buf, n));
+    const Zone *r = t2.byId(5);
+    TEST_ASSERT_NOT_NULL(r);
+    TEST_ASSERT_EQUAL_INT8(2, r->fonteInput);
+    TEST_ASSERT_EQUAL_UINT8(0, r->fonteEnabled); // pausada preservada
+}
+
+static void test_zone_legacy_v1_migrates_enabled()
+{
+    // Constrói um blob legado IZN1 de 28 bytes/entrada (1 zona com fonteInput=1).
+    uint8_t buf[6 + 28] = {0};
+    uint32_t magic = 0x495A4E31; memcpy(buf, &magic, 4); buf[4] = 1; buf[5] = 1;
+    size_t off = 6;
+    buf[off + 0] = 7;                       // id
+    memcpy(buf + off + 1, "Z", 1);          // name
+    uint32_t node = 0xABCD; memcpy(buf + off + 17, &node, 4);
+    buf[off + 21] = 0; buf[off + 22] = 0;   // tipo, index
+    uint16_t mm = 120; memcpy(buf + off + 23, &mm, 2);
+    uint16_t pm = 20;  memcpy(buf + off + 25, &pm, 2);
+    buf[off + 27] = 1;                       // fonteInput
+    ZoneTable t;
+    TEST_ASSERT_TRUE(t.deserialize(buf, sizeof(buf)));
+    const Zone *r = t.byId(7);
+    TEST_ASSERT_NOT_NULL(r);
+    TEST_ASSERT_EQUAL_INT8(1, r->fonteInput);
+    TEST_ASSERT_EQUAL_UINT8(1, r->fonteEnabled); // migração default = habilitada
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -214,6 +252,8 @@ void setup()
     RUN_TEST(test_telemetryCache_upsertAndLookup);
     RUN_TEST(test_cache_guarda_sensores_e_tamper);
     RUN_TEST(test_entry_at_itera_ocupados);
+    RUN_TEST(test_zone_fonteEnabled_roundtrip);
+    RUN_TEST(test_zone_legacy_v1_migrates_enabled);
     exit(UNITY_END());
 }
 
