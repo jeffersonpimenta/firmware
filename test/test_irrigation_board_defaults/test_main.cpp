@@ -26,6 +26,7 @@ void tearDown(void) {}
 static void test_heltec_map_pins()
 {
     IrrigationSettings s; // defaults (pinos -1)
+    s.numValves = 5;      // sentinela: prova que o mapper escreve numValves (default do struct já é 2)
     applyBoardIrrigationDefaults(s);
     TEST_ASSERT_EQUAL_INT8(2, s.numValves);
     TEST_ASSERT_EQUAL_INT8(17, s.pinsHbridgeA[0]);

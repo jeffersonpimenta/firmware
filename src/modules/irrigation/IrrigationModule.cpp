@@ -85,7 +85,7 @@ ArduinoSensorReader sensorReader;
 static IrrigationSettings loadIrrigationSettingsOrDefault()
 {
     IrrigationSettings s;
-    if (!loadIrrigationSettings(s))      // sem blob persistido = 1º boot / pós-factory-reset
+    if (!loadIrrigationSettings(s))      // sem blob persistido = 1º boot (nenhum blob jamais gravado)
         applyBoardIrrigationDefaults(s); // aplica o mapa de pinos da board (no-op sem variant custom)
     if (s.pulseMs > 1000)
         s.pulseMs = 1000;

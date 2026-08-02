@@ -40,8 +40,15 @@ ocioso sem hora), conforme spec §5.
 
 - Botão (GPIO0) e LED (GPIO25) são partilhados com o botão/LED do sistema Meshtastic;
   gestos de irrigação e ações do sistema coexistem.
-- Entradas 38/39/37 são input-only → **exigem pull-up externo**.
+- Entradas 38/39/37 são input-only → **exigem pull-up externo**. `INPUT_PULLUP` no
+  firmware é **no-op** nesses pinos (GPIO34-39 não têm pull interno no ESP32); sem o
+  resistor externo a leitura flutua.
 - Só cabem 2 válvulas latch; GPO1 e sensores extra ficam para a board real.
+- **Modelo de hardware em runtime = HELTEC_V2_0 (5).** O env usa `board =
+  heltec_wifi_lora_32_V2` + `-D HELTEC_V2_0`, então `HW_VENDOR` reporta HELTEC_V2_0 na
+  mesh. O `custom_meshtastic_hw_model = 255 (PRIVATE_HW)` do `platformio.ini` é só do
+  manifesto de build/OTA, **não** da identidade em rádio. Para um model privado real,
+  na board custom largar `-D HELTEC_V2_0` e definir o HW direto no `variant.h`.
 
 ## Re-pinar para a board real (L298N + relé FINDER)
 
