@@ -1082,6 +1082,16 @@ namespace {
 
 using IrrigationService::Slice;
 
+// Copia o slice do elemento p/ buffer NUL-terminado (os parsers legados usam strstr/strchr
+// sem respeitar o comprimento; sem isto podem ler além do elemento). Retorna false se não couber.
+static bool sliceToBuf(Slice e, char *buf, size_t cap)
+{
+    if (e.n >= cap) return false;
+    memcpy(buf, e.p, e.n);
+    buf[e.n] = '\0';
+    return true;
+}
+
 // Itera um array dentro de um sub-objeto do client, aplicando um callback por elemento.
 // Retorna true mesmo que a chave esteja ausente (0 elementos = sem erro).
 bool importArray(const char *obj, size_t on, const char *key,
@@ -1097,8 +1107,10 @@ struct ZCtx { ZoneTable *t; uint8_t *n; };
 bool applyZone(void *v, Slice e)
 {
     auto *x = static_cast<ZCtx *>(v);
+    char buf[1024];
+    if (!sliceToBuf(e, buf, sizeof(buf))) return true; // elemento grande demais → pula
     Zone z{};
-    if (parseZoneUpsert(e.p, e.n, z).ok && x->t->upsert(z))
+    if (parseZoneUpsert(buf, strlen(buf), z).ok && x->t->upsert(z))
         (*x->n)++;
     return true;
 }
@@ -1107,8 +1119,10 @@ struct PCtx { ProgramScheduler *t; uint8_t *n; };
 bool applyProgram(void *v, Slice e)
 {
     auto *x = static_cast<PCtx *>(v);
+    char buf[1024];
+    if (!sliceToBuf(e, buf, sizeof(buf))) return true; // elemento grande demais → pula
     Program p{};
-    if (parseProgramUpsert(e.p, e.n, p).ok && x->t->upsert(p))
+    if (parseProgramUpsert(buf, strlen(buf), p).ok && x->t->upsert(p))
         (*x->n)++;
     return true;
 }
@@ -1117,8 +1131,10 @@ struct ICtx { InterlockTable *t; uint8_t *n; };
 bool applyInterlock(void *v, Slice e)
 {
     auto *x = static_cast<ICtx *>(v);
+    char buf[1024];
+    if (!sliceToBuf(e, buf, sizeof(buf))) return true; // elemento grande demais → pula
     InterlockRule r{};
-    if (parseInterlockUpsert(e.p, e.n, r).ok && x->t->upsert(r))
+    if (parseInterlockUpsert(buf, strlen(buf), r).ok && x->t->upsert(r))
         (*x->n)++;
     return true;
 }
@@ -1127,8 +1143,10 @@ struct GCtx { HydraulicGroupTable *t; uint8_t *n; };
 bool applyGroup(void *v, Slice e)
 {
     auto *x = static_cast<GCtx *>(v);
+    char buf[1024];
+    if (!sliceToBuf(e, buf, sizeof(buf))) return true; // elemento grande demais → pula
     HydraulicGroup g{};
-    if (parseGroupUpsert(e.p, e.n, g).ok && x->t->upsert(g))
+    if (parseGroupUpsert(buf, strlen(buf), g).ok && x->t->upsert(g))
         (*x->n)++;
     return true;
 }

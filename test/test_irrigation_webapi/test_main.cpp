@@ -1227,6 +1227,39 @@ static void test_import_rejects_bad_envelope()
     TEST_ASSERT_EQUAL_size_t(0, z.count()); // tabela intacta
 }
 
+// Dois elementos de zona no mesmo array: cada um deve ser parseado com seu próprio
+// slice NUL-terminado, sem vazar o node de um elemento para o vizinho.
+static void test_import_two_zones_isolated()
+{
+    // Zona 1: node=0x0010 (16)  Zona 2: node=0x0020 (32) — valores distintos.
+    const char *env =
+        "{\"fmt\":\"irrig-vault\",\"version\":1,\"clients\":[{"
+        "\"id\":\"faz1\",\"gateway\":\"!a1b2c3d4\","
+        "\"canal\":{\"psk_b64\":\"AAAA\"},"
+        "\"config\":{"
+          "\"zonas\":["
+            "{\"id\":1,\"name\":\"Horta\",\"node\":16,\"tipo\":0,\"index\":0,\"maxMin\":60,\"padraoMin\":20},"
+            "{\"id\":2,\"name\":\"Pomar\",\"node\":32,\"tipo\":0,\"index\":1,\"maxMin\":60,\"padraoMin\":20}"
+          "],"
+          "\"programas\":[],"
+          "\"intertravamentos\":[],"
+          "\"grupos\":[]"
+        "}"
+        "}]}";
+    ZoneTable z; ProgramScheduler s; InterlockTable il; HydraulicGroupTable g;
+    ImportCounts c; char err[48] = {0};
+    bool ok = importConfigTablesFromBackup(env, strlen(env), z, s, il, g, c, err, sizeof(err));
+    TEST_ASSERT_TRUE_MESSAGE(ok, err);
+    TEST_ASSERT_EQUAL_UINT8(2, c.zonas);
+    // Cada zona deve existir com o seu próprio node — sem contaminação cruzada de slice.
+    const Zone *z1 = z.byId(1);
+    const Zone *z2 = z.byId(2);
+    TEST_ASSERT_NOT_NULL(z1);
+    TEST_ASSERT_NOT_NULL(z2);
+    TEST_ASSERT_EQUAL_HEX32(16u, z1->node);  // 0x10
+    TEST_ASSERT_EQUAL_HEX32(32u, z2->node);  // 0x20 — não deve ter "herdado" node da zona 1
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -1323,6 +1356,8 @@ void setup()
     // Sistema restore — Task 1
     RUN_TEST(test_import_config_tables_ok);
     RUN_TEST(test_import_rejects_bad_envelope);
+    // Sistema restore — Task 3 (review fix: element isolation via NUL-terminated buffer)
+    RUN_TEST(test_import_two_zones_isolated);
     exit(UNITY_END());
 }
 

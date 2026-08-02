@@ -643,10 +643,13 @@ function handlePost(path, body) {
     // body já é o objeto parseado (o fetch intercept faz JSON.parse(opts.body))
     const clients = Array.isArray(body.clients) ? body.clients : [];
     const client = clients[0] || {};
-    const zonas = Array.isArray(client.zonas) ? client.zonas : [];
-    const programas = Array.isArray(client.programas) ? client.programas : [];
-    const interlocks = Array.isArray(client.intertravamentos) ? client.intertravamentos : [];
-    const grupos = Array.isArray(client.grupos) ? client.grupos : [];
+    // Backups reais aninham os arrays sob client.config (como buildClientBackup gera).
+    // Mantém fallback para client direto caso config esteja ausente (formato legado).
+    const cfg = (client.config && typeof client.config === 'object') ? client.config : client;
+    const zonas = Array.isArray(cfg.zonas) ? cfg.zonas : [];
+    const programas = Array.isArray(cfg.programas) ? cfg.programas : [];
+    const interlocks = Array.isArray(cfg.intertravamentos) ? cfg.intertravamentos : [];
+    const grupos = Array.isArray(cfg.grupos) ? cfg.grupos : [];
     // Aplica ao STATE para que os painéis reflitam o import
     if (zonas.length) STATE.zones = zonas;
     if (programas.length) STATE.programs = programas;
