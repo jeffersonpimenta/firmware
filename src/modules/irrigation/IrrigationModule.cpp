@@ -2957,7 +2957,7 @@ void IrrigationModule::gwTick()
             }
             if (a.type == SchedAction::Type::OPEN) {
                 // Bypass: se o espelho é dono desta zona, ele manda — suprime o OPEN.
-                if (mirrorOwnsZoneOutput(gateway.mirror, z->fonteInput)) {
+                if (mirrorOwnsZoneOutput(gateway.mirror, z->fonteInput, z->fonteEnabled)) {
                     LOG_DEBUG("Irrigation GW: scheduler OPEN zone=%u suprimido (espelho dono)", a.zoneId);
                     continue;
                 }
@@ -2980,7 +2980,7 @@ void IrrigationModule::gwTick()
                 // HOLD: enfileirado com dur clampeado; dreno abaixo libera quando houver capacidade.
             } else { // CLOSE
                 // Mesma proteção: não feche o que o espelho mantém aberto (carryover F4 #1).
-                if (mirrorOwnsZoneOutput(gateway.mirror, z->fonteInput)) {
+                if (mirrorOwnsZoneOutput(gateway.mirror, z->fonteInput, z->fonteEnabled)) {
                     LOG_DEBUG("Irrigation GW: scheduler CLOSE zone=%u suprimido (espelho dono)", a.zoneId);
                     continue;
                 }
@@ -3062,6 +3062,8 @@ void IrrigationModule::gwTick()
             LOG_DEBUG("Irrigation GW: mirror input %u has no zone mapped — ignored", ma.input);
             continue;
         }
+        if (!z->fonteEnabled)
+            continue; // associação pausada: espelho não comanda; scheduler controla
         if (ma.t == MirrorMode::Action::T::OPEN) {
             // bypass total: sem clamp de maxMin (estação clampa no teto compilado)
             const StationEntry *stEntry = gateway.stations.byNode(z->node);
