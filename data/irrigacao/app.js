@@ -2544,10 +2544,10 @@ async function renderEspelhamento() {
     ports: Array.isArray(mirror.ports) ? mirror.ports : [],
     zones: Array.isArray(zones) ? zones : [],
   };
-  // Preserva a tela de edição se o usuário está editando (poll não interrompe)
-  if (mrUI.screen !== 'edit') {
-    mrUI = { screen: 'list', draft: null, errors: [], deleteConfirm: false };
-  }
+  // Poll apenas actualiza o cache; não reconstrói o DOM da tela de edição
+  // (evita flicker e perda de estado do draft durante edição activa).
+  if (mrUI.screen === 'edit') return;
+  mrUI = { screen: 'list', draft: null, errors: [], deleteConfirm: false };
   mrRender();
 }
 

@@ -1182,6 +1182,8 @@ static void test_buildMirror_shape()
     TEST_ASSERT_NOT_NULL(strstr(buf, "\"zoneId\":1"));
     TEST_ASSERT_NOT_NULL(strstr(buf, "\"invertido\":true"));  // in0 activeLow
     TEST_ASSERT_NOT_NULL(strstr(buf, "\"active\":true"));      // live[0]
+    // Porta sem associação deve emitir zoneId:0 (ramo no-zone).
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"zoneId\":0"));
 }
 
 void setup()

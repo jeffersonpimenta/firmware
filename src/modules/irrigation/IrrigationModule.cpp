@@ -1862,7 +1862,7 @@ bool IrrigationModule::saveAuditLog()
 // Staged-write genérico: serializa com fn, grava em tmp, rename.
 // Tamanho máximo dos buffers:
 //   stations: MAGIC(4)+ver(1)+count(1)+16*87 = 1398 bytes → 1400
-//   zones:    MAGIC(4)+ver(1)+count(1)+24*29 = 696  bytes → 800
+//   zones:    MAGIC(4)+ver(1)+count(1)+24*29 = 702 bytes (buffer = 6 + MAX*29)
 //   programs: MAGIC(4)+ver(1)+count(1)+8*... = ~600 bytes → 700
 //   mirror:   MAGIC(4)+ver(1)+1             = 6    bytes → 16
 
@@ -2746,6 +2746,11 @@ bool IrrigationModule::gwApplyMirrorMapping(int8_t input, uint8_t zoneId, bool i
         snprintf(err, errCap, "tabela de zonas cheia");
         return false;
     }
+    // Se a associação está sendo pausada (habilitado=false) e o mirror está ativo com
+    // esta porta activa, fecha a válvula imediatamente (evita aguardar o fail-safe de 120 s).
+    if (!habilitado && gateway.mirror.enabled() && gateway.mirror.inputActive((uint8_t)input)) {
+        gwSendValveCmd(z.node, z.index, z.tipo, 0, 0, z.id, 1);
+    }
     // Polaridade: bit `input` de digitalInActiveLow nos settings do gateway.
     if (invertido)
         settings.digitalInActiveLow |= (uint8_t)(1u << input);
@@ -2763,9 +2768,19 @@ bool IrrigationModule::gwDeleteMirrorMapping(int8_t input)
     if (!z)
         return false;
     uint8_t savedId = z->id;
+    // Captura os campos necessários antes de limpar a associação.
+    uint32_t savedNode  = z->node;
+    uint8_t  savedIndex = z->index;
+    uint8_t  savedTipo  = z->tipo;
+    int8_t   oldFonteInput = z->fonteInput;
     Zone upd = *z;
     upd.fonteInput = -1;
     gateway.zones.upsert(upd);
+    // Se o mirror estava activo com esta porta activa, fecha a válvula imediatamente
+    // (evita aguardar o fail-safe de 120 s após a remoção da associação).
+    if (gateway.mirror.enabled() && gateway.mirror.inputActive((uint8_t)oldFonteInput)) {
+        gwSendValveCmd(savedNode, savedIndex, savedTipo, 0, 0, savedId, 1);
+    }
     saveGatewayState();
     auditEvent(AuditOrigin::PAINEL, AuditAction::ESPELHO, savedId, AuditResult::OK);
     return true;
