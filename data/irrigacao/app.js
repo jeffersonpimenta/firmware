@@ -2232,7 +2232,8 @@ function mrListHtml() {
     const inDotColor = mrDotColor(invertido ? !inActive : inActive);
     const outDotColor = mrDotColor(driving);
     const inLabel = inActive ? 'ativa' : 'inativa';
-    const inRawLabel = inActive ? 'ativa' : 'inativa';
+    const rawHigh = invertido ? !inActive : inActive;
+    const inRawLabel = rawHigh ? 'nível alto' : 'nível baixo';
     const outLabel = driving ? 'aberta' : 'fechada';
     return `<div style="cursor:pointer;background:oklch(1 0 0);border:1px solid oklch(0.9 0.006 100);box-shadow:0 1px 3px rgba(0,0,0,0.05);border-radius:16px;padding:14px 16px;" data-mredit="${num(p.i)}">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
@@ -2362,6 +2363,7 @@ function mrEditHtml() {
   }
 
   return `
+    <div data-mrcancel style="cursor:pointer;font-size:13px;font-weight:600;color:oklch(0.47 0.1 150);">‹ Modo Espelhamento</div>
     <div style="font-size:18px;font-weight:700;color:oklch(0.22 0.008 100);">${editing ? 'Editar associação' : 'Nova associação'}</div>
 
     ${errBox}
