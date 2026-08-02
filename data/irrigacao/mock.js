@@ -638,6 +638,29 @@ function handlePost(path, body) {
     return mockResponse({ ok: true });
   }
 
+  // Importar backup (restaurar)
+  if (path === '/import') {
+    // body já é o objeto parseado (o fetch intercept faz JSON.parse(opts.body))
+    const clients = Array.isArray(body.clients) ? body.clients : [];
+    const client = clients[0] || {};
+    const zonas = Array.isArray(client.zonas) ? client.zonas : [];
+    const programas = Array.isArray(client.programas) ? client.programas : [];
+    const interlocks = Array.isArray(client.intertravamentos) ? client.intertravamentos : [];
+    const grupos = Array.isArray(client.grupos) ? client.grupos : [];
+    // Aplica ao STATE para que os painéis reflitam o import
+    if (zonas.length) STATE.zones = zonas;
+    if (programas.length) STATE.programs = programas;
+    if (interlocks.length) STATE.interlocks = interlocks;
+    if (grupos.length) STATE.groups = grupos;
+    return mockResponse({
+      ok: true,
+      zonas: zonas.length,
+      programas: programas.length,
+      intertravamentos: interlocks.length,
+      grupos: grupos.length,
+    });
+  }
+
   // Fallback 404
   return mockResponse({ error: 'Endpoint não mockado: ' + path }, 404);
 }

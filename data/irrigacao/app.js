@@ -2576,7 +2576,7 @@ function renderMais() {
   view.querySelectorAll('[data-sub]').forEach((c) => c.addEventListener('click', () => showSub(c.dataset.sub)));
 }
 
-// ===== Sistema (backup, chave da fazenda, PIN) =====
+// ===== Sistema (backup + restaurar) =====
 // Baixa o backup via fetch→Blob (robusto: dá feedback de erro e não depende do
 // comportamento de <a download> contra o webserver embarcado).
 async function downloadBackup(btn, statusEl) {
@@ -2605,6 +2605,35 @@ async function downloadBackup(btn, statusEl) {
   }
 }
 
+async function restoreBackup(btn, fileInput, statusEl) {
+  const file = fileInput.files[0];
+  if (!file) {
+    statusEl.textContent = 'Selecione um arquivo .json antes de restaurar.';
+    statusEl.className = 'sub err';
+    return;
+  }
+  btn.disabled = true;
+  statusEl.textContent = 'Enviando backup…';
+  statusEl.className = 'sub';
+  try {
+    const text = await file.text();
+    if (!text || text[0] !== '{') throw new Error('arquivo inválido (não é JSON)');
+    const r = await fetch(API + '/import', { method: 'POST', body: text });
+    const json = await r.json();
+    if (!r.ok) throw new Error(json.error || json.errors?.[0] || 'HTTP ' + r.status);
+    if (!json.ok) throw new Error(json.error || 'falha no servidor');
+    statusEl.textContent =
+      'Restaurado: ' + json.zonas + ' zonas, ' + json.programas + ' programas, ' +
+      json.intertravamentos + ' intertravamentos, ' + json.grupos + ' grupos.';
+    statusEl.className = 'sub';
+  } catch (e) {
+    statusEl.textContent = 'Falha ao restaurar (' + esc(e.message) + ').';
+    statusEl.className = 'sub err';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function renderSistema() {
   view.innerHTML =
     `<div class="card">
@@ -2614,17 +2643,21 @@ function renderSistema() {
        <div class="sub" id="dlStatus"></div>
      </div>
      <div class="card">
-       <div class="sens-hdr"><span class="name">Chave da fazenda</span></div>
-       <div class="sub">A PSK do canal (base64 + nome) é exportada apenas no dispositivo, por segurança: pressão longa no botão do gateway a despeja no console serial (§11.2). Necessária para cadastrar a fazenda no device de serviço.</div>
-     </div>
-     <div class="card">
-       <div class="sens-hdr"><span class="name">PIN de aplicação</span></div>
-       <div class="sub">O portal Wi-Fi exige WPA2 + PIN e o AP desliga após inatividade. O PIN é definido no provisionamento.</div>
+       <div class="sens-hdr"><span class="name">Restaurar</span></div>
+       <div class="sub maint-sub">Importa um backup e reaplica as tabelas de configuração (zonas, programas, intertravamentos, grupos). <b>Mantém a chave da rede</b> e não reinicia. As estações não são reconfiguradas (só metadados).</div>
+       <input type="file" id="restoreFile" accept=".json,application/json" class="sub">
+       <button class="btn solid big syslink" id="doRestore">⬆ Restaurar backup (.json)</button>
+       <div class="sub" id="restoreStatus"></div>
      </div>`;
 
   const btn = view.querySelector('#dlBackup');
   const status = view.querySelector('#dlStatus');
   btn.addEventListener('click', () => downloadBackup(btn, status));
+
+  const rBtn = view.querySelector('#doRestore');
+  const rFile = view.querySelector('#restoreFile');
+  const rStatus = view.querySelector('#restoreStatus');
+  rBtn.addEventListener('click', () => restoreBackup(rBtn, rFile, rStatus));
 }
 
 // ===== Roteamento =====
