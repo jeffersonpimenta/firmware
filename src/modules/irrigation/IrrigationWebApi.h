@@ -251,4 +251,20 @@ struct SurveyStartReq {
 // hasCoord = lat E lon presentes. Nunca falha (pr.ok sempre true).
 ParseResult parseSurveyStart(const char *json, size_t len, SurveyStartReq &out);
 
+// ── Modo Espelhamento UI — web helpers ────────────────────────────────────────
+
+// {enabled: bool}. Falha se "enabled" ausente.
+ParseResult parseMirrorToggle(const char *json, size_t len, bool &enabled);
+
+// {input:0..3, zoneId:1..255, invertido?:bool, habilitado?:bool}.
+// Falha se input fora de 0..3 ou zoneId fora de 1..255.
+ParseResult parseMirrorMapping(const char *json, size_t len, int8_t &input, uint8_t &zoneId,
+                               bool &invertido, bool &habilitado);
+
+// Serializa estado do modo espelho: {enabled, ports:[{i,active,invertido[,zoneId,zoneName,habilitado,driving]}]}.
+// Per porta (i=0..3): emite zoneId/zoneName/habilitado/driving apenas se uma zona tem fonteInput==i.
+// liveActive[i]: estado ao vivo do GPIO (após inversão de hardware).
+size_t buildMirror(char *buf, size_t cap, bool enabled, const ZoneTable &zones,
+                   uint8_t digitalInActiveLow, const bool liveActive[4]);
+
 } // namespace IrrigationWeb

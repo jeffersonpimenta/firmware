@@ -1018,4 +1018,61 @@ ParseResult parseSurveyStart(const char *json, size_t len, SurveyStartReq &out)
     return pr;
 }
 
+// ── Modo Espelhamento UI — web helpers ────────────────────────────────────────
+
+ParseResult parseMirrorToggle(const char *json, size_t len, bool &enabled)
+{
+    ParseResult r;
+    JsonReader rd(json, len);
+    if (!rd.getBool("enabled", enabled)) { r.fail("falta 'enabled'"); return r; }
+    return r;
+}
+
+ParseResult parseMirrorMapping(const char *json, size_t len, int8_t &input, uint8_t &zoneId,
+                               bool &invertido, bool &habilitado)
+{
+    ParseResult r;
+    JsonReader rd(json, len);
+    int64_t in = -1, zid = 0;
+    if (!rd.getInt("input", in) || in < 0 || in > 3) { r.fail("input fora de 0..3"); return r; }
+    if (!rd.getInt("zoneId", zid) || zid < 1 || zid > 255) { r.fail("zoneId invalido"); return r; }
+    bool inv = false, hab = true;
+    rd.getBool("invertido", inv);   // opcional (default false)
+    rd.getBool("habilitado", hab);  // opcional (default true)
+    input = (int8_t)in;
+    zoneId = (uint8_t)zid;
+    invertido = inv;
+    habilitado = hab;
+    return r;
+}
+
+size_t buildMirror(char *buf, size_t cap, bool enabled, const ZoneTable &zones,
+                   uint8_t digitalInActiveLow, const bool liveActive[4])
+{
+    JsonWriter w(buf, cap);
+    w.beginObject();
+    w.keyBool("enabled", enabled);
+    w.key("ports");
+    w.beginArray();
+    for (int i = 0; i < 4; i++) {
+        const Zone *z = zones.byFonte((int8_t)i);
+        w.beginObject();
+        w.keyNum("i", i);
+        w.keyBool("active", liveActive[i]);
+        w.keyBool("invertido", ((digitalInActiveLow >> i) & 1) != 0);
+        if (z) {
+            w.keyNum("zoneId", z->id);
+            w.keyStr("zoneName", z->name);
+            w.keyBool("habilitado", z->fonteEnabled != 0);
+            w.keyBool("driving", enabled && z->fonteEnabled != 0 && liveActive[i]);
+        } else {
+            w.keyNum("zoneId", 0);
+        }
+        w.endObject();
+    }
+    w.endArray();
+    w.endObject();
+    return w.done();
+}
+
 } // namespace IrrigationWeb

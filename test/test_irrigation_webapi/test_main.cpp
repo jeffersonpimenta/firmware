@@ -1137,6 +1137,53 @@ static void test_parseStationPulse_rejects_bad_tipo()
     TEST_ASSERT_FALSE(pr.ok);
 }
 
+// ── Modo Espelhamento UI — Task 3 ────────────────────────────────────────────
+
+static void test_parseMirrorToggle_ok()
+{
+    bool en = false;
+    const char *j = "{\"enabled\":true}";
+    ParseResult r = parseMirrorToggle(j, strlen(j), en);
+    TEST_ASSERT_TRUE(r.ok);
+    TEST_ASSERT_TRUE(en);
+}
+
+static void test_parseMirrorMapping_validates_input_range()
+{
+    int8_t in; uint8_t zid; bool inv, hab;
+    const char *bad = "{\"input\":5,\"zoneId\":1,\"invertido\":false,\"habilitado\":true}";
+    ParseResult r = parseMirrorMapping(bad, strlen(bad), in, zid, inv, hab);
+    TEST_ASSERT_FALSE(r.ok); // input fora de 0..3
+}
+
+static void test_parseMirrorMapping_ok()
+{
+    int8_t in; uint8_t zid; bool inv, hab;
+    const char *j = "{\"input\":2,\"zoneId\":7,\"invertido\":true,\"habilitado\":false}";
+    ParseResult r = parseMirrorMapping(j, strlen(j), in, zid, inv, hab);
+    TEST_ASSERT_TRUE(r.ok);
+    TEST_ASSERT_EQUAL_INT8(2, in);
+    TEST_ASSERT_EQUAL_UINT8(7, zid);
+    TEST_ASSERT_TRUE(inv);
+    TEST_ASSERT_FALSE(hab);
+}
+
+static void test_buildMirror_shape()
+{
+    ZoneTable z;
+    Zone a{}; a.id = 1; a.node = 0x10; a.fonteInput = 0; a.fonteEnabled = 1;
+    strncpy(a.name, "Horta", sizeof(a.name) - 1); z.upsert(a);
+    bool live[4] = {true, false, false, false};
+    char buf[1024];
+    size_t n = buildMirror(buf, sizeof(buf), true, z, 0x01 /*in0 activeLow*/, live);
+    TEST_ASSERT_TRUE(n > 0);
+    buf[n] = '\0';
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"enabled\":true"));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"zoneId\":1"));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"invertido\":true"));  // in0 activeLow
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"active\":true"));      // live[0]
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -1225,6 +1272,11 @@ void setup()
     RUN_TEST(test_parseStationDelete_rejects_zero);
     RUN_TEST(test_parseStationPulse_ok);
     RUN_TEST(test_parseStationPulse_rejects_bad_tipo);
+    // Modo Espelhamento UI — Task 3
+    RUN_TEST(test_parseMirrorToggle_ok);
+    RUN_TEST(test_parseMirrorMapping_validates_input_range);
+    RUN_TEST(test_parseMirrorMapping_ok);
+    RUN_TEST(test_buildMirror_shape);
     exit(UNITY_END());
 }
 
