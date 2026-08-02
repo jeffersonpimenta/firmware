@@ -2721,7 +2721,7 @@ void IrrigationModule::gwSetMirrorEnabled(bool enabled)
 {
     gateway.mirror.setEnabled(enabled);
     saveGatewayState();
-    auditEvent(AuditOrigin::PAINEL, AuditAction::CONFIG_EPOCH, 0, AuditResult::OK);
+    auditEvent(AuditOrigin::PAINEL, AuditAction::ESPELHO, 0, AuditResult::OK);
 }
 
 bool IrrigationModule::gwApplyMirrorMapping(int8_t input, uint8_t zoneId, bool invertido,
@@ -2733,13 +2733,11 @@ bool IrrigationModule::gwApplyMirrorMapping(int8_t input, uint8_t zoneId, bool i
         return false;
     }
     // Limpa a porta em qualquer outra zona (1 zona por porta).
-    for (size_t i = 0; i < ZoneTable::MAX; i++) {
-        const Zone *zi = gateway.zones.zoneAt(i);
-        if (zi && zi->id != zoneId && zi->fonteInput == input) {
-            Zone upd = *zi;
-            upd.fonteInput = -1;
-            gateway.zones.upsert(upd);
-        }
+    const Zone *other = gateway.zones.byFonte(input);
+    if (other && other->id != zoneId) {
+        Zone upd = *other;
+        upd.fonteInput = -1;
+        gateway.zones.upsert(upd);
     }
     Zone z = *zc;
     z.fonteInput = input;
@@ -2755,7 +2753,7 @@ bool IrrigationModule::gwApplyMirrorMapping(int8_t input, uint8_t zoneId, bool i
         settings.digitalInActiveLow &= (uint8_t)~(1u << input);
     saveIrrigationSettings(settings);
     saveGatewayState();
-    auditEvent(AuditOrigin::PAINEL, AuditAction::CONFIG_EPOCH, zoneId, AuditResult::OK);
+    auditEvent(AuditOrigin::PAINEL, AuditAction::ESPELHO, zoneId, AuditResult::OK);
     return true;
 }
 
@@ -2764,11 +2762,12 @@ bool IrrigationModule::gwDeleteMirrorMapping(int8_t input)
     const Zone *z = gateway.zones.byFonte(input);
     if (!z)
         return false;
+    uint8_t savedId = z->id;
     Zone upd = *z;
     upd.fonteInput = -1;
     gateway.zones.upsert(upd);
     saveGatewayState();
-    auditEvent(AuditOrigin::PAINEL, AuditAction::CONFIG_EPOCH, z->id, AuditResult::OK);
+    auditEvent(AuditOrigin::PAINEL, AuditAction::ESPELHO, savedId, AuditResult::OK);
     return true;
 }
 
