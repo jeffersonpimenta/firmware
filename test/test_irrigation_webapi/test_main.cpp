@@ -1186,6 +1186,47 @@ static void test_buildMirror_shape()
     TEST_ASSERT_NOT_NULL(strstr(buf, "\"zoneId\":0"));
 }
 
+// ── Sistema restore — importConfigTablesFromBackup ────────────────────────────
+
+static void test_import_config_tables_ok()
+{
+    // Envelope §5.5 mínimo com sub-objeto "config" (como buildClientBackup gera).
+    // parseZoneUpsert requer: id(1..255), name(não vazio), node(inteiro!=0),
+    //   tipo(0|1), index(0..7), maxMin(1..120), padraoMin(1..maxMin).
+    // parseGroupUpsert requer: id(0..8), zonas([inteiros]!=vazio), minOpen>=1,
+    //   maxOpen==0 ou >=minOpen.
+    const char *env =
+        "{\"fmt\":\"irrig-vault\",\"version\":1,\"clients\":[{"
+        "\"id\":\"faz1\",\"gateway\":\"!a1b2c3d4\","
+        "\"canal\":{\"psk_b64\":\"AAAA\"},"
+        "\"config\":{"
+          "\"zonas\":[{\"id\":3,\"name\":\"Horta\",\"node\":16,\"tipo\":0,\"index\":0,\"maxMin\":120,\"padraoMin\":20}],"
+          "\"programas\":[],"
+          "\"intertravamentos\":[],"
+          "\"grupos\":[{\"id\":1,\"nome\":\"G1\",\"zonas\":[3],\"minOpen\":1,\"maxOpen\":1}]"
+        "}"
+        "}]}";
+    ZoneTable z; ProgramScheduler s; InterlockTable il; HydraulicGroupTable g;
+    ImportCounts c; char err[48] = {0};
+    bool ok = importConfigTablesFromBackup(env, strlen(env), z, s, il, g, c, err, sizeof(err));
+    TEST_ASSERT_TRUE_MESSAGE(ok, err);
+    TEST_ASSERT_EQUAL_UINT8(1, c.zonas);
+    TEST_ASSERT_EQUAL_UINT8(0, c.programas);
+    TEST_ASSERT_EQUAL_UINT8(0, c.intertravamentos);
+    TEST_ASSERT_EQUAL_UINT8(1, c.grupos);
+    TEST_ASSERT_NOT_NULL(z.byId(3));
+}
+
+static void test_import_rejects_bad_envelope()
+{
+    const char *bad = "{\"fmt\":\"nope\"}";
+    ZoneTable z; ProgramScheduler s; InterlockTable il; HydraulicGroupTable g;
+    ImportCounts c; char err[48] = {0};
+    bool ok = importConfigTablesFromBackup(bad, strlen(bad), z, s, il, g, c, err, sizeof(err));
+    TEST_ASSERT_FALSE(ok);
+    TEST_ASSERT_EQUAL_size_t(0, z.count()); // tabela intacta
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -1279,6 +1320,9 @@ void setup()
     RUN_TEST(test_parseMirrorMapping_validates_input_range);
     RUN_TEST(test_parseMirrorMapping_ok);
     RUN_TEST(test_buildMirror_shape);
+    // Sistema restore — Task 1
+    RUN_TEST(test_import_config_tables_ok);
+    RUN_TEST(test_import_rejects_bad_envelope);
     exit(UNITY_END());
 }
 

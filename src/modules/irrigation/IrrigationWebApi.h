@@ -251,6 +251,21 @@ struct SurveyStartReq {
 // hasCoord = lat E lon presentes. Nunca falha (pr.ok sempre true).
 ParseResult parseSurveyStart(const char *json, size_t len, SurveyStartReq &out);
 
+// ── Sistema restore — import de tabelas de configuração (§5.5) ───────────────
+
+struct ImportCounts {
+    uint8_t zonas = 0;
+    uint8_t programas = 0;
+    uint8_t intertravamentos = 0;
+    uint8_t grupos = 0;
+};
+// Aplica os 4 arrays de tabela do primeiro client do envelope. NÃO toca PSK/estações.
+// false = envelope inválido (validateEnvelope) — tabelas ficam intactas.
+bool importConfigTablesFromBackup(const char *json, size_t len, ZoneTable &zones,
+                                  ProgramScheduler &sched, InterlockTable &interlocks,
+                                  HydraulicGroupTable &groups, ImportCounts &out,
+                                  char *err, size_t errCap);
+
 // ── Modo Espelhamento UI — web helpers ────────────────────────────────────────
 
 // {enabled: bool}. Falha se "enabled" ausente.

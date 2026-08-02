@@ -1,4 +1,5 @@
 #include "modules/irrigation/IrrigationWebApi.h"
+#include "modules/irrigation/ServiceBackup.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -1073,6 +1074,112 @@ size_t buildMirror(char *buf, size_t cap, bool enabled, const ZoneTable &zones,
     w.endArray();
     w.endObject();
     return w.done();
+}
+
+// ── Sistema restore — import de tabelas de configuração (§5.5) ───────────────
+
+namespace {
+
+using IrrigationService::Slice;
+
+// Itera um array dentro de um sub-objeto do client, aplicando um callback por elemento.
+// Retorna true mesmo que a chave esteja ausente (0 elementos = sem erro).
+bool importArray(const char *obj, size_t on, const char *key,
+                 void *ctx, bool (*applyElem)(void *, Slice))
+{
+    Slice arr;
+    if (!IrrigationService::jsonMember(obj, on, key, arr))
+        return true; // ausente = 0 itens, não é erro
+    return IrrigationService::jsonForEachArray(arr, ctx, applyElem);
+}
+
+struct ZCtx { ZoneTable *t; uint8_t *n; };
+bool applyZone(void *v, Slice e)
+{
+    auto *x = static_cast<ZCtx *>(v);
+    Zone z{};
+    if (parseZoneUpsert(e.p, e.n, z).ok && x->t->upsert(z))
+        (*x->n)++;
+    return true;
+}
+
+struct PCtx { ProgramScheduler *t; uint8_t *n; };
+bool applyProgram(void *v, Slice e)
+{
+    auto *x = static_cast<PCtx *>(v);
+    Program p{};
+    if (parseProgramUpsert(e.p, e.n, p).ok && x->t->upsert(p))
+        (*x->n)++;
+    return true;
+}
+
+struct ICtx { InterlockTable *t; uint8_t *n; };
+bool applyInterlock(void *v, Slice e)
+{
+    auto *x = static_cast<ICtx *>(v);
+    InterlockRule r{};
+    if (parseInterlockUpsert(e.p, e.n, r).ok && x->t->upsert(r))
+        (*x->n)++;
+    return true;
+}
+
+struct GCtx { HydraulicGroupTable *t; uint8_t *n; };
+bool applyGroup(void *v, Slice e)
+{
+    auto *x = static_cast<GCtx *>(v);
+    HydraulicGroup g{};
+    if (parseGroupUpsert(e.p, e.n, g).ok && x->t->upsert(g))
+        (*x->n)++;
+    return true;
+}
+
+// Callback de envelopeForEachClient: captura apenas o primeiro client e para.
+struct FirstClientCtx { Slice *dst; };
+bool firstClientCb(void *c, Slice cl)
+{
+    auto *ctx = static_cast<FirstClientCtx *>(c);
+    *ctx->dst = cl;
+    return false; // para após o 1º
+}
+
+} // anonymous namespace
+
+bool importConfigTablesFromBackup(const char *json, size_t len, ZoneTable &zones,
+                                  ProgramScheduler &sched, InterlockTable &interlocks,
+                                  HydraulicGroupTable &groups, ImportCounts &out,
+                                  char *err, size_t errCap)
+{
+    out = ImportCounts{};
+    if (!IrrigationService::validateEnvelope(json, len, err, errCap))
+        return false;
+
+    // Obtém o primeiro client do envelope.
+    Slice client{};
+    FirstClientCtx fcc{&client};
+    IrrigationService::envelopeForEachClient(json, len, &fcc, firstClientCb);
+    if (!client.p) {
+        if (errCap) snprintf(err, errCap, "sem client");
+        return false;
+    }
+
+    // Os 4 arrays de configuração ficam dentro do sub-objeto "config" do client
+    // (ver buildClientBackup em ServiceBackup.cpp: w.key("config"); w.beginObject(); ...).
+    Slice config{};
+    if (!IrrigationService::jsonMember(client.p, client.n, "config", config)) {
+        // Envelope sem "config" (e.g. versão antiga sem esse wrapper): tratar como 0 itens.
+        return true;
+    }
+
+    ZCtx   zc{&zones,      &out.zonas};
+    PCtx   pc{&sched,      &out.programas};
+    ICtx   ic{&interlocks, &out.intertravamentos};
+    GCtx   gc{&groups,     &out.grupos};
+
+    importArray(config.p, config.n, "zonas",            &zc, applyZone);
+    importArray(config.p, config.n, "programas",        &pc, applyProgram);
+    importArray(config.p, config.n, "intertravamentos", &ic, applyInterlock);
+    importArray(config.p, config.n, "grupos",           &gc, applyGroup);
+    return true;
 }
 
 } // namespace IrrigationWeb
