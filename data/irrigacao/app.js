@@ -2523,13 +2523,13 @@ async function mrSave() {
     invertido: !!d.invertido,
     habilitado: !!d.habilitado,
   });
-  if (r.ok) renderEspelhamento().catch(() => {});
+  if (r.ok) { mrUI = { screen: 'list', draft: null, errors: [], deleteConfirm: false }; renderEspelhamento().catch(() => {}); }
   else { mrUI.errors = (r.body && Array.isArray(r.body.errors)) ? r.body.errors : ['Falha ao salvar.']; mrRender(); }
 }
 
 async function mrDelete() {
   const r = await postJson('/mirror/mapping/delete', { input: num(mrUI.draft.input) });
-  if (r.ok) renderEspelhamento().catch(() => {});
+  if (r.ok) { mrUI = { screen: 'list', draft: null, errors: [], deleteConfirm: false }; renderEspelhamento().catch(() => {}); }
   else { mrUI.deleteConfirm = false; mrUI.errors = ['Falha ao excluir.']; mrRender(); }
 }
 
