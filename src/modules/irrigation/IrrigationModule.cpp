@@ -2713,6 +2713,74 @@ size_t IrrigationModule::gwBuildAlerts(char *buf, size_t cap)
     return IrrigationWeb::buildAlerts(gateway.alerts, millis(), lastAckAllMs, buf, cap);
 }
 
+// ---------------------------------------------------------------------------
+// Modo Espelhamento UI (Fase X): glue methods para os endpoints CI-only.
+// ---------------------------------------------------------------------------
+
+void IrrigationModule::gwSetMirrorEnabled(bool enabled)
+{
+    gateway.mirror.setEnabled(enabled);
+    saveGatewayState();
+    auditEvent(AuditOrigin::PAINEL, AuditAction::CONFIG_EPOCH, 0, AuditResult::OK);
+}
+
+bool IrrigationModule::gwApplyMirrorMapping(int8_t input, uint8_t zoneId, bool invertido,
+                                            bool habilitado, char *err, size_t errCap)
+{
+    const Zone *zc = gateway.zones.byId(zoneId);
+    if (!zc) {
+        snprintf(err, errCap, "zona %u inexistente", zoneId);
+        return false;
+    }
+    // Limpa a porta em qualquer outra zona (1 zona por porta).
+    for (size_t i = 0; i < ZoneTable::MAX; i++) {
+        const Zone *zi = gateway.zones.zoneAt(i);
+        if (zi && zi->id != zoneId && zi->fonteInput == input) {
+            Zone upd = *zi;
+            upd.fonteInput = -1;
+            gateway.zones.upsert(upd);
+        }
+    }
+    Zone z = *zc;
+    z.fonteInput = input;
+    z.fonteEnabled = habilitado ? 1 : 0;
+    if (!gateway.zones.upsert(z)) {
+        snprintf(err, errCap, "tabela de zonas cheia");
+        return false;
+    }
+    // Polaridade: bit `input` de digitalInActiveLow nos settings do gateway.
+    if (invertido)
+        settings.digitalInActiveLow |= (uint8_t)(1u << input);
+    else
+        settings.digitalInActiveLow &= (uint8_t)~(1u << input);
+    saveIrrigationSettings(settings);
+    saveGatewayState();
+    auditEvent(AuditOrigin::PAINEL, AuditAction::CONFIG_EPOCH, zoneId, AuditResult::OK);
+    return true;
+}
+
+bool IrrigationModule::gwDeleteMirrorMapping(int8_t input)
+{
+    const Zone *z = gateway.zones.byFonte(input);
+    if (!z)
+        return false;
+    Zone upd = *z;
+    upd.fonteInput = -1;
+    gateway.zones.upsert(upd);
+    saveGatewayState();
+    auditEvent(AuditOrigin::PAINEL, AuditAction::CONFIG_EPOCH, z->id, AuditResult::OK);
+    return true;
+}
+
+size_t IrrigationModule::gwBuildMirror(char *buf, size_t cap)
+{
+    bool live[4] = {false, false, false, false};
+    for (uint8_t i = 0; i < 4 && i < IrrigationSettings::MAX_DIGITAL_IN; i++)
+        live[i] = gateway.mirror.inputActive(i);
+    return IrrigationWeb::buildMirror(buf, cap, gateway.mirror.enabled(), gateway.zones,
+                                      settings.digitalInActiveLow, live);
+}
+
 bool IrrigationModule::portalPulse(const IrrigationWeb::PortalPulseReq &p)
 {
     // Teste de pulso local: abre a válvula com fechamento automático pelo timer fail-safe.

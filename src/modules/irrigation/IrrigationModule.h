@@ -119,6 +119,13 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     size_t gwBuildBackup(char *buf, size_t cap);
     // Alertas não reconhecidos (§8.1–§8.3) p/ a Visão Geral do painel. Vazio ("[]") fora do gateway.
     size_t gwBuildAlerts(char *buf, size_t cap);
+    // Modo Espelhamento UI (Fase X): habilita/desabilita o espelho; edita/remove mapeamento porta→zona;
+    // serializa o estado ao vivo. Chamados pelos endpoints CI-only /api/irrigation/mirror/*.
+    void gwSetMirrorEnabled(bool enabled);
+    bool gwApplyMirrorMapping(int8_t input, uint8_t zoneId, bool invertido, bool habilitado,
+                              char *err, size_t errCap);
+    bool gwDeleteMirrorMapping(int8_t input);
+    size_t gwBuildMirror(char *buf, size_t cap);
 
     // --- Serviço do portal de campo (todos os papéis). Chamados pela cola HTTP (IrrigationPortalEndpoints). ---
     void portalFillNodeState(IrrigationWeb::NodeStateCtx &out) const;
