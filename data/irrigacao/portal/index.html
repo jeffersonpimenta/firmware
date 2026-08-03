@@ -27,8 +27,8 @@
 
   <header class="top">
     <div>
-      <div class="farm">Portal do Nó</div>
-      <div class="sub">canal privado</div>
+      <div class="farm" id="hdrName">Portal do Nó</div>
+      <div class="sub" id="hdrSub">canal privado</div>
     </div>
     <span id="apLeft" class="chip gray hidden"></span>
   </header>
@@ -129,12 +129,29 @@
         <div id="svcLogList" class="muted">—</div>
       </div>
     </section>
+
+    <section id="tab-enlace" class="panel hidden">
+      <div class="card">
+        <h2>Qualidade do enlace</h2>
+        <div class="fp-grid">
+          <div class="fp-stat"><div class="lbl">SNR</div><div class="val" id="enlSnr">—</div></div>
+          <div class="fp-stat"><div class="lbl">RSSI</div><div class="val" id="enlRssi">—</div></div>
+        </div>
+        <div class="fp-spark" id="enlSpark"></div>
+        <div class="muted" style="font-size:11px;margin-top:6px;">SNR nas últimas leituras · atualiza a cada heartbeat</div>
+      </div>
+      <div class="card">
+        <h2>Vizinhos na malha</h2>
+        <div id="enlNeighbors" class="stack"><span class="muted">—</span></div>
+      </div>
+    </section>
   </main>
 
   <nav class="tabs">
     <button data-tab="node" class="tab active">Este&nbsp;nó</button>
     <button data-tab="net" class="tab">Rede</button>
     <button data-tab="survey" class="tab survey-tab">Cobertura</button>
+    <button data-tab="enlace" class="tab rep-only hidden">Enlace</button>
     <button data-tab="svcclients" class="tab svc-only hidden">Clientes</button>
     <button data-tab="svcnet" class="tab svc-only hidden">Rede&nbsp;(cli.)</button>
     <button data-tab="svclog" class="tab svc-only hidden">Log</button>

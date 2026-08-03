@@ -1424,3 +1424,44 @@ body {
 .maint-row .btn {
   flex: 1;
 }
+
+/* ===== Componentes do portal de campo (mockup Irrigacao Portal) ===== */
+.field-portal .hidden-role { display: none !important; }
+.field-portal .fp-hd { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.field-portal .fp-hd .ttl { font-size: 16px; font-weight: 700; color: var(--text); }
+.field-portal .fp-lbl { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
+.field-portal .fp-note { background: oklch(0.97 0.003 100); border-radius: 12px; padding: 12px 14px; font-size: 12px; color: var(--muted); line-height: 1.4; }
+.field-portal .fp-grid { display: flex; gap: 8px; }
+.field-portal .fp-stat { flex: 1; background: oklch(0.97 0.003 100); border-radius: 12px; padding: 10px 12px; min-width: 0; }
+.field-portal .fp-stat .lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.field-portal .fp-stat .val { font-size: 16px; font-weight: 700; color: var(--text); margin-top: 2px; }
+.field-portal .fp-stat .val.sm { font-size: 13px; font-weight: 600; margin-top: 4px; }
+.field-portal .fp-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.field-portal .fp-pill { font-size: 12.5px; font-weight: 600; padding: 6px 12px; border-radius: 999px; border: 1.5px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; font-family: inherit; }
+.field-portal .fp-pill.on { background: oklch(0.47 0.1 150 / 0.12); color: var(--green); border-color: transparent; }
+.field-portal .fp-pill.sel { border-color: var(--green); color: var(--green); background: oklch(0.47 0.1 150 / 0.08); }
+.field-portal .fp-seg { display: flex; gap: 6px; }
+.field-portal .fp-seg button { flex: 1; font-family: inherit; border: 1.5px solid var(--border); padding: 8px; border-radius: 8px; background: transparent; color: var(--muted); font-size: 12.5px; font-weight: 700; cursor: pointer; }
+.field-portal .fp-seg button.sel { border-color: var(--green); color: var(--green); background: oklch(0.47 0.1 150 / 0.1); }
+.field-portal .fp-log { background: oklch(0.97 0.003 100); border-radius: 12px; overflow: hidden; }
+.field-portal .fp-log .row { display: flex; gap: 10px; align-items: baseline; padding: 9px 12px; border-bottom: 1px solid var(--border); }
+.field-portal .fp-log .row:last-child { border-bottom: none; }
+.field-portal .fp-log .ts { width: 74px; flex-shrink: 0; font-size: 10.5px; color: var(--muted); }
+.field-portal .fp-log .ac { flex: 1; min-width: 0; font-size: 12.5px; color: var(--text); }
+.field-portal .fp-kv { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+.field-portal .fp-kv .k { color: var(--muted); }
+.field-portal .fp-kv .v { font-weight: 600; color: var(--text); }
+.field-portal .fp-confirm { background: oklch(0.55 0.16 30 / 0.08); border: 1px solid oklch(0.55 0.16 30 / 0.3); border-radius: 10px; padding: 10px 12px; margin-top: 10px; }
+.field-portal .fp-confirm .msg { font-size: 12px; color: var(--text); }
+.field-portal .fp-confirm .btns { display: flex; gap: 8px; margin-top: 8px; }
+.field-portal .fp-node { border-radius: 12px; background: oklch(0.97 0.003 100); padding: 11px 13px; }
+.field-portal .fp-node .hd { display: flex; justify-content: space-between; gap: 8px; }
+.field-portal .fp-node .id { font-family: monospace; font-size: 12.5px; font-weight: 600; color: var(--text); }
+.field-portal .fp-node .meta { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+.field-portal .fp-node .acts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.field-portal .fp-spark { display: flex; gap: 3px; align-items: flex-end; height: 36px; margin-top: 12px; }
+.field-portal .fp-spark > i { flex: 1; border-radius: 2px; background: oklch(0.47 0.1 150 / 0.5); }
+.field-portal .fp-active { display: flex; align-items: center; gap: 8px; justify-content: center; padding: 10px; border-radius: 10px; background: oklch(0.47 0.1 150 / 0.1); color: var(--green); font-size: 13px; font-weight: 600; }
+.field-portal .fp-active .dot { width: 8px; height: 8px; border-radius: 999px; background: var(--green); }
+.field-portal .fp-pulseopen { text-align: center; padding: 10px; border-radius: 10px; background: oklch(0.47 0.1 150 / 0.12); color: var(--green); font-size: 13px; font-weight: 600; }
+.field-portal .card .stack { display: flex; flex-direction: column; gap: 10px; }
