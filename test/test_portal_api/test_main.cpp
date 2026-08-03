@@ -2,8 +2,10 @@
 #include "TestUtil.h"
 #include "modules/irrigation/AuditLog.h"
 #include "modules/irrigation/PortalApi.h"
+#include <cstring>
 #include <stdio.h>
 #include <string.h>
+#include <string>
 #include <unity.h>
 
 using namespace IrrigationWeb;
@@ -268,6 +270,30 @@ static void test_buildNodeState_uptimeS()
     TEST_ASSERT_TRUE(contains(buf, "\"uptimeS\":1234567"));
 }
 
+static void test_buildLink_serializa()
+{
+    IrrigationWeb::LinkCtx ctx;
+    ctx.snrQuarterDb = 33;
+    ctx.rssiDbm = -72;
+    ctx.histCount = 3;
+    ctx.hist[0] = 40; ctx.hist[1] = 60; ctx.hist[2] = 80;
+    ctx.neighborCount = 1;
+    ctx.neighbors[0].node = 0xA1B2C3D4u;
+    ctx.neighbors[0].snrQuarterDb = 33;
+    ctx.neighbors[0].hops = 1;
+    strncpy(ctx.neighbors[0].name, "GW", sizeof(ctx.neighbors[0].name) - 1);
+    char buf[1024];
+    size_t n = IrrigationWeb::buildLink(ctx, buf, sizeof(buf));
+    TEST_ASSERT_TRUE(n > 0);
+    std::string s(buf, n);
+    TEST_ASSERT_TRUE(s.find("\"snrQuarterDb\":33") != std::string::npos);
+    TEST_ASSERT_TRUE(s.find("\"rssiDbm\":-72") != std::string::npos);
+    TEST_ASSERT_TRUE(s.find("\"history\":[40,60,80]") != std::string::npos);
+    TEST_ASSERT_TRUE(s.find("2712847316") != std::string::npos); // 0xA1B2C3D4
+    TEST_ASSERT_TRUE(s.find("\"hops\":1") != std::string::npos);
+    TEST_ASSERT_TRUE(s.find("\"name\":\"GW\"") != std::string::npos);
+}
+
 void setup()
 {
     UNITY_BEGIN();
@@ -293,6 +319,7 @@ void setup()
     RUN_TEST(test_parseProvision_farmNameOptional);
     RUN_TEST(test_buildNodeState_provisioned);
     RUN_TEST(test_buildNodeState_uptimeS);
+    RUN_TEST(test_buildLink_serializa);
     UNITY_END();
 }
 

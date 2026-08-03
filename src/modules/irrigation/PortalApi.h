@@ -85,4 +85,21 @@ struct PortalCoords {
 size_t buildCoords(const PortalCoords &c, char *buf, size_t cap);
 ParseResult parseCoords(const char *json, size_t len, PortalCoords &out);
 
+// --- Aba "Enlace" (repetidor, §7.2) ---
+struct LinkNeighbor {
+    uint32_t node = 0;
+    int8_t snrQuarterDb = 0;
+    uint8_t hops = 0;
+    char name[16] = {0};
+};
+struct LinkCtx {
+    int8_t snrQuarterDb = 0;  // enlace ao gateway (último rx)
+    int16_t rssiDbm = 0;
+    uint8_t histCount = 0;
+    uint8_t hist[12] = {0};   // amostras já normalizadas 0..100 p/ a barra
+    uint8_t neighborCount = 0;
+    LinkNeighbor neighbors[8];
+};
+size_t buildLink(const LinkCtx &ctx, char *buf, size_t cap);
+
 } // namespace IrrigationWeb

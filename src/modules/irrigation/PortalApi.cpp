@@ -194,4 +194,31 @@ ParseResult parseCoords(const char *json, size_t len, PortalCoords &out)
     return r;
 }
 
+size_t buildLink(const LinkCtx &ctx, char *buf, size_t cap)
+{
+    JsonWriter w(buf, cap);
+    w.beginObject();
+    w.keyNum("snrQuarterDb", (int64_t)ctx.snrQuarterDb);
+    w.keyNum("rssiDbm", (int64_t)ctx.rssiDbm);
+    w.key("history");
+    w.beginArray();
+    for (uint8_t i = 0; i < ctx.histCount; i++)
+        w.num((int64_t)ctx.hist[i]);
+    w.endArray();
+    w.key("neighbors");
+    w.beginArray();
+    for (uint8_t i = 0; i < ctx.neighborCount; i++) {
+        const LinkNeighbor &n = ctx.neighbors[i];
+        w.beginObject();
+        w.keyNum("node", (int64_t)n.node);
+        w.keyNum("snrQuarterDb", (int64_t)n.snrQuarterDb);
+        w.keyNum("hops", (int64_t)n.hops);
+        w.keyStr("name", n.name);
+        w.endObject();
+    }
+    w.endArray();
+    w.endObject();
+    return w.done();
+}
+
 } // namespace IrrigationWeb
