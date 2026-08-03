@@ -256,6 +256,18 @@ static void test_buildNodeState_provisioned()
     TEST_ASSERT_TRUE(contains(buf, "\"provisioned\":true"));
 }
 
+static void test_buildNodeState_uptimeS()
+{
+    NodeStateCtx c = {};
+    c.role = 2;
+    c.name = "";
+    c.uptimeS = 1234567;
+    char buf[512];
+    size_t n = buildNodeState(c, buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_TRUE(contains(buf, "\"uptimeS\":1234567"));
+}
+
 void setup()
 {
     UNITY_BEGIN();
@@ -280,6 +292,7 @@ void setup()
     RUN_TEST(test_parseProvision_rejectsBadRole);
     RUN_TEST(test_parseProvision_farmNameOptional);
     RUN_TEST(test_buildNodeState_provisioned);
+    RUN_TEST(test_buildNodeState_uptimeS);
     UNITY_END();
 }
 

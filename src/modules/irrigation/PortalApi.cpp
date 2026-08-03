@@ -22,6 +22,7 @@ size_t buildNodeState(const NodeStateCtx &ctx, char *buf, size_t cap)
     w.keyNum("vpanelCentiV", ctx.vpanelCentiV);
     w.keyNum("flags", ctx.flags);
     w.keyNum("apSecondsLeft", (int64_t)ctx.apSecondsLeft);
+    w.keyNum("uptimeS", (int64_t)ctx.uptimeS);
     w.endObject();
     return w.done();
 }

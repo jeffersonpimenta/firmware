@@ -24,6 +24,7 @@ struct NodeStateCtx {
     uint16_t vpanelCentiV = 0; // 0 se não medido
     uint8_t flags = 0;         // HbFlags (tamper/safe/hibernation)
     uint32_t apSecondsLeft = 0;
+    uint32_t uptimeS = 0; // segundos desde o boot (millis()/1000)
 };
 size_t buildNodeState(const NodeStateCtx &ctx, char *buf, size_t cap);
 

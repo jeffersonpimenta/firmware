@@ -2669,6 +2669,7 @@ void IrrigationModule::portalFillNodeState(IrrigationWeb::NodeStateCtx &out) con
     out.vpanelCentiV = 0; // tensão de painel não medida na estação por enquanto (follow-up)
     out.flags = safeMode ? HB_FLAG_SAFE_MODE : 0;
     out.apSecondsLeft = portal.secondsLeft(millis());
+    out.uptimeS = millis() / 1000;
 }
 
 // Wizard de 1º boot (§6): grava o papel escolhido e reinicia. Um GATEWAY de fábrica
