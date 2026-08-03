@@ -236,7 +236,7 @@ static void hLink(HTTPRequest *req, HTTPResponse *res)
     }
     LinkCtx c = {};
     irrigationModule->portalFillLink(c);
-    char buf[512];
+    char buf[1024]; // até 8 vizinhos + histórico não cabem em 512
     if (!buildLink(c, buf, sizeof(buf))) {
         res->setStatusCode(500);
         return;
