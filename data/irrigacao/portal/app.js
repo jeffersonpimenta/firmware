@@ -117,6 +117,24 @@ async function refreshLog() {
 }
 document.getElementById("logRefresh").addEventListener("click", refreshLog);
 
+async function refreshEnlace() {
+  if (lastRole !== ROLE_REPETIDOR) return;
+  const { ok, body } = await j("/api/portal/link");
+  if (!ok) return;
+  document.getElementById("enlSnr").textContent = (body.snrQuarterDb / 4).toFixed(2).replace('.', ',') + " dB";
+  document.getElementById("enlRssi").textContent = body.rssiDbm + " dBm";
+  const hist = body.history || [];
+  const max = Math.max(1, ...hist);
+  document.getElementById("enlSpark").innerHTML = hist.map((v) => `<i style="height:${Math.round((v / max) * 100)}%"></i>`).join("");
+  const ns = body.neighbors || [];
+  document.getElementById("enlNeighbors").innerHTML = ns.length ? ns.map((n) => {
+    const snr = (n.snrQuarterDb / 4).toFixed(1).replace('.', ',');
+    const q = n.snrQuarterDb >= 24 ? "var(--green)" : n.snrQuarterDb >= 8 ? "var(--amber)" : "var(--red)";
+    return `<div class="fp-node"><div class="hd"><span class="id">${nodeHex(n.node)}</span><span style="font-size:11px;font-weight:700;color:${q};">${snr} dB</span></div>
+      <div class="meta">${n.name || "—"} · ${n.hops} ${n.hops === 1 ? "salto" : "saltos"}</div></div>`;
+  }).join("") : "<span class='muted'>nenhum vizinho ouvido</span>";
+}
+
 async function loadCoords() {
   const { ok, body } = await j("/api/portal/coords");
   if (ok) {
@@ -142,6 +160,7 @@ async function refresh() {
     renderGpos(body);
     updateApChip(body);
     if (body.role === ROLE_SERVICO && !svcInit) initService();
+    refreshEnlace();
   }
   if (lastRole !== ROLE_REPETIDOR) await refreshSensors();
 }
@@ -202,6 +221,7 @@ document.querySelectorAll("nav.tabs button").forEach((b) =>
     b.classList.add("active");
     document.querySelectorAll(".panel").forEach((t) => t.classList.add("hidden"));
     document.getElementById("tab-" + b.dataset.tab).classList.remove("hidden");
+    if (b.dataset.tab === "enlace") refreshEnlace();
   })
 );
 

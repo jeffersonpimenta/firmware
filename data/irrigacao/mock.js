@@ -274,8 +274,9 @@ const MOCK_DATA = {
   portalNode: {
     role: 0, name: 'Horta Norte', boundGateway: 0xa1b2c3d4, configEpoch: 17,
     safeMode: false, provisioned: true, numValves: 2, numGpos: 1,
-    valveStates: 1, gpoStates: 0, vbatCentiV: 1250, vpanelCentiV: 1380,
+    valveStates: 1, gpoStates: 0, vbatCentiV: 1250, vpanelCentiV: 1350,
     flags: 0, apSecondsLeft: 540, latE7: -221234567, lonE7: -476543210,
+    uptimeS: 1234567,
   },
   portalSensors: {
     sensors: [
@@ -298,8 +299,10 @@ const MOCK_DATA = {
 
 // Estado mutável (alterações de UI persiste até reload)
 let STATE = JSON.parse(JSON.stringify(MOCK_DATA));
-// ?wizard=1 na URL do portal força um nó não-provisionado (mostra o wizard de 1º boot §6).
+// ?wizard=1 → nó não-provisionado (wizard de 1º boot §6).
 STATE.portalNode.provisioned = !/[?&]wizard(=1)?/.test(location.search);
+// ?role=N → força papel do nó (ex.: ?role=3 para device SERVIÇO §11.8).
+{ const m = location.search.match(/[?&]role=(\d)/); if (m) STATE.portalNode.role = +m[1]; }
 
 // Substitui fetch global
 const origFetch = window.fetch;
@@ -323,6 +326,32 @@ window.fetch = async function (url, opts) {
     if (ppath.startsWith('/log')) return mockResponse(STATE.portalLog);
     if (ppath.startsWith('/coords')) return mockResponse({ latE7: STATE.portalNode.latE7, lonE7: STATE.portalNode.lonE7 });
     if (ppath.startsWith('/net/roster')) return mockResponse(STATE.portalRoster);
+    if (ppath.startsWith('/link')) return mockResponse({
+      snrQuarterDb: 33, rssiDbm: -72,
+      history: [40, 55, 50, 65, 70, 60, 75, 80, 72, 78, 85, 82],
+      neighbors: [
+        { node: 0xa1b2c3d4, snrQuarterDb: 33, hops: 1, name: 'GW' },
+        { node: 0x12345678, snrQuarterDb: 20, hops: 2, name: 'EST-2' },
+      ],
+    });
+    if (ppath.startsWith('/service/clients')) return mockResponse({
+      clients: [
+        { id: 'fazenda-bela-vista', nome: 'Fazenda Bela Vista', canal: 'farm', estacoes: 4, active: true },
+        { id: 'sitio-sao-joao',    nome: 'Sítio São João',    canal: 'sitio', estacoes: 2, active: false },
+      ],
+    });
+    if (ppath.startsWith('/service/log')) return mockResponse({
+      log: [
+        { up: 3720, ts: Math.floor(Date.now() / 1000) - 300, ev: 'client_select', node: 0xa1b2c3d4 },
+        { up: 120,  ts: 0,                                    ev: 'boot' },
+      ],
+    });
+    if (ppath.startsWith('/service/scan')) return mockResponse({
+      nodes: [
+        { node: 0xa1b2c3d4, role: 1, epoch: 17, vbat: 1250, fw: 0x20301, snr: 12 },
+        { node: 0xe5f6a7b8, role: 0, epoch: 17, vbat: 1180, fw: 0x20301, snr: 8  },
+      ],
+    });
     return mockResponse({ ok: true });
   }
 
