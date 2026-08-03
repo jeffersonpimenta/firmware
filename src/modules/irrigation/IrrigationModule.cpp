@@ -317,8 +317,10 @@ ProcessMessage IrrigationModule::handleReceived(const meshtastic_MeshPacket &mp)
     }
 
     // Track liveness of the bound gateway for NO_GATEWAY LED heuristic (spec §8.7).
-    if (settings.boundGateway != 0 && mp.from == settings.boundGateway)
+    if (settings.boundGateway != 0 && mp.from == settings.boundGateway) {
         lastGatewayRxMs = millis();
+        noteGatewayLink((int8_t)(mp.rx_snr * 4), (int16_t)mp.rx_rssi);
+    }
 
     switch (h.type) {
     case MSG_CMD_VALVULA:
@@ -2670,6 +2672,43 @@ void IrrigationModule::portalFillNodeState(IrrigationWeb::NodeStateCtx &out) con
     out.flags = safeMode ? HB_FLAG_SAFE_MODE : 0;
     out.apSecondsLeft = portal.secondsLeft(millis());
     out.uptimeS = millis() / 1000;
+}
+
+void IrrigationModule::noteGatewayLink(int8_t snrQ, int16_t rssi)
+{
+    linkSnrQ = snrQ;
+    linkRssi = rssi;
+    // normaliza SNR (~ -10..+10 dB → 0..80 quarter-dB deslocado) p/ 0..100 (altura de barra)
+    int v = snrQ + 40;
+    if (v < 0) v = 0;
+    if (v > 80) v = 80;
+    linkHist[linkHistHead] = (uint8_t)(v * 100 / 80);
+    linkHistHead = (linkHistHead + 1) % 12;
+    if (linkHistCount < 12)
+        linkHistCount++;
+}
+
+void IrrigationModule::portalFillLink(IrrigationWeb::LinkCtx &out) const
+{
+    out.snrQuarterDb = linkSnrQ;
+    out.rssiDbm = linkRssi;
+    out.histCount = linkHistCount;
+    for (uint8_t i = 0; i < linkHistCount; i++)
+        out.hist[i] = linkHist[(linkHistHead + 12 - linkHistCount + i) % 12];
+    out.neighborCount = 0;
+    size_t total = nodeDB->getNumMeshNodes();
+    for (size_t i = 0; i < total && out.neighborCount < 8; i++) {
+        meshtastic_NodeInfoLite *n = nodeDB->getMeshNodeByIndex(i);
+        if (!n || n->num == nodeDB->getNodeNum())
+            continue;
+        IrrigationWeb::LinkNeighbor &ln = out.neighbors[out.neighborCount++];
+        ln.node = n->num;
+        ln.snrQuarterDb = (int8_t)(n->snr * 4);
+        ln.hops = n->has_hops_away ? n->hops_away : 0;
+        const char *nm = (n->short_name[0]) ? n->short_name : "";
+        strncpy(ln.name, nm, sizeof(ln.name) - 1);
+        ln.name[sizeof(ln.name) - 1] = 0;
+    }
 }
 
 // Wizard de 1º boot (§6): grava o papel escolhido e reinicia. Um GATEWAY de fábrica

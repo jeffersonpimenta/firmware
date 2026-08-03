@@ -36,6 +36,7 @@ struct PortalGpoReq;
 struct PortalCoords;
 struct SurveyStartReq;
 struct ProvisionReq;
+struct LinkCtx;
 }
 
 // Saída de nível (relé/MOSFET) dos GPOs.
@@ -122,6 +123,7 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
 
     // --- Serviço do portal de campo (todos os papéis). Chamados pela cola HTTP (IrrigationPortalEndpoints). ---
     void portalFillNodeState(IrrigationWeb::NodeStateCtx &out) const;
+    void portalFillLink(IrrigationWeb::LinkCtx &out) const;
     bool portalPulse(const IrrigationWeb::PortalPulseReq &p);
     bool portalRunNetCommand(const IrrigationWeb::NetCommand &c);
     void portalFillSensors(IrrigationWeb::PortalSensorsCtx &out) const;
@@ -269,6 +271,13 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     uint32_t txSeq = 0;
     uint32_t lastHeartbeatMs = 0;
     uint32_t lastGatewayRxMs = 0; // last millis() we received a packet from boundGateway
+    // Enlace (repetidor): última métrica de rx do gateway + ring de histórico p/ o portal.
+    int8_t linkSnrQ = 0;
+    int16_t linkRssi = 0;
+    uint8_t linkHist[12] = {0};
+    uint8_t linkHistCount = 0;
+    uint8_t linkHistHead = 0;
+    void noteGatewayLink(int8_t snrQ, int16_t rssi);
     bool safeMode = false;
     bool provisioned = false; // false = nó de fábrica (sem config salva no boot) → wizard de 1º boot (§6)
     bool bootHeartbeatPending = true;
