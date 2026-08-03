@@ -2169,6 +2169,7 @@ function renderMais() {
     ['tamper', 'Tamper / manutenção', 'Violação de gabinete e janela de manutenção'],
     ['auditlog', 'Log de auditoria', 'Histórico completo de ações e eventos'],
     ['cobertura', 'Cobertura', 'Pesquisa de sinal (site survey)'],
+    ['malha', 'Malha / Enlace', 'Qualidade de rádio (SNR/RSSI) de cada nó'],
     ['sistema', 'Sistema', 'Backup e chave da rede'],
   ];
   view.innerHTML = items
@@ -2233,6 +2234,35 @@ function renderSistema() {
   btn.addEventListener('click', () => downloadBackup(btn, status));
 }
 
+// ===== Malha / Enlace (SNR/RSSI/bateria por nó) =====
+async function renderMalha() {
+  const list = await getJson('/stations').catch(() => []);
+  if (!list || !list.length) {
+    view.innerHTML = `<div class="card"><div class="sub">Nenhuma estação conhecida.</div></div>`;
+    return;
+  }
+  view.innerHTML = list
+    .map((s) => {
+      s = s || {};
+      const snrQ = s.snrQuarterDb;
+      const snr = snrQ != null ? (num(snrQ) / 4).toFixed(1) + ' dB' : '—';
+      const rssi = s.rssiDbm != null ? num(s.rssiDbm) + ' dBm' : '—';
+      const vbat = s.vbatCentiV != null ? fmtVolts(s.vbatCentiV) : '—';
+      // qualidade por SNR (quarter-dB): >=24 (6 dB) bom, >=8 (2 dB) médio, senão fraco
+      const q = snrQ == null ? 'gray' : num(snrQ) >= 24 ? 'green' : num(snrQ) >= 8 ? 'amber' : 'red';
+      const name = s.name ? esc(s.name) : nodeHex(s.node);
+      return `<div class="card">
+        <div class="sens-hdr"><span class="name">${name}</span><span class="chip ${q}">${snr}</span></div>
+        <div class="row3">
+          <div class="card stat"><div class="lbl">SNR</div><div class="val">${snr}</div></div>
+          <div class="card stat"><div class="lbl">RSSI</div><div class="val">${rssi}</div></div>
+          <div class="card stat"><div class="lbl">Bateria</div><div class="val">${vbat}</div></div>
+        </div>
+      </div>`;
+    })
+    .join('');
+}
+
 // ===== Roteamento =====
 const RENDER = {
   overview: renderOverview,
@@ -2247,6 +2277,7 @@ const RENDER = {
   auditlog: renderAuditLog,
   tamper: renderTamper,
   cobertura: renderCobertura,
+  malha: renderMalha,
   mais: renderMais,
   sistema: renderSistema,
 };
@@ -2254,10 +2285,10 @@ const RENDER = {
 // Rótulo mostrado na barra de volta ao entrar numa tela secundária via "Mais".
 const SECTION_LABELS = {
   grupos: 'Grupos', niveis: 'Nível', intertravamentos: 'Intertravamentos', sensores: 'Sensores',
-  gpo: 'Saídas (GPO)', tamper: 'Tamper', auditlog: 'Log', cobertura: 'Cobertura', sistema: 'Sistema',
+  gpo: 'Saídas (GPO)', tamper: 'Tamper', auditlog: 'Log', cobertura: 'Cobertura', malha: 'Malha', sistema: 'Sistema',
 };
 // Telas que se auto-atualizam (poll 3 s) via re-render completo.
-const POLLED = { overview: 1, stations: 1, sensores: 1, cobertura: 1 };
+const POLLED = { overview: 1, stations: 1, sensores: 1, cobertura: 1, malha: 1 };
 
 const subbar = document.getElementById('subbar');
 const subTitle = document.getElementById('subTitle');
