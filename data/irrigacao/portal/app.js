@@ -261,23 +261,32 @@ function initService() {
   // Esconde as abas de nó/rede-local; o device SERVICO usa Clientes/Rede(cliente)/Log.
   document.querySelectorAll('nav.tabs button:not(.svc-only):not(.survey-tab)').forEach((b) => b.classList.add("hidden"));
   document.querySelector('[data-tab="svcclients"]').click();
+  document.getElementById("hdrName").textContent = "Dispositivo de Serviço";
+  document.getElementById("hdrSub").textContent = "Cofre multi-cliente";
+  document.querySelectorAll(".rep-only").forEach((b) => b.classList.add("hidden"));
   loadClients();
   loadSvcLog();
 }
 
+let svcConfirmClient = null;
 async function loadClients() {
   const { ok, body } = await j("/api/portal/service/clients");
   const el = document.getElementById("clientsList");
   if (!ok || !body.clients) { el.textContent = "—"; return; }
-  el.innerHTML = body.clients.map((c) =>
-    `<p>${c.active ? "▶ " : ""}<b>${c.nome || c.id}</b> <small class="muted">${c.canal} · ${c.estacoes} nós</small>
-     ${c.active ? "<em>(ativo)</em>" : `<button data-sel="${c.id}">Selecionar</button>`}</p>`
-  ).join("") || "nenhum cliente no cofre";
-  el.querySelectorAll("button[data-sel]").forEach((b) => (b.onclick = () => selectClient(b.dataset.sel)));
+  el.innerHTML = `<div class="stack">` + (body.clients.map((c) => {
+    const badge = c.active ? `<span style="font-size:11px;font-weight:700;color:var(--green);">▶ ativo</span>`
+      : `<button data-sel="${c.id}">Selecionar</button>`;
+    const confirm = svcConfirmClient === c.id ? `<div class="fp-confirm"><div class="msg">Re-tunar no canal deste cliente? O dispositivo reinicia (~3 s).</div>
+      <div class="btns"><button class="btn ghost sm" data-cxl="1">Cancelar</button><button class="btn danger sm" data-cok="${c.id}">Confirmar</button></div></div>` : "";
+    return `<div class="fp-node"><div class="hd"><div><div style="font-weight:600;color:var(--text);font-size:14px;">${c.nome || c.id}</div>
+      <div class="meta">canal ${c.canal} · ${c.estacoes} nós</div></div>${badge}</div>${confirm}</div>`;
+  }).join("") || "nenhum cliente no cofre") + `</div>`;
+  el.querySelectorAll("button[data-sel]").forEach((b) => b.onclick = () => { svcConfirmClient = b.dataset.sel; loadClients(); });
+  const cxl = el.querySelector("[data-cxl]"); if (cxl) cxl.onclick = () => { svcConfirmClient = null; loadClients(); };
+  const cok = el.querySelector("[data-cok]"); if (cok) cok.onclick = () => doSelectClient(cok.dataset.cok);
 }
-
-async function selectClient(id) {
-  if (!confirm("Re-tunar no canal deste cliente? O device REINICIA (~3 s).")) return;
+async function doSelectClient(id) {
+  svcConfirmClient = null;
   await j("/api/portal/service/select", { method: "POST", body: JSON.stringify({ id }) });
   document.getElementById("clientsMsg").textContent = "Re-tunando… reconecte ao portal após o reboot.";
 }
@@ -305,18 +314,21 @@ async function pollScanSvc() {
   const { ok, body } = await j("/api/portal/service/scan");
   const el = document.getElementById("svcNodes");
   if (!ok || !body.nodes || !body.nodes.length) { el.textContent = "nenhum respondente ainda"; return; }
-  el.innerHTML = "<table><tr><th>nó</th><th>papel</th><th>epoch</th><th>bat</th><th>fw</th><th>snr</th><th></th></tr>" +
-    body.nodes.map((n) => {
-      const hx = nodeHex(n.node);
-      return `<tr><td class="mono">${hx}</td><td>${ROLES[n.role] || n.role}</td><td>${n.epoch}</td>
-        <td>${(n.vbat / 100).toFixed(1)}V</td><td>0x${(n.fw || 0).toString(16)}</td><td>${(n.snr / 4).toFixed(0)}</td>
-        <td><button data-rd="${hx}">Ler cfg</button> <button data-pulse="${hx}">Pulso</button>
-            <button data-zone="${hx}">Zona</button> <button data-rs="${hx}">RESYNC</button></td></tr>`;
-    }).join("") + "</table>";
-  el.querySelectorAll("button[data-rd]").forEach((b) => (b.onclick = () => readConfig(b.dataset.rd)));
-  el.querySelectorAll("button[data-pulse]").forEach((b) => (b.onclick = () => nodeAction(b.dataset.pulse, "pulse")));
-  el.querySelectorAll("button[data-zone]").forEach((b) => (b.onclick = () => nodeAction(b.dataset.zone, "zone")));
-  el.querySelectorAll("button[data-rs]").forEach((b) => (b.onclick = () => nodeAction(b.dataset.rs, "resync")));
+  el.innerHTML = `<div class="stack">` + body.nodes.map((n) => {
+    const hx = nodeHex(n.node);
+    return `<div class="fp-node"><div class="hd"><span class="id">${hx}</span><span style="font-size:11px;font-weight:600;color:var(--green);">${ROLES[n.role] || n.role}</span></div>
+      <div class="meta">epoch ${n.epoch} · ${(n.vbat / 100).toFixed(1).replace('.', ',')} V · fw 0x${(n.fw || 0).toString(16)} · snr ${(n.snr / 4).toFixed(0)}</div>
+      <div class="acts">
+        <button class="fp-pill" data-rd="${hx}">Ler cfg</button>
+        <button class="fp-pill" data-pulse="${hx}">Pulso</button>
+        <button class="fp-pill" data-zone="${hx}">Zona</button>
+        <button class="fp-pill" style="color:var(--red);border-color:oklch(0.55 0.16 30 / 0.4);" data-rs="${hx}">RESYNC</button>
+      </div></div>`;
+  }).join("") + `</div>`;
+  el.querySelectorAll("button[data-rd]").forEach((b) => b.onclick = () => readConfig(b.dataset.rd));
+  el.querySelectorAll("button[data-pulse]").forEach((b) => b.onclick = () => nodeAction(b.dataset.pulse, "pulse"));
+  el.querySelectorAll("button[data-zone]").forEach((b) => b.onclick = () => nodeAction(b.dataset.zone, "zone"));
+  el.querySelectorAll("button[data-rs]").forEach((b) => b.onclick = () => nodeAction(b.dataset.rs, "resync"));
 }
 
 async function nodeAction(node, action) {
@@ -356,12 +368,19 @@ function fillEditor(c) {
   CFG_PINS.forEach((k) => (html += `<label>${k} (csv) <input id="cfg_${k}" value="${(c[k] || []).join(",")}"></label>`));
   html += `<label>sensores (JSON) <textarea id="cfg_sensores" rows="4">${JSON.stringify(c.sensores || [])}</textarea></label>`;
   html += `<label>localInterlocks (JSON) <textarea id="cfg_localInterlocks" rows="4">${JSON.stringify(c.localInterlocks || [])}</textarea></label>`;
-  html += `<label>Rota <select id="cfg_route"><option value="direct">Direta (epoch+1)</option><option value="gateway">Via gateway</option></select></label>`;
-  html += `<button type="button" id="cfgSave">Gravar config</button>`;
+  html += `<div><div class="fp-lbl">Rota de gravação</div><div class="fp-seg" id="cfgSeg">
+    <button type="button" data-r="direct" class="sel">Direta (epoch+1)</button>
+    <button type="button" data-r="gateway">Via gateway</button></div></div>`;
+  html += `<button type="button" id="cfgSave" class="btn solid sm">Gravar config</button>`;
   const box = document.getElementById("cfgEditor");
   box.innerHTML = html;
   box.classList.remove("hidden");
   document.getElementById("cfgSave").onclick = writeConfig;
+  window.__cfgRoute = "direct";
+  box.querySelectorAll("#cfgSeg button").forEach((b) => b.onclick = () => {
+    window.__cfgRoute = b.dataset.r;
+    box.querySelectorAll("#cfgSeg button").forEach((x) => x.classList.toggle("sel", x === b));
+  });
 }
 
 async function writeConfig() {
@@ -376,7 +395,7 @@ async function writeConfig() {
     document.getElementById("cfgMsg").textContent = "JSON inválido em sensores/localInterlocks";
     return;
   }
-  const route = g("route").value;
+  const route = window.__cfgRoute || "direct";
   const { ok, body } = await j("/api/portal/service/node/config/write",
     { method: "POST", body: JSON.stringify({ node: cfgNode, route, config }) });
   document.getElementById("cfgMsg").textContent = ok ? "Config gravada" : (body.errors || ["erro"]).join("; ");
@@ -386,9 +405,10 @@ async function loadSvcLog() {
   const { ok, body } = await j("/api/portal/service/log");
   const el = document.getElementById("svcLogList");
   if (!ok || !body.log || !body.log.length) { el.textContent = "log vazio"; return; }
-  el.innerHTML = body.log.map((r) =>
-    `<p class="mono">up=${r.up}${r.ts ? " ts=" + r.ts : ""} <b>${r.ev}</b>${r.node ? " 0x" + (r.node >>> 0).toString(16) : ""}</p>`
-  ).join("");
+  el.innerHTML = `<div class="fp-log">` + body.log.map((r) => {
+    const ac = `${r.ev}${r.node ? " · 0x" + (r.node >>> 0).toString(16) : ""}`;
+    return `<div class="row"><span class="ts">up=${r.up}</span><span class="ac">${ac}</span></div>`;
+  }).join("") + `</div>`;
 }
 
 document.getElementById("svcScanBtn").addEventListener("click", startScanSvc);
