@@ -24,114 +24,124 @@
       <p id="wz-msg" class="muted"></p>
     </div>
   </div>
-  <header><h1>Portal do Nó</h1><span id="apLeft" class="muted"></span></header>
+
+  <header class="top">
+    <div>
+      <div class="farm">Portal do Nó</div>
+      <div class="sub">canal privado</div>
+    </div>
+    <span id="apLeft" class="chip gray hidden"></span>
+  </header>
+
+  <main class="portal-main">
+    <section id="tab-node" class="panel">
+      <div id="nodeState" class="card">Carregando…</div>
+      <div id="sensorsCard" class="card">
+        <h2>Sensores</h2>
+        <div id="sensorsList" class="muted">—</div>
+      </div>
+      <div id="gposCard" class="card hidden">
+        <h2>Saídas (GPO)</h2>
+        <div id="gposList"></div>
+        <span id="gpoMsg" class="muted"></span>
+      </div>
+      <div id="logCard" class="card">
+        <h2>Auditoria <button type="button" id="logRefresh" class="btn ghost sm">Atualizar</button></h2>
+        <div id="logList" class="muted">—</div>
+      </div>
+      <form id="coordsForm" class="card">
+        <h2>Coordenadas locais</h2>
+        <label>Latitude <input type="number" id="coordLat" step="0.0000001" value="0" /></label>
+        <label>Longitude <input type="number" id="coordLon" step="0.0000001" value="0" /></label>
+        <button type="submit" class="btn solid sm">Salvar</button>
+        <span id="coordMsg" class="muted"></span>
+      </form>
+      <form id="pulseForm" class="card">
+        <h2>Teste de pulso</h2>
+        <label>Válvula <input type="number" id="pulseValve" min="0" max="7" value="0" /></label>
+        <label>Duração (s) <input type="number" id="pulseDur" min="1" max="7200" value="10" /></label>
+        <button type="submit" class="btn solid sm">Abrir</button>
+        <span id="pulseMsg" class="muted"></span>
+      </form>
+    </section>
+
+    <section id="tab-net" class="panel hidden">
+      <form id="netForm" class="card">
+        <h2>Comandar zona (via gateway)</h2>
+        <label>Zona <select id="netZone"></select></label>
+        <label>Ação
+          <select id="netAction"><option value="open">Abrir</option><option value="close">Fechar</option></select>
+        </label>
+        <label>Duração (s) <input type="number" id="netDur" min="1" max="7200" value="300" /></label>
+        <button type="submit" class="btn solid sm">Enviar</button>
+        <span id="netMsg" class="muted"></span>
+      </form>
+    </section>
+
+    <!-- Fase 8d — modo cobertura (site survey §8.5); visível a estação + device SERVICO. -->
+    <section id="tab-survey" class="panel hidden">
+      <form id="surveyForm" class="card">
+        <h2>Modo cobertura (site survey)</h2>
+        <p class="muted">Emite beacons periódicos; o gateway registra SNR/RSSI de cada ponto.</p>
+        <label>Intervalo (s) <input type="number" id="svInterval" min="1" max="3600" value="5" /></label>
+        <label>Timeout (min) <input type="number" id="svTimeout" min="1" max="60" value="5" /></label>
+        <label>Latitude <input type="number" id="svLat" step="0.0000001" value="0" /></label>
+        <label>Longitude <input type="number" id="svLon" step="0.0000001" value="0" /></label>
+        <button type="submit" class="btn solid sm">Iniciar</button>
+        <button type="button" id="svStop" class="btn ghost sm">Parar</button>
+        <span id="svMsg" class="muted"></span>
+      </form>
+    </section>
+
+    <!-- Fase 8c — abas do device SERVICO (§11.8), reveladas por app.js quando role==Serviço. -->
+    <section id="tab-svcclients" class="panel hidden">
+      <div class="card">
+        <h2>Clientes do cofre</h2>
+        <div id="clientsList" class="muted">—</div>
+        <span id="clientsMsg" class="muted"></span>
+      </div>
+      <div class="card">
+        <h2>Import / Export (§11.7)</h2>
+        <button type="button" id="exportBtn" class="btn solid sm">Exportar cofre (.json)</button>
+        <hr />
+        <input type="file" id="importFile" accept="application/json" />
+        <button type="button" id="importBtn" class="btn outline sm">Importar (merge)</button>
+        <button type="button" id="importReplaceBtn" class="btn ghost sm">Importar (substituir)</button>
+      </div>
+    </section>
+
+    <section id="tab-svcnet" class="panel hidden">
+      <div class="card">
+        <h2>Rede do cliente ativo <button type="button" id="svcScanBtn" class="btn ghost sm">Varredura</button></h2>
+        <div id="svcNodes" class="muted">—</div>
+        <span id="svcnetMsg" class="muted"></span>
+      </div>
+      <div class="card">
+        <h2>Editor de config</h2>
+        <div id="cfgEditor" class="hidden"></div>
+        <span id="cfgMsg" class="muted"></span>
+      </div>
+    </section>
+
+    <section id="tab-svclog" class="panel hidden">
+      <div class="card">
+        <h2>Log de serviço <button type="button" id="svcLogRefresh" class="btn ghost sm">Atualizar</button></h2>
+        <div id="svcLogList" class="muted">—</div>
+      </div>
+    </section>
+  </main>
+
   <nav class="tabs">
-    <button data-tab="node" class="active">Este nó</button>
-    <button data-tab="net">Rede</button>
-    <button data-tab="survey" class="survey-tab">Cobertura</button>
-    <button data-tab="svcclients" class="svc-only hidden">Clientes</button>
-    <button data-tab="svcnet" class="svc-only hidden">Rede (cliente)</button>
-    <button data-tab="svclog" class="svc-only hidden">Log serviço</button>
+    <button data-tab="node" class="tab active">Este&nbsp;nó</button>
+    <button data-tab="net" class="tab">Rede</button>
+    <button data-tab="survey" class="tab survey-tab">Cobertura</button>
+    <button data-tab="svcclients" class="tab svc-only hidden">Clientes</button>
+    <button data-tab="svcnet" class="tab svc-only hidden">Rede&nbsp;(cli.)</button>
+    <button data-tab="svclog" class="tab svc-only hidden">Log</button>
   </nav>
 
-  <section id="tab-node" class="tab">
-    <div id="nodeState" class="card">Carregando…</div>
-    <div id="sensorsCard" class="card">
-      <h2>Sensores</h2>
-      <div id="sensorsList" class="muted">—</div>
-    </div>
-    <div id="gposCard" class="card hidden">
-      <h2>Saídas (GPO)</h2>
-      <div id="gposList"></div>
-      <span id="gpoMsg" class="muted"></span>
-    </div>
-    <div id="logCard" class="card">
-      <h2>Auditoria <button type="button" id="logRefresh">Atualizar</button></h2>
-      <div id="logList" class="muted">—</div>
-    </div>
-    <form id="coordsForm" class="card">
-      <h2>Coordenadas locais</h2>
-      <label>Latitude <input type="number" id="coordLat" step="0.0000001" value="0" /></label>
-      <label>Longitude <input type="number" id="coordLon" step="0.0000001" value="0" /></label>
-      <button type="submit">Salvar</button>
-      <span id="coordMsg" class="muted"></span>
-    </form>
-    <form id="pulseForm" class="card">
-      <h2>Teste de pulso</h2>
-      <label>Válvula <input type="number" id="pulseValve" min="0" max="7" value="0" /></label>
-      <label>Duração (s) <input type="number" id="pulseDur" min="1" max="7200" value="10" /></label>
-      <button type="submit">Abrir</button>
-      <span id="pulseMsg" class="muted"></span>
-    </form>
-  </section>
-
-  <section id="tab-net" class="tab hidden">
-    <form id="netForm" class="card">
-      <h2>Comandar zona (via gateway)</h2>
-      <label>Zona <select id="netZone"></select></label>
-      <label>Ação
-        <select id="netAction"><option value="open">Abrir</option><option value="close">Fechar</option></select>
-      </label>
-      <label>Duração (s) <input type="number" id="netDur" min="1" max="7200" value="300" /></label>
-      <button type="submit">Enviar</button>
-      <span id="netMsg" class="muted"></span>
-    </form>
-  </section>
-
-  <!-- Fase 8d — modo cobertura (site survey §8.5); visível a estação + device SERVICO. -->
-  <section id="tab-survey" class="tab hidden">
-    <form id="surveyForm" class="card">
-      <h2>Modo cobertura (site survey)</h2>
-      <p class="muted">Emite beacons periódicos; o gateway registra SNR/RSSI de cada ponto.</p>
-      <label>Intervalo (s) <input type="number" id="svInterval" min="1" max="3600" value="5" /></label>
-      <label>Timeout (min) <input type="number" id="svTimeout" min="1" max="60" value="5" /></label>
-      <label>Latitude <input type="number" id="svLat" step="0.0000001" value="0" /></label>
-      <label>Longitude <input type="number" id="svLon" step="0.0000001" value="0" /></label>
-      <button type="submit">Iniciar</button>
-      <button type="button" id="svStop">Parar</button>
-      <span id="svMsg" class="muted"></span>
-    </form>
-  </section>
-
-  <!-- Fase 8c — abas do device SERVICO (§11.8), reveladas por app.js quando role==Serviço. -->
-  <section id="tab-svcclients" class="tab hidden">
-    <div class="card">
-      <h2>Clientes do cofre</h2>
-      <div id="clientsList" class="muted">—</div>
-      <span id="clientsMsg" class="muted"></span>
-    </div>
-    <div class="card">
-      <h2>Import / Export (§11.7)</h2>
-      <button type="button" id="exportBtn">Exportar cofre (.json)</button>
-      <hr />
-      <input type="file" id="importFile" accept="application/json" />
-      <button type="button" id="importBtn">Importar (merge)</button>
-      <button type="button" id="importReplaceBtn">Importar (substituir)</button>
-    </div>
-  </section>
-
-  <section id="tab-svcnet" class="tab hidden">
-    <div class="card">
-      <h2>Rede do cliente ativo <button type="button" id="svcScanBtn">Varredura</button></h2>
-      <div id="svcNodes" class="muted">—</div>
-      <span id="svcnetMsg" class="muted"></span>
-    </div>
-    <div class="card">
-      <h2>Editor de config</h2>
-      <div id="cfgEditor" class="hidden"></div>
-      <span id="cfgMsg" class="muted"></span>
-    </div>
-  </section>
-
-  <section id="tab-svclog" class="tab hidden">
-    <div class="card">
-      <h2>Log de serviço <button type="button" id="svcLogRefresh">Atualizar</button></h2>
-      <div id="svcLogList" class="muted">—</div>
-    </div>
-  </section>
-
-  <!-- Mock local p/ preview offline (descomente; ?wizard=1 na URL mostra o wizard de 1º boot §6): -->
-  <!-- <script src="/irrigacao/mock.js"></script> -->
+  <!-- Mock local p/ preview offline (?wizard=1 na URL mostra o wizard de 1º boot §6): -->
+  <script src="/irrigacao/mock.js"></script>
   <script src="/irrigacao/portal/app.js"></script>
 </body>
 </html>

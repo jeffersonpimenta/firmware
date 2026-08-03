@@ -24,8 +24,13 @@ function renderNode(s) {
     <p>Gateway vinculado: ${s.boundGateway ? "0x" + s.boundGateway.toString(16) : "não pareado"}</p>
     <p>Epoch: ${s.configEpoch} ${s.safeMode ? "· <b>modo seguro</b>" : ""}</p>
     ${s.flags & 1 ? '<p class="tamper"><b>⚠ VIOLAÇÃO (tamper)</b></p>' : ''}`;
-  document.getElementById("apLeft").textContent =
-    s.apSecondsLeft ? `AP: ${Math.floor(s.apSecondsLeft / 60)}m${s.apSecondsLeft % 60}s` : "";
+  const ap = document.getElementById("apLeft");
+  if (s.apSecondsLeft) {
+    ap.textContent = `AP ${Math.floor(s.apSecondsLeft / 60)}m${s.apSecondsLeft % 60}s`;
+    ap.classList.remove("hidden");
+  } else {
+    ap.classList.add("hidden");
+  }
 }
 
 function renderGpos(s) {
@@ -113,7 +118,7 @@ function showWizard() {
   wizardShown = true;
   document.querySelector("header").classList.add("hidden");
   document.querySelector("nav.tabs").classList.add("hidden");
-  document.querySelectorAll("section.tab").forEach((t) => t.classList.add("hidden"));
+  document.querySelectorAll("section.panel").forEach((t) => t.classList.add("hidden"));
   document.getElementById("wizard").classList.remove("hidden");
   const roles = document.querySelectorAll(".wz-role");
   const farmWrap = document.getElementById("wz-farm-wrap");
@@ -142,7 +147,7 @@ document.querySelectorAll("nav.tabs button").forEach((b) =>
   b.addEventListener("click", () => {
     document.querySelectorAll("nav.tabs button").forEach((x) => x.classList.remove("active"));
     b.classList.add("active");
-    document.querySelectorAll(".tab").forEach((t) => t.classList.add("hidden"));
+    document.querySelectorAll(".panel").forEach((t) => t.classList.add("hidden"));
     document.getElementById("tab-" + b.dataset.tab).classList.remove("hidden");
   })
 );

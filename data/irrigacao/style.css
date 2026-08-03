@@ -986,18 +986,36 @@ body {
 .field-portal table { width: 100%; border-collapse: collapse; }
 .field-portal td, .field-portal th { border-bottom: 1px solid var(--border); padding: 2px 4px; text-align: left; font-size: .85em; }
 
-/* nav tabs + section layout */
-.field-portal nav.tabs { display: flex; gap: 8px; padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--border); border-top: none; }
-.field-portal nav.tabs button { flex: none; font-family: inherit; font-size: 14px; font-weight: 600; padding: 6px 14px; border: 1px solid var(--border); border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; }
-.field-portal nav.tabs button.active { background: var(--green); color: #fff; border-color: var(--green); }
-.field-portal section.tab { display: flex; flex-direction: column; gap: 12px; padding: 16px; max-width: 480px; margin: 0 auto; }
-.field-portal section.tab.hidden { display: none !important; }
-.field-portal header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
-.field-portal header h1 { margin: 0; font-size: 1.1em; }
-.field-portal label { display: block; margin-bottom: 6px; font-size: 0.9em; }
-.field-portal label input { display: block; margin-top: 2px; width: 100%; box-sizing: border-box; border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: 0.9em; font-family: inherit; }
-.field-portal button[type="submit"], .field-portal button[type="button"] { font-family: inherit; cursor: pointer; font-size: 0.875em; padding: 6px 14px; border: 1px solid var(--border); border-radius: 6px; background: var(--green); color: #fff; font-weight: 600; }
-.field-portal button[type="submit"]:hover, .field-portal button[type="button"]:hover { opacity: 0.85; }
+/* Portal adota o header (.top) e a barra inferior (.tabs/.tab) do gateway.
+   Só ficam escopados: layout do painel, inputs e o fallback dos botões gerados pelo app.js. */
+.field-portal { min-height: 100vh; display: flex; flex-direction: column; }
+.field-portal .portal-main { flex: 1 0 auto; }
+.field-portal .panel { display: flex; flex-direction: column; gap: 12px; padding: 16px; max-width: 480px; width: 100%; margin: 0 auto; }
+.field-portal .panel.hidden { display: none !important; }
+.field-portal .card h2 { margin: 0 0 10px; font-size: 14px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; }
+.field-portal .card h2 small { font-weight: 500; }
+.field-portal .card h2 .btn,
+.field-portal .card h2 button { margin-left: auto; }
+.field-portal hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+.field-portal input[type="file"] { display: block; margin: 8px 0; font-size: 13px; max-width: 100%; }
+.field-portal .card > p { margin: 4px 0; font-size: 13px; }
+.field-portal label { display: block; margin-bottom: 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.field-portal label input,
+.field-portal label select,
+.field-portal label textarea {
+  display: block; margin-top: 4px; width: 100%; box-sizing: border-box;
+  border: 1px solid var(--border); border-radius: 8px; padding: 9px 10px;
+  font-size: 14px; font-family: inherit; color: var(--text); background: var(--card);
+}
+/* botões gerados pelo app.js (sem classe .btn): visual consistente, compacto */
+.field-portal button:not(.btn):not(.tab):not(.wz-role):not(#wz-go) {
+  font-family: inherit; cursor: pointer; font-weight: 600; font-size: 13px;
+  padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--card); color: var(--green); white-space: nowrap;
+}
+.field-portal button:not(.btn):not(.tab):not(.wz-role):not(#wz-go):hover { opacity: 0.85; }
+/* .btn do gateway precisa de tamanho; garante padding quando sem .sm/.big no portal */
+.field-portal .btn:not(.sm):not(.big) { font-size: 13px; padding: 8px 16px; }
 
 /* ===== Visão Geral — títulos de seção, execução, alertas ===== */
 .sec-title {
