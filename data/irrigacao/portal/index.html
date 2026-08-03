@@ -56,26 +56,28 @@
         <button type="submit" class="btn solid sm">Salvar</button>
         <span id="coordMsg" class="muted"></span>
       </form>
-      <form id="pulseForm" class="card">
+      <div id="pulseForm" class="card stack">
         <h2>Teste de pulso</h2>
-        <label>Válvula <input type="number" id="pulseValve" min="0" max="7" value="0" /></label>
+        <div><div class="fp-lbl">Válvula</div><div class="fp-pills" id="pulsePills"></div></div>
         <label>Duração (s) <input type="number" id="pulseDur" min="1" max="7200" value="10" /></label>
-        <button type="submit" class="btn solid sm">Abrir</button>
+        <div id="pulseState"></div>
+        <button type="button" id="pulseGo" class="btn solid sm">Abrir</button>
         <span id="pulseMsg" class="muted"></span>
-      </form>
+      </div>
     </section>
 
     <section id="tab-net" class="panel hidden">
-      <form id="netForm" class="card">
+      <div id="netForm" class="card stack">
         <h2>Comandar zona (via gateway)</h2>
-        <label>Zona <select id="netZone"></select></label>
-        <label>Ação
-          <select id="netAction"><option value="open">Abrir</option><option value="close">Fechar</option></select>
-        </label>
+        <div><div class="fp-lbl">Zona</div><div class="fp-pills" id="netPills"></div></div>
+        <div class="fp-seg" id="netSeg">
+          <button type="button" data-act="open" class="sel">Abrir</button>
+          <button type="button" data-act="close">Fechar</button>
+        </div>
         <label>Duração (s) <input type="number" id="netDur" min="1" max="7200" value="300" /></label>
-        <button type="submit" class="btn solid sm">Enviar</button>
+        <button type="button" id="netGo" class="btn solid sm">Enviar</button>
         <span id="netMsg" class="muted"></span>
-      </form>
+      </div>
     </section>
 
     <!-- Fase 8d — modo cobertura (site survey §8.5); visível a estação + device SERVICO. -->
