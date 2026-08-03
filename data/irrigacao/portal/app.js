@@ -118,7 +118,7 @@ async function refreshLog() {
 document.getElementById("logRefresh").addEventListener("click", refreshLog);
 
 async function refreshEnlace() {
-  if (lastRole !== ROLE_REPETIDOR) return;
+  if (lastRole === ROLE_SERVICO || lastRole === ROLE_GATEWAY) return;
   const { ok, body } = await j("/api/portal/link");
   if (!ok) return;
   document.getElementById("enlSnr").textContent = (body.snrQuarterDb / 4).toFixed(2).replace('.', ',') + " dB";
@@ -174,13 +174,13 @@ function updateApChip(s) {
 }
 
 function applyRoleLayout(role) {
+  if (role === ROLE_SERVICO) return; // serviço usa initService p/ o próprio layout
   const rep = role === ROLE_REPETIDOR;
-  ["sensorsCard", "gposCard", "pulseForm"].forEach((id) => {
+  ["sensorsCard", "gposCard", "pulseForm", "logCard"].forEach((id) => {
     const e = document.getElementById(id); if (e) e.classList.toggle("hidden-role", rep);
   });
-  document.getElementById("logCard").classList.toggle("hidden-role", rep);
   document.querySelector('[data-tab="net"]').classList.toggle("hidden", rep);
-  document.querySelectorAll(".rep-only").forEach((b) => b.classList.toggle("hidden", !rep));
+  document.querySelectorAll(".node-mais").forEach((b) => b.classList.remove("hidden"));
 }
 
 // ── Wizard de 1º boot (§6) — escolha de papel, some após provisionar ─────────
@@ -221,7 +221,7 @@ document.querySelectorAll("nav.tabs button").forEach((b) =>
     b.classList.add("active");
     document.querySelectorAll(".panel").forEach((t) => t.classList.add("hidden"));
     document.getElementById("tab-" + b.dataset.tab).classList.remove("hidden");
-    if (b.dataset.tab === "enlace") refreshEnlace();
+    if (b.dataset.tab === "mais") { refreshEnlace(); loadCoords(); }
   })
 );
 
@@ -283,7 +283,7 @@ function initService() {
   document.querySelector('[data-tab="svcclients"]').click();
   document.getElementById("hdrName").textContent = "Dispositivo de Serviço";
   document.getElementById("hdrSub").textContent = "Cofre multi-cliente";
-  document.querySelectorAll(".rep-only").forEach((b) => b.classList.add("hidden"));
+  document.querySelectorAll(".node-mais").forEach((b) => b.classList.add("hidden"));
   loadClients();
   loadSvcLog();
 }

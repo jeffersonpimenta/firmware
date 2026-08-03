@@ -49,13 +49,6 @@
         <h2>Auditoria <button type="button" id="logRefresh" class="btn ghost sm">Atualizar</button></h2>
         <div id="logList" class="muted">—</div>
       </div>
-      <form id="coordsForm" class="card">
-        <h2>Coordenadas locais</h2>
-        <label>Latitude <input type="number" id="coordLat" step="0.0000001" value="0" /></label>
-        <label>Longitude <input type="number" id="coordLon" step="0.0000001" value="0" /></label>
-        <button type="submit" class="btn solid sm">Salvar</button>
-        <span id="coordMsg" class="muted"></span>
-      </form>
       <div id="pulseForm" class="card stack">
         <h2>Teste de pulso</h2>
         <div><div class="fp-lbl">Válvula</div><div class="fp-pills" id="pulsePills"></div></div>
@@ -132,7 +125,7 @@
       </div>
     </section>
 
-    <section id="tab-enlace" class="panel hidden">
+    <section id="tab-mais" class="panel hidden">
       <div class="card">
         <h2>Qualidade do enlace</h2>
         <div class="fp-grid">
@@ -146,6 +139,13 @@
         <h2>Vizinhos na malha</h2>
         <div id="enlNeighbors" class="stack"><span class="muted">—</span></div>
       </div>
+      <form id="coordsForm" class="card">
+        <h2>Coordenadas locais</h2>
+        <label>Latitude <input type="number" id="coordLat" step="0.0000001" value="0" /></label>
+        <label>Longitude <input type="number" id="coordLon" step="0.0000001" value="0" /></label>
+        <button type="submit" class="btn solid sm">Salvar</button>
+        <span id="coordMsg" class="muted"></span>
+      </form>
     </section>
   </main>
 
@@ -153,7 +153,7 @@
     <button data-tab="node" class="tab active">Este&nbsp;nó</button>
     <button data-tab="net" class="tab">Rede</button>
     <button data-tab="survey" class="tab survey-tab">Cobertura</button>
-    <button data-tab="enlace" class="tab rep-only hidden">Enlace</button>
+    <button data-tab="mais" class="tab node-mais hidden">Mais</button>
     <button data-tab="svcclients" class="tab svc-only hidden">Clientes</button>
     <button data-tab="svcnet" class="tab svc-only hidden">Rede&nbsp;(cli.)</button>
     <button data-tab="svclog" class="tab svc-only hidden">Log</button>
