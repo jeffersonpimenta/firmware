@@ -227,6 +227,23 @@ static void hCoordsSet(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, "{\"ok\":true}");
 }
 
+static void hLink(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!irrigationModule) {
+        res->setStatusCode(404);
+        return;
+    }
+    LinkCtx c = {};
+    irrigationModule->portalFillLink(c);
+    char buf[512];
+    if (!buildLink(c, buf, sizeof(buf))) {
+        res->setStatusCode(500);
+        return;
+    }
+    sendJson(res, buf);
+}
+
 // ── Site survey (§8.5) — modo beacon de cobertura (nó §7.2) ──────────────────
 
 static void hSurveyStart(HTTPRequest *req, HTTPResponse *res)
@@ -285,6 +302,7 @@ void registerIrrigationPortalHandlers(HTTPServer *server)
     server->registerNode(new ResourceNode("/api/portal/coords", "POST", &hCoordsSet));
     server->registerNode(new ResourceNode("/api/portal/survey/start", "POST", &hSurveyStart));
     server->registerNode(new ResourceNode("/api/portal/survey/stop", "POST", &hSurveyStop));
+    server->registerNode(new ResourceNode("/api/portal/link", "GET", &hLink));
 }
 
 #endif
