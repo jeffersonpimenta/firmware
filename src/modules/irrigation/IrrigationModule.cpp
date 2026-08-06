@@ -3430,11 +3430,15 @@ void IrrigationModule::portalWifiStartScan()
 void IrrigationModule::portalWifiScanResult(IrrigationWeb::WifiScanCtx &out)
 {
     int16_t n = WiFi.scanComplete();
-    if (n < 0) { // WIFI_SCAN_RUNNING(-1) ou WIFI_SCAN_FAILED(-2): trata como "ainda em curso"
+    if (n == WIFI_SCAN_RUNNING) { // -1: ainda em curso → mantém spinner
         out.scanning = true;
         return;
     }
     out.scanning = false;
+    if (n < 0) { // WIFI_SCAN_FAILED(-2) ou erro: lista vazia (não trava o spinner)
+        out.count = 0;
+        return;
+    }
     uint8_t cnt = 0;
     for (int16_t i = 0; i < n && cnt < 16; i++) {
         strncpy(out.items[cnt].ssid, WiFi.SSID(i).c_str(), sizeof(out.items[cnt].ssid) - 1);
