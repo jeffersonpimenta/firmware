@@ -116,6 +116,7 @@ struct WifiScanItem {
     int16_t rssi = 0;
     bool secure = true;
 };
+// ~600 B: alocar no heap do endpoint (não no stack da task HTTP), como buildPortalLog.
 struct WifiScanCtx {
     bool scanning = false; // true → frontend mostra spinner, ignora items
     uint8_t count = 0;     // <= 16
@@ -133,7 +134,7 @@ enum class WifiConnectState : uint8_t { Idle = 0, Connecting = 1, Success = 2, E
 struct WifiConnectCtx {
     WifiConnectState state = WifiConnectState::Idle;
     char ssid[33] = {0};
-    char error[48] = {0}; // preenchido só quando state==Error
+    char error[48] = {0}; // sempre emitido; string vazia salvo quando state==Error
 };
 size_t buildWifiConnect(const WifiConnectCtx &ctx, char *buf, size_t cap);
 

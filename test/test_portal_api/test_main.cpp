@@ -332,6 +332,7 @@ static void test_buildWifiScan_list()
     TEST_ASSERT_TRUE(contains(buf, "\"rssi\":-48"));
     TEST_ASSERT_TRUE(contains(buf, "\"secure\":true"));
     TEST_ASSERT_TRUE(contains(buf, "\"secure\":false"));
+    TEST_ASSERT_TRUE(contains(buf, "\"ssid\":\"Aberta\""));
 }
 static void test_buildWifiScan_scanning()
 {
@@ -422,6 +423,26 @@ static void test_parseWifiToggle_rejectsMissing()
     ParseResult r = parseWifiToggle(j, strlen(j), t);
     TEST_ASSERT_FALSE(r.ok);
 }
+static void test_buildWifiScan_truncationReturnsZero()
+{
+    WifiScanCtx c = {};
+    c.count = 16;
+    for (uint8_t i = 0; i < 16; i++) {
+        strcpy(c.items[i].ssid, "RedeComNomeBemLongoParaEstourar32"); // 33-char boundary
+        c.items[i].rssi = -55;
+        c.items[i].secure = true;
+    }
+    char buf[64]; // pequeno de propósito
+    TEST_ASSERT_EQUAL_UINT(0, buildWifiScan(c, buf, sizeof(buf)));
+}
+static void test_parseWifiConnect_missingPskKey()
+{
+    WifiConnectReq p = {};
+    const char *j = "{\"ssid\":\"Aberta\"}";
+    ParseResult r = parseWifiConnect(j, strlen(j), p);
+    TEST_ASSERT_TRUE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("", p.psk);
+}
 
 void setup()
 {
@@ -462,6 +483,8 @@ void setup()
     RUN_TEST(test_buildWifiConnect_success);
     RUN_TEST(test_parseWifiToggle_true);
     RUN_TEST(test_parseWifiToggle_rejectsMissing);
+    RUN_TEST(test_buildWifiScan_truncationReturnsZero);
+    RUN_TEST(test_parseWifiConnect_missingPskKey);
     UNITY_END();
 }
 
