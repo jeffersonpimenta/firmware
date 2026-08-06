@@ -3405,3 +3405,96 @@ void IrrigationModule::handleGwSetConfig(const meshtastic_MeshPacket &mp, const 
     reasm.reset();
 }
 
+// --- Fase 8a — provisionamento WiFi STA ---
+// Glue real somente no ESP32; stubs vazios garantem linkagem no native.
+#if defined(ARCH_ESP32)
+#include "mesh/wifi/WiFiAPClient.h" // needReconnect (extern bool)
+#include <WiFi.h>
+
+void IrrigationModule::portalWifiStatus(IrrigationWeb::WifiStatusCtx &out)
+{
+    out.enabled = config.network.wifi_enabled;
+    out.staUp = WiFi.isConnected();
+    if (out.staUp) {
+        strncpy(out.connectedSsid, WiFi.SSID().c_str(), sizeof(out.connectedSsid) - 1);
+        strncpy(out.ip, WiFi.localIP().toString().c_str(), sizeof(out.ip) - 1);
+    }
+}
+
+void IrrigationModule::portalWifiStartScan()
+{
+    WiFi.scanDelete();
+    WiFi.scanNetworks(true /*async*/, false /*hidden*/);
+}
+
+void IrrigationModule::portalWifiScanResult(IrrigationWeb::WifiScanCtx &out)
+{
+    int16_t n = WiFi.scanComplete();
+    if (n < 0) { // WIFI_SCAN_RUNNING(-1) ou WIFI_SCAN_FAILED(-2): trata como "ainda em curso"
+        out.scanning = true;
+        return;
+    }
+    out.scanning = false;
+    uint8_t cnt = 0;
+    for (int16_t i = 0; i < n && cnt < 16; i++) {
+        strncpy(out.items[cnt].ssid, WiFi.SSID(i).c_str(), sizeof(out.items[cnt].ssid) - 1);
+        out.items[cnt].rssi = (int16_t)WiFi.RSSI(i);
+        out.items[cnt].secure = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
+        cnt++;
+    }
+    out.count = cnt;
+}
+
+bool IrrigationModule::portalWifiConnect(const IrrigationWeb::WifiConnectReq &req)
+{
+    strncpy(config.network.wifi_ssid, req.ssid, sizeof(config.network.wifi_ssid) - 1);
+    strncpy(config.network.wifi_psk, req.psk, sizeof(config.network.wifi_psk) - 1);
+    config.network.wifi_enabled = true;
+    nodeDB->saveToDisk(SEGMENT_CONFIG);
+    needReconnect = true;
+    return true;
+}
+
+void IrrigationModule::portalWifiConnectProgress(IrrigationWeb::WifiConnectCtx &out)
+{
+    strncpy(out.ssid, config.network.wifi_ssid, sizeof(out.ssid) - 1);
+    wl_status_t st = WiFi.status();
+    if (st == WL_CONNECTED) {
+        out.state = IrrigationWeb::WifiConnectState::Success;
+    } else if (st == WL_CONNECT_FAILED || st == WL_NO_SSID_AVAIL) {
+        out.state = IrrigationWeb::WifiConnectState::Error;
+        strncpy(out.error, st == WL_NO_SSID_AVAIL ? "Rede nao encontrada." : "Senha incorreta.",
+                sizeof(out.error) - 1);
+    } else {
+        out.state = IrrigationWeb::WifiConnectState::Connecting;
+    }
+}
+
+void IrrigationModule::portalWifiForget()
+{
+    config.network.wifi_ssid[0] = '\0';
+    config.network.wifi_psk[0] = '\0';
+    config.network.wifi_enabled = false;
+    nodeDB->saveToDisk(SEGMENT_CONFIG);
+    WiFi.disconnect(false, true);
+}
+
+void IrrigationModule::portalWifiToggle(bool enabled)
+{
+    config.network.wifi_enabled = enabled;
+    nodeDB->saveToDisk(SEGMENT_CONFIG);
+    if (enabled) {
+        needReconnect = true;
+    } else {
+        WiFi.disconnect(false, true);
+    }
+}
+#else
+void IrrigationModule::portalWifiStatus(IrrigationWeb::WifiStatusCtx &) {}
+void IrrigationModule::portalWifiStartScan() {}
+void IrrigationModule::portalWifiScanResult(IrrigationWeb::WifiScanCtx &) {}
+bool IrrigationModule::portalWifiConnect(const IrrigationWeb::WifiConnectReq &) { return false; }
+void IrrigationModule::portalWifiConnectProgress(IrrigationWeb::WifiConnectCtx &) {}
+void IrrigationModule::portalWifiForget() {}
+void IrrigationModule::portalWifiToggle(bool) {}
+#endif
