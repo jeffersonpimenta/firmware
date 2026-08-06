@@ -22,6 +22,9 @@ size_t buildNodeState(const NodeStateCtx &ctx, char *buf, size_t cap)
     w.keyNum("vpanelCentiV", ctx.vpanelCentiV);
     w.keyNum("flags", ctx.flags);
     w.keyNum("apSecondsLeft", (int64_t)ctx.apSecondsLeft);
+    w.keyNum("uptimeS", (int64_t)ctx.uptimeS);
+    w.keyNum("nowEpoch", (int64_t)ctx.nowEpoch);
+    w.keyBool("hasTime", ctx.hasTime);
     w.endObject();
     return w.done();
 }
@@ -190,6 +193,119 @@ ParseResult parseCoords(const char *json, size_t len, PortalCoords &out)
     if (!r.ok) return r;
     out.latE7 = (int32_t)lat;
     out.lonE7 = (int32_t)lon;
+    return r;
+}
+
+size_t buildLink(const LinkCtx &ctx, char *buf, size_t cap)
+{
+    JsonWriter w(buf, cap);
+    w.beginObject();
+    w.keyNum("snrQuarterDb", (int64_t)ctx.snrQuarterDb);
+    w.keyNum("rssiDbm", (int64_t)ctx.rssiDbm);
+    w.key("history");
+    w.beginArray();
+    for (uint8_t i = 0; i < ctx.histCount; i++)
+        w.num((int64_t)ctx.hist[i]);
+    w.endArray();
+    w.key("neighbors");
+    w.beginArray();
+    for (uint8_t i = 0; i < ctx.neighborCount; i++) {
+        const LinkNeighbor &n = ctx.neighbors[i];
+        w.beginObject();
+        w.keyNum("node", (int64_t)n.node);
+        w.keyNum("snrQuarterDb", (int64_t)n.snrQuarterDb);
+        w.keyNum("hops", (int64_t)n.hops);
+        w.keyStr("name", n.name);
+        w.endObject();
+    }
+    w.endArray();
+    w.endObject();
+    return w.done();
+}
+
+size_t buildWifiStatus(const WifiStatusCtx &ctx, char *buf, size_t cap)
+{
+    JsonWriter w(buf, cap);
+    w.beginObject();
+    w.keyBool("enabled", ctx.enabled);
+    w.keyBool("staUp", ctx.staUp);
+    w.keyStr("connectedSsid", ctx.connectedSsid);
+    w.keyStr("ip", ctx.ip);
+    w.endObject();
+    return w.done();
+}
+
+size_t buildWifiScan(const WifiScanCtx &ctx, char *buf, size_t cap)
+{
+    JsonWriter w(buf, cap);
+    w.beginObject();
+    w.keyBool("scanning", ctx.scanning);
+    w.key("networks");
+    w.beginArray();
+    if (!ctx.scanning) {
+        uint8_t n = ctx.count > 16 ? 16 : ctx.count;
+        for (uint8_t i = 0; i < n; i++) {
+            w.beginObject();
+            w.keyStr("ssid", ctx.items[i].ssid);
+            w.keyNum("rssi", ctx.items[i].rssi);
+            w.keyBool("secure", ctx.items[i].secure);
+            w.endObject();
+        }
+    }
+    w.endArray();
+    w.endObject();
+    return w.done();
+}
+
+ParseResult parseWifiConnect(const char *json, size_t len, WifiConnectReq &out)
+{
+    ParseResult r;
+    JsonReader rd(json, len);
+    char ssid[33] = {0};
+    char psk[64] = {0};
+    if (!rd.getStr("ssid", ssid, sizeof(ssid)) || ssid[0] == '\0') {
+        r.fail("ssid vazio");
+        return r;
+    }
+    rd.getStr("psk", psk, sizeof(psk)); // opcional (rede aberta = vazio)
+    size_t plen = strlen(psk);
+    if (plen > 0 && plen < 8) {
+        r.fail("senha < 8 caracteres");
+        return r;
+    }
+    memcpy(out.ssid, ssid, sizeof(out.ssid));
+    memcpy(out.psk, psk, sizeof(out.psk));
+    return r;
+}
+
+size_t buildWifiConnect(const WifiConnectCtx &ctx, char *buf, size_t cap)
+{
+    const char *s = "idle";
+    switch (ctx.state) {
+    case WifiConnectState::Connecting: s = "connecting"; break;
+    case WifiConnectState::Success:    s = "success";    break;
+    case WifiConnectState::Error:      s = "error";      break;
+    default:                           s = "idle";       break;
+    }
+    JsonWriter w(buf, cap);
+    w.beginObject();
+    w.keyStr("state", s);
+    w.keyStr("ssid", ctx.ssid);
+    w.keyStr("error", ctx.error);
+    w.endObject();
+    return w.done();
+}
+
+ParseResult parseWifiToggle(const char *json, size_t len, WifiToggleReq &out)
+{
+    ParseResult r;
+    JsonReader rd(json, len);
+    bool en = false;
+    if (!rd.getBool("enabled", en)) {
+        r.fail("campo enabled ausente");
+        return r;
+    }
+    out.enabled = en;
     return r;
 }
 

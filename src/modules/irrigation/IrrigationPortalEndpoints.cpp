@@ -227,6 +227,23 @@ static void hCoordsSet(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, "{\"ok\":true}");
 }
 
+static void hLink(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!irrigationModule) {
+        res->setStatusCode(404);
+        return;
+    }
+    LinkCtx c = {};
+    irrigationModule->portalFillLink(c);
+    char buf[1024]; // até 8 vizinhos + histórico não cabem em 512
+    if (!buildLink(c, buf, sizeof(buf))) {
+        res->setStatusCode(500);
+        return;
+    }
+    sendJson(res, buf);
+}
+
 // ── Site survey (§8.5) — modo beacon de cobertura (nó §7.2) ──────────────────
 
 static void hSurveyStart(HTTPRequest *req, HTTPResponse *res)
@@ -271,6 +288,146 @@ static void hProvision(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, "{\"ok\":true,\"reboot\":true}");
 }
 
+// ── Wi-Fi management (§7) ────────────────────────────────────────────────────
+// WiFi só existe no gateway (nós são bateria/solar — não provisionam WiFi nem varrem redes).
+// Todos os endpoints WiFi respondem 404 fora do gateway.
+static bool wifiOnGateway()
+{
+    return irrigationModule && irrigationModule->gwIsGateway();
+}
+
+static void hWifiStatus(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!wifiOnGateway()) {
+        res->setStatusCode(404);
+        return;
+    }
+    WifiStatusCtx c = {};
+    irrigationModule->portalWifiStatus(c);
+    char buf[160];
+    if (!buildWifiStatus(c, buf, sizeof(buf))) {
+        res->setStatusCode(500);
+        return;
+    }
+    sendJson(res, buf);
+}
+
+static void hWifiScanStart(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!wifiOnGateway()) {
+        res->setStatusCode(404);
+        return;
+    }
+    irrigationModule->portalWifiStartScan();
+    sendJson(res, "{\"ok\":true}");
+}
+
+static void hWifiScanResult(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!wifiOnGateway()) {
+        res->setStatusCode(404);
+        return;
+    }
+    WifiScanCtx c = {};
+    irrigationModule->portalWifiScanResult(c);
+    char buf[1024]; // 16 redes * ~56 B
+    if (!buildWifiScan(c, buf, sizeof(buf))) {
+        res->setStatusCode(500);
+        return;
+    }
+    sendJson(res, buf);
+}
+
+// Escrita de rede (connect/forget/toggle) exige a janela do portal aberta (botão do gateway
+// pressionado). Com STA sempre-on os endpoints ficam alcançáveis pela LAN; sem esta trava
+// qualquer um na LAN reconfiguraria o Wi-Fi. Leitura (status/scan) permanece livre.
+static bool wifiWriteAllowed()
+{
+    return wifiOnGateway() && irrigationModule->portalSession().apShouldBeUp();
+}
+
+static void hWifiConnectStart(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!irrigationModule) {
+        res->setStatusCode(404);
+        return;
+    }
+    if (!wifiWriteAllowed()) {
+        sendJson(res, "{\"errors\":[\"portal fechado — pressione o botao do gateway\"]}", 403);
+        return;
+    }
+    char body[160];
+    size_t nb = readBody(req, body, sizeof(body));
+    WifiConnectReq p;
+    ParseResult pr = parseWifiConnect(body, nb, p);
+    if (!pr.ok) {
+        sendParseErrors(res, pr);
+        return;
+    }
+    if (!irrigationModule->portalWifiConnect(p)) {
+        sendJson(res, "{\"errors\":[\"conexao rejeitada\"]}", 400);
+        return;
+    }
+    sendJson(res, "{\"ok\":true}");
+}
+
+static void hWifiConnectProgress(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!wifiOnGateway()) {
+        res->setStatusCode(404);
+        return;
+    }
+    WifiConnectCtx c = {};
+    irrigationModule->portalWifiConnectProgress(c);
+    char buf[160];
+    if (!buildWifiConnect(c, buf, sizeof(buf))) {
+        res->setStatusCode(500);
+        return;
+    }
+    sendJson(res, buf);
+}
+
+static void hWifiForget(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!irrigationModule) {
+        res->setStatusCode(404);
+        return;
+    }
+    if (!wifiWriteAllowed()) {
+        sendJson(res, "{\"errors\":[\"portal fechado — pressione o botao do gateway\"]}", 403);
+        return;
+    }
+    irrigationModule->portalWifiForget();
+    sendJson(res, "{\"ok\":true}");
+}
+
+static void hWifiToggle(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!irrigationModule) {
+        res->setStatusCode(404);
+        return;
+    }
+    if (!wifiWriteAllowed()) {
+        sendJson(res, "{\"errors\":[\"portal fechado — pressione o botao do gateway\"]}", 403);
+        return;
+    }
+    char body[64];
+    size_t nb = readBody(req, body, sizeof(body));
+    WifiToggleReq t;
+    ParseResult pr = parseWifiToggle(body, nb, t);
+    if (!pr.ok) {
+        sendParseErrors(res, pr);
+        return;
+    }
+    irrigationModule->portalWifiToggle(t.enabled);
+    sendJson(res, "{\"ok\":true}");
+}
+
 void registerIrrigationPortalHandlers(HTTPServer *server)
 {
     server->registerNode(new ResourceNode("/api/portal/provision", "POST", &hProvision));
@@ -285,6 +442,14 @@ void registerIrrigationPortalHandlers(HTTPServer *server)
     server->registerNode(new ResourceNode("/api/portal/coords", "POST", &hCoordsSet));
     server->registerNode(new ResourceNode("/api/portal/survey/start", "POST", &hSurveyStart));
     server->registerNode(new ResourceNode("/api/portal/survey/stop", "POST", &hSurveyStop));
+    server->registerNode(new ResourceNode("/api/portal/link", "GET", &hLink));
+    server->registerNode(new ResourceNode("/api/portal/wifi", "GET", &hWifiStatus));
+    server->registerNode(new ResourceNode("/api/portal/wifi/scan", "POST", &hWifiScanStart));
+    server->registerNode(new ResourceNode("/api/portal/wifi/scan", "GET", &hWifiScanResult));
+    server->registerNode(new ResourceNode("/api/portal/wifi/connect", "POST", &hWifiConnectStart));
+    server->registerNode(new ResourceNode("/api/portal/wifi/connect", "GET", &hWifiConnectProgress));
+    server->registerNode(new ResourceNode("/api/portal/wifi/forget", "POST", &hWifiForget));
+    server->registerNode(new ResourceNode("/api/portal/wifi/toggle", "POST", &hWifiToggle));
 }
 
 #endif

@@ -15,6 +15,7 @@
 #include "modules/irrigation/IrrigationBoardDefaults.h"
 #include "main.h"
 #include "mesh/Channels.h"
+#include "mesh/wifi/WiFiAPClient.h" // Fase 8b: triggerNtpUpdate/ntpLastRunMs (free functions)
 #include <string.h>
 
 // Default manual open duration when the user double-presses the station button (spec §5.2).
@@ -319,8 +320,10 @@ ProcessMessage IrrigationModule::handleReceived(const meshtastic_MeshPacket &mp)
     }
 
     // Track liveness of the bound gateway for NO_GATEWAY LED heuristic (spec §8.7).
-    if (settings.boundGateway != 0 && mp.from == settings.boundGateway)
+    if (settings.boundGateway != 0 && mp.from == settings.boundGateway) {
         lastGatewayRxMs = millis();
+        noteGatewayLink((int8_t)(mp.rx_snr * 4), (int16_t)mp.rx_rssi);
+    }
 
     switch (h.type) {
     case MSG_CMD_VALVULA:
@@ -2350,6 +2353,66 @@ bool IrrigationModule::computeLocalSecs(uint32_t &out) const
     return epochLocal != 0;
 }
 
+// --- Fase 8b: cola da página Horário (fonte de hora / manual / fuso / sync NTP) ---
+size_t IrrigationModule::gwBuildTimeStatus(char *buf, size_t cap)
+{
+    IrrigationWeb::TimeStatusCtx c = {};
+    // Epoch UTC real (local=false): o navegador aplica o fuso ao formatar. Passar local=true
+    // embutiria o offset do fuso e o cliente o somaria de novo (hora dobrada).
+    c.nowEpoch = getValidTime(RTCQualityDevice, false);
+    c.quality = (int)getRTCQuality();
+#if defined(ARCH_ESP32)
+    c.staUp = WiFi.isConnected();
+    unsigned long last = ntpLastRunMs();
+    c.lastSyncS = (last != 0) ? (int32_t)((millis() - last) / 1000UL) : -1;
+#else
+    c.staUp = false;
+    c.lastSyncS = -1;
+#endif
+    c.ntpServer = config.network.ntp_server[0] ? config.network.ntp_server : "pool.ntp.org";
+    c.tz = config.device.tzdef; // "" se não definido
+    return IrrigationWeb::buildTimeStatus(c, buf, cap);
+}
+
+bool IrrigationModule::gwSetManualTime(uint32_t epoch)
+{
+    if (epoch < 1600000000u)
+        return false;
+    struct timeval tv;
+    tv.tv_sec = (time_t)epoch;
+    tv.tv_usec = 0;
+    perhapsSetRTC(RTCQualityDevice, &tv, /*forceUpdate=*/true);
+    LOG_INFO("Irrigation GW: hora definida manualmente (epoch=%u)", epoch);
+    return true;
+}
+
+bool IrrigationModule::gwSetTimezone(const char *posix)
+{
+    if (!posix || !IrrigationWeb::tzIsValidPreset(posix))
+        return false;
+    strncpy(config.device.tzdef, posix, sizeof(config.device.tzdef) - 1);
+    config.device.tzdef[sizeof(config.device.tzdef) - 1] = '\0';
+    setenv("TZ", config.device.tzdef, 1);
+    tzset(); // aplica o fuso já neste boot (localtime passa a usar o novo TZ)
+    // Persiste só o segmento de config (main.cpp relê tzdef no próximo boot). Evita o
+    // reloadConfig(), que dispara reconfig de rádio/observers — desnecessário p/ um fuso.
+    nodeDB->saveToDisk(SEGMENT_CONFIG);
+    LOG_INFO("Irrigation GW: fuso ajustado (%s)", config.device.tzdef);
+    return true;
+}
+
+bool IrrigationModule::gwSyncNtpNow()
+{
+#if defined(ARCH_ESP32)
+    if (!WiFi.isConnected())
+        return false;
+    triggerNtpUpdate();
+    return true;
+#else
+    return false;
+#endif
+}
+
 // --- Serviço do painel web (gateway). Ponte entre a cola HTTP (Task 10) e o estado do gateway. ---
 bool IrrigationModule::gwIsGateway() const
 {
@@ -2671,6 +2734,46 @@ void IrrigationModule::portalFillNodeState(IrrigationWeb::NodeStateCtx &out) con
     out.vpanelCentiV = 0; // tensão de painel não medida na estação por enquanto (follow-up)
     out.flags = safeMode ? HB_FLAG_SAFE_MODE : 0;
     out.apSecondsLeft = portal.secondsLeft(millis());
+    out.uptimeS = millis() / 1000;
+    out.nowEpoch = getValidTime(RTCQualityDevice, false); // UTC real; o portal aplica o fuso ao formatar
+    out.hasTime = out.nowEpoch != 0;
+}
+
+void IrrigationModule::noteGatewayLink(int8_t snrQ, int16_t rssi)
+{
+    linkSnrQ = snrQ;
+    linkRssi = rssi;
+    // normaliza SNR (~ -10..+10 dB → 0..80 quarter-dB deslocado) p/ 0..100 (altura de barra)
+    int v = snrQ + 40;
+    if (v < 0) v = 0;
+    if (v > 80) v = 80;
+    linkHist[linkHistHead] = (uint8_t)(v * 100 / 80);
+    linkHistHead = (linkHistHead + 1) % 12;
+    if (linkHistCount < 12)
+        linkHistCount++;
+}
+
+void IrrigationModule::portalFillLink(IrrigationWeb::LinkCtx &out) const
+{
+    out.snrQuarterDb = linkSnrQ;
+    out.rssiDbm = linkRssi;
+    out.histCount = linkHistCount;
+    for (uint8_t i = 0; i < linkHistCount; i++)
+        out.hist[i] = linkHist[(linkHistHead + 12 - linkHistCount + i) % 12];
+    out.neighborCount = 0;
+    size_t total = nodeDB->getNumMeshNodes();
+    for (size_t i = 0; i < total && out.neighborCount < 8; i++) {
+        meshtastic_NodeInfoLite *n = nodeDB->getMeshNodeByIndex(i);
+        if (!n || n->num == nodeDB->getNodeNum())
+            continue;
+        IrrigationWeb::LinkNeighbor &ln = out.neighbors[out.neighborCount++];
+        ln.node = n->num;
+        ln.snrQuarterDb = (int8_t)(n->snr * 4);
+        ln.hops = n->has_hops_away ? n->hops_away : 0;
+        const char *nm = (n->short_name[0]) ? n->short_name : "";
+        strncpy(ln.name, nm, sizeof(ln.name) - 1);
+        ln.name[sizeof(ln.name) - 1] = 0;
+    }
 }
 
 // Wizard de 1º boot (§6): grava o papel escolhido e reinicia. Um GATEWAY de fábrica
@@ -3479,3 +3582,100 @@ void IrrigationModule::handleGwSetConfig(const meshtastic_MeshPacket &mp, const 
     reasm.reset();
 }
 
+// --- Fase 8a — provisionamento WiFi STA ---
+// Glue real somente no ESP32; stubs vazios garantem linkagem no native.
+#if defined(ARCH_ESP32)
+#include "mesh/wifi/WiFiAPClient.h" // needReconnect (extern bool)
+#include <WiFi.h>
+
+void IrrigationModule::portalWifiStatus(IrrigationWeb::WifiStatusCtx &out)
+{
+    out.enabled = config.network.wifi_enabled;
+    out.staUp = WiFi.isConnected();
+    if (out.staUp) {
+        strncpy(out.connectedSsid, WiFi.SSID().c_str(), sizeof(out.connectedSsid) - 1);
+        strncpy(out.ip, WiFi.localIP().toString().c_str(), sizeof(out.ip) - 1);
+    }
+}
+
+void IrrigationModule::portalWifiStartScan()
+{
+    WiFi.scanDelete();
+    WiFi.scanNetworks(true /*async*/, false /*hidden*/);
+}
+
+void IrrigationModule::portalWifiScanResult(IrrigationWeb::WifiScanCtx &out)
+{
+    int16_t n = WiFi.scanComplete();
+    if (n == WIFI_SCAN_RUNNING) { // -1: ainda em curso → mantém spinner
+        out.scanning = true;
+        return;
+    }
+    out.scanning = false;
+    if (n < 0) { // WIFI_SCAN_FAILED(-2) ou erro: lista vazia (não trava o spinner)
+        out.count = 0;
+        return;
+    }
+    uint8_t cnt = 0;
+    for (int16_t i = 0; i < n && cnt < 16; i++) {
+        strncpy(out.items[cnt].ssid, WiFi.SSID(i).c_str(), sizeof(out.items[cnt].ssid) - 1);
+        out.items[cnt].rssi = (int16_t)WiFi.RSSI(i);
+        out.items[cnt].secure = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
+        cnt++;
+    }
+    out.count = cnt;
+}
+
+bool IrrigationModule::portalWifiConnect(const IrrigationWeb::WifiConnectReq &req)
+{
+    strncpy(config.network.wifi_ssid, req.ssid, sizeof(config.network.wifi_ssid) - 1);
+    strncpy(config.network.wifi_psk, req.psk, sizeof(config.network.wifi_psk) - 1);
+    config.network.wifi_enabled = true;
+    nodeDB->saveToDisk(SEGMENT_CONFIG);
+    needReconnect = true;
+    return true;
+}
+
+void IrrigationModule::portalWifiConnectProgress(IrrigationWeb::WifiConnectCtx &out)
+{
+    strncpy(out.ssid, config.network.wifi_ssid, sizeof(out.ssid) - 1);
+    wl_status_t st = WiFi.status();
+    if (st == WL_CONNECTED) {
+        out.state = IrrigationWeb::WifiConnectState::Success;
+    } else if (st == WL_CONNECT_FAILED || st == WL_NO_SSID_AVAIL) {
+        out.state = IrrigationWeb::WifiConnectState::Error;
+        strncpy(out.error, st == WL_NO_SSID_AVAIL ? "Rede nao encontrada." : "Senha incorreta.",
+                sizeof(out.error) - 1);
+    } else {
+        out.state = IrrigationWeb::WifiConnectState::Connecting;
+    }
+}
+
+void IrrigationModule::portalWifiForget()
+{
+    config.network.wifi_ssid[0] = '\0';
+    config.network.wifi_psk[0] = '\0';
+    config.network.wifi_enabled = false;
+    nodeDB->saveToDisk(SEGMENT_CONFIG);
+    WiFi.disconnect(false, true);
+}
+
+void IrrigationModule::portalWifiToggle(bool enabled)
+{
+    config.network.wifi_enabled = enabled;
+    nodeDB->saveToDisk(SEGMENT_CONFIG);
+    if (enabled) {
+        needReconnect = true;
+    } else {
+        WiFi.disconnect(false, true);
+    }
+}
+#else
+void IrrigationModule::portalWifiStatus(IrrigationWeb::WifiStatusCtx &) {}
+void IrrigationModule::portalWifiStartScan() {}
+void IrrigationModule::portalWifiScanResult(IrrigationWeb::WifiScanCtx &) {}
+bool IrrigationModule::portalWifiConnect(const IrrigationWeb::WifiConnectReq &) { return false; }
+void IrrigationModule::portalWifiConnectProgress(IrrigationWeb::WifiConnectCtx &) {}
+void IrrigationModule::portalWifiForget() {}
+void IrrigationModule::portalWifiToggle(bool) {}
+#endif

@@ -2,6 +2,22 @@ const ROLES = ["Estação", "Gateway", "Repetidor", "Serviço"];
 const ORIGENS = ["sistema","cronograma","painel","portal","botao","entrada","intertravamento","failsafe","servico"];
 const ACOES = ["abrir","fechar","pulso","gpo_on","gpo_off","parear","factory_reset","config_epoch","safe_in","safe_out","tamper","reboot","hiberna_in","hiberna_out","rejeitado"];
 const RESULTADOS = ["ok","nack","timeout"];
+const ROLE_ESTACAO = 0, ROLE_GATEWAY = 1, ROLE_REPETIDOR = 2, ROLE_SERVICO = 3;
+function fmtV(centi) { return (centi / 100).toFixed(2).replace('.', ',') + ' V'; }
+function fmtUptime(s) {
+  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600);
+  return d > 0 ? `${d} d ${h} h` : `${h} h ${Math.floor((s % 3600) / 60)} m`;
+}
+function fmtClock(epoch, has) {
+  if (!has || !epoch) return "sem relógio";
+  const d = new Date(epoch * 1000);
+  const p = (n) => String(n).padStart(2, "0");
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function setHeader(s) {
+  document.getElementById("hdrName").textContent = s.name || "(sem nome)";
+  document.getElementById("hdrSub").textContent = (ROLES[s.role] || "Nó") + " · canal privado";
+}
 let svcInit = false; // Fase 8c: abas SERVICO ativadas 1× quando role==Serviço
 let lastRole = 0; // Fase 8d: última role vista, escolhe endpoint de survey
 
@@ -14,20 +30,47 @@ async function j(url, opts) {
 }
 
 function renderNode(s) {
+  setHeader(s);
   const el = document.getElementById("nodeState");
+  const sync = s.boundGateway ? `Epoch ${s.configEpoch} · sincronizado` : "Não pareado";
+  const gw = s.boundGateway ? "0x" + (s.boundGateway >>> 0).toString(16) : "—";
+  const tamper = s.flags & 1 ? '<div class="tamper"><b>⚠ VIOLAÇÃO (tamper)</b></div>' : '';
+  if (s.role === ROLE_REPETIDOR) {
+    const solar = s.vpanelCentiV ? `<div class="fp-stat"><div class="lbl">Painel solar</div><div class="val">${fmtV(s.vpanelCentiV)}</div></div>` : '';
+    el.innerHTML = `
+      <div class="fp-hd"><span class="ttl">Este nó</span><span class="chip gray">Repetidor</span></div>
+      <div class="fp-grid" style="margin-top:12px;">
+        <div class="fp-stat"><div class="lbl">Bateria</div><div class="val">${fmtV(s.vbatCentiV)}</div></div>
+        ${solar || `<div class="fp-stat"><div class="lbl">Gateway</div><div class="val sm">${gw}</div></div>`}
+      </div>
+      <div class="fp-grid" style="margin-top:8px;">
+        ${solar ? `<div class="fp-stat"><div class="lbl">Gateway</div><div class="val sm">${gw}</div></div>` : ''}
+        <div class="fp-stat"><div class="lbl">Uptime</div><div class="val sm">${fmtUptime(s.uptimeS || 0)}</div></div>
+      </div>
+      <div class="fp-stat" style="margin-top:8px;"><div class="lbl">Relógio</div><div class="val sm">${fmtClock(s.nowEpoch, s.hasTime)}</div></div>
+      <div class="muted" style="font-size:12px;margin-top:12px;">${sync}</div>
+      ${tamper}`;
+    return;
+  }
   const valves = [];
-  for (let i = 0; i < s.numValves; i++) valves.push((s.valveStates >> i) & 1 ? "▉" : "▁");
+  for (let i = 0; i < s.numValves; i++) {
+    const on = (s.valveStates >> i) & 1;
+    valves.push(`<span class="fp-pill ${on ? "on" : ""}">Válvula ${i + 1} · ${on ? "Aberta" : "Fechada"}</span>`);
+  }
   el.innerHTML = `
-    <h2>${s.name || "(sem nome)"} <small class="muted">${ROLES[s.role] || s.role}</small></h2>
-    <p>Bateria: <b>${(s.vbatCentiV / 100).toFixed(2)} V</b></p>
-    <p>Válvulas: <span class="mono">${valves.join(" ") || "—"}</span></p>
-    <p>Gateway vinculado: ${s.boundGateway ? "0x" + s.boundGateway.toString(16) : "não pareado"}</p>
-    <p>Epoch: ${s.configEpoch} ${s.safeMode ? "· <b>modo seguro</b>" : ""}</p>
-    ${s.flags & 1 ? '<p class="tamper"><b>⚠ VIOLAÇÃO (tamper)</b></p>' : ''}`;
-  document.getElementById("apLeft").textContent =
-    s.apSecondsLeft ? `AP: ${Math.floor(s.apSecondsLeft / 60)}m${s.apSecondsLeft % 60}s` : "";
+    <div class="fp-hd"><span class="ttl">Este nó</span><span class="chip green">${ROLES[s.role] || s.role}</span></div>
+    <div class="fp-grid" style="margin-top:12px;">
+      <div class="fp-stat"><div class="lbl">Bateria</div><div class="val">${fmtV(s.vbatCentiV)}</div></div>
+      <div class="fp-stat"><div class="lbl">Gateway</div><div class="val sm">${gw}</div></div>
+    </div>
+    <div class="muted" style="font-size:12px;margin-top:10px;">${sync}${s.safeMode ? " · <b>modo seguro</b>" : ""}</div>
+    <div class="fp-stat" style="margin-top:8px;"><div class="lbl">Relógio</div><div class="val sm">${fmtClock(s.nowEpoch, s.hasTime)}</div></div>
+    <div style="margin-top:6px;"><div class="fp-lbl">Válvulas</div><div class="fp-pills">${valves.join("") || "<span class='muted'>—</span>"}</div></div>
+    ${tamper}`;
+  renderPulsePills(s.numValves);
 }
 
+let gpoPending = null;
 function renderGpos(s) {
   const card = document.getElementById("gposCard");
   const list = document.getElementById("gposList");
@@ -36,24 +79,27 @@ function renderGpos(s) {
   let html = "";
   for (let i = 0; i < s.numGpos; i++) {
     const on = (s.gpoStates >> i) & 1;
-    html += `<p>GPO ${i}: <b>${on ? "ligado" : "desligado"}</b>
-      <button type="button" data-gpo="${i}" data-act="${on ? 0 : 1}">${on ? "Desligar" : "Ligar"}</button></p>`;
+    html += `<div class="fp-kv" style="align-items:center;">
+      <span class="k">GPO ${i} · <b style="color:var(--text)">${on ? "Ligado" : "Desligado"}</b></span>
+      <button data-gpo="${i}" data-act="${on ? 0 : 1}">${on ? "Desligar" : "Ligar"}</button></div>`;
+    if (gpoPending === i) {
+      html += `<div class="fp-confirm"><div class="msg">GPO biestável — não desliga sozinho. Confirma o acionamento?</div>
+        <div class="btns"><button class="btn ghost sm" data-cancelgpo="1">Cancelar</button>
+        <button class="btn danger sm" data-confirmgpo="${i}">Confirmar</button></div></div>`;
+    }
   }
   list.innerHTML = html;
-  list.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => sendGpo(+b.dataset.gpo, +b.dataset.act)));
+  list.querySelectorAll("button[data-gpo]").forEach((b) => b.addEventListener("click", () => onGpoClick(+b.dataset.gpo, +b.dataset.act)));
+  const c = list.querySelector("[data-cancelgpo]"); if (c) c.onclick = () => { gpoPending = null; refresh(); };
+  const k = list.querySelector("[data-confirmgpo]"); if (k) k.onclick = () => doGpo(+k.dataset.confirmgpo, 1, true);
 }
-
-async function sendGpo(gpo, action) {
-  // Biestável (durationS 0) ao ligar exige confirmação extra (§8.11).
-  let confirmFlag = false;
-  if (action === 1) {
-    if (!confirm(`Ligar GPO ${gpo} de forma biestável (permanece até desligar)?`)) return;
-    confirmFlag = true;
-  }
-  const { ok, body } = await j("/api/portal/gpo", {
-    method: "POST",
-    body: JSON.stringify({ gpo, action, durationS: 0, confirm: confirmFlag }),
-  });
+function onGpoClick(gpo, action) {
+  if (action === 1) { gpoPending = gpo; refresh(); return; }
+  doGpo(gpo, 0, false);
+}
+async function doGpo(gpo, action, confirmFlag) {
+  gpoPending = null;
+  const { ok, body } = await j("/api/portal/gpo", { method: "POST", body: JSON.stringify({ gpo, action, durationS: 0, confirm: confirmFlag }) });
   document.getElementById("gpoMsg").textContent = ok ? "OK" : (body.errors || ["erro"]).join("; ");
   refresh();
 }
@@ -63,8 +109,8 @@ async function refreshSensors() {
   const el = document.getElementById("sensorsList");
   if (!ok || !body.sensors || !body.sensors.length) { el.textContent = "nenhum sensor configurado"; return; }
   el.innerHTML = body.sensors.map((s) => {
-    const val = s.tipo === 1 ? `${(s.valor / 100).toFixed(2)} ${s.unidade}` : (s.valor ? "ativo" : "inativo");
-    return `<p>Sensor ${s.id}: <b>${val}</b></p>`;
+    const val = s.tipo === 1 ? `${(s.valor / 100).toFixed(2).replace('.', ',')} ${s.unidade}` : (s.valor ? "ativo" : "inativo");
+    return `<div class="fp-kv"><span class="k">Sensor ${s.id}</span><span class="v">${val}</span></div>`;
   }).join("");
 }
 
@@ -72,12 +118,30 @@ async function refreshLog() {
   const { ok, body } = await j("/api/portal/log");
   const el = document.getElementById("logList");
   if (!ok || !body.log || !body.log.length) { el.textContent = "log vazio"; return; }
-  el.innerHTML = "<table><tr><th>ts</th><th>origem</th><th>ação</th><th>alvo</th><th>res</th></tr>" +
-    body.log.map((r) =>
-      `<tr><td>${r.ts}</td><td>${ORIGENS[r.origem] || r.origem}</td><td>${ACOES[r.acao] || r.acao}</td><td>${r.alvo}</td><td>${RESULTADOS[r.res] || r.res}</td></tr>`
-    ).join("") + "</table>";
+  el.innerHTML = `<div class="fp-log">` + body.log.map((r) => {
+    const ac = `${ACOES[r.acao] || r.acao} · ${ORIGENS[r.origem] || r.origem}${r.alvo ? " (" + r.alvo + ")" : ""}`;
+    return `<div class="row"><span class="ts">${r.ts}</span><span class="ac">${ac} <small class="muted">${RESULTADOS[r.res] || r.res}</small></span></div>`;
+  }).join("") + `</div>`;
 }
 document.getElementById("logRefresh").addEventListener("click", refreshLog);
+
+async function refreshEnlace() {
+  if (lastRole === ROLE_SERVICO || lastRole === ROLE_GATEWAY) return;
+  const { ok, body } = await j("/api/portal/link");
+  if (!ok) return;
+  document.getElementById("enlSnr").textContent = (body.snrQuarterDb / 4).toFixed(2).replace('.', ',') + " dB";
+  document.getElementById("enlRssi").textContent = body.rssiDbm + " dBm";
+  const hist = body.history || [];
+  const max = Math.max(1, ...hist);
+  document.getElementById("enlSpark").innerHTML = hist.map((v) => `<i style="height:${Math.round((v / max) * 100)}%"></i>`).join("");
+  const ns = body.neighbors || [];
+  document.getElementById("enlNeighbors").innerHTML = ns.length ? ns.map((n) => {
+    const snr = (n.snrQuarterDb / 4).toFixed(1).replace('.', ',');
+    const q = n.snrQuarterDb >= 24 ? "var(--green)" : n.snrQuarterDb >= 8 ? "var(--amber)" : "var(--red)";
+    return `<div class="fp-node"><div class="hd"><span class="id">${nodeHex(n.node)}</span><span style="font-size:11px;font-weight:700;color:${q};">${snr} dB</span></div>
+      <div class="meta">${n.name || "—"} · ${n.hops} ${n.hops === 1 ? "salto" : "saltos"}</div></div>`;
+  }).join("") : "<span class='muted'>nenhum vizinho ouvido</span>";
+}
 
 async function loadCoords() {
   const { ok, body } = await j("/api/portal/coords");
@@ -97,13 +161,34 @@ document.getElementById("coordsForm").addEventListener("submit", async (e) => {
 async function refresh() {
   const { ok, body } = await j("/api/portal/node");
   if (ok) {
-    if (body.provisioned === false) { showWizard(); return; } // §6: nó de fábrica → wizard de papel
+    if (body.provisioned === false) { showWizard(); return; }
+    lastRole = body.role;
+    applyRoleLayout(body.role);
     renderNode(body);
     renderGpos(body);
-    lastRole = body.role;
-    if (body.role === 3 && !svcInit) initService(); // §11.8: device SERVICO
+    updateApChip(body);
+    if (body.role === ROLE_SERVICO && !svcInit) initService();
+    refreshEnlace();
   }
-  await refreshSensors();
+  if (lastRole !== ROLE_REPETIDOR) await refreshSensors();
+}
+
+function updateApChip(s) {
+  const ap = document.getElementById("apLeft");
+  if (s.apSecondsLeft) {
+    ap.textContent = `AP ${Math.floor(s.apSecondsLeft / 60)}m${s.apSecondsLeft % 60}s`;
+    ap.classList.remove("hidden");
+  } else ap.classList.add("hidden");
+}
+
+function applyRoleLayout(role) {
+  if (role === ROLE_SERVICO) return; // serviço usa initService p/ o próprio layout
+  const rep = role === ROLE_REPETIDOR;
+  ["sensorsCard", "gposCard", "pulseForm", "logCard"].forEach((id) => {
+    const e = document.getElementById(id); if (e) e.classList.toggle("hidden-role", rep);
+  });
+  document.querySelector('[data-tab="net"]').classList.toggle("hidden", rep);
+  document.querySelectorAll(".node-mais").forEach((b) => b.classList.remove("hidden"));
 }
 
 // ── Wizard de 1º boot (§6) — escolha de papel, some após provisionar ─────────
@@ -113,7 +198,7 @@ function showWizard() {
   wizardShown = true;
   document.querySelector("header").classList.add("hidden");
   document.querySelector("nav.tabs").classList.add("hidden");
-  document.querySelectorAll("section.tab").forEach((t) => t.classList.add("hidden"));
+  document.querySelectorAll("section.panel").forEach((t) => t.classList.add("hidden"));
   document.getElementById("wizard").classList.remove("hidden");
   const roles = document.querySelectorAll(".wz-role");
   const farmWrap = document.getElementById("wz-farm-wrap");
@@ -142,55 +227,52 @@ document.querySelectorAll("nav.tabs button").forEach((b) =>
   b.addEventListener("click", () => {
     document.querySelectorAll("nav.tabs button").forEach((x) => x.classList.remove("active"));
     b.classList.add("active");
-    document.querySelectorAll(".tab").forEach((t) => t.classList.add("hidden"));
+    document.querySelectorAll(".panel").forEach((t) => t.classList.add("hidden"));
     document.getElementById("tab-" + b.dataset.tab).classList.remove("hidden");
+    if (b.dataset.tab === "mais") { refreshEnlace(); loadCoords(); }
   })
 );
 
-document.getElementById("pulseForm").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const valveId = +document.getElementById("pulseValve").value;
+let pulseValve = 0, pulseOpen = false;
+function renderPulsePills(n) {
+  const wrap = document.getElementById("pulsePills");
+  if (!wrap) return;
+  let h = "";
+  for (let i = 0; i < (n || 0); i++) h += `<button type="button" class="fp-pill ${i === pulseValve ? "sel" : ""}" data-pv="${i}">${i}</button>`;
+  wrap.innerHTML = h || "<span class='muted'>—</span>";
+  wrap.querySelectorAll("[data-pv]").forEach((b) => b.onclick = () => { pulseValve = +b.dataset.pv; renderPulsePills(n); });
+  const st = document.getElementById("pulseState");
+  if (st) st.innerHTML = pulseOpen ? `<div class="fp-pulseopen">Válvula aberta</div>` : "";
+  const go = document.getElementById("pulseGo");
+  if (go) go.textContent = pulseOpen ? "Fechar agora" : "Abrir";
+}
+document.getElementById("pulseGo").addEventListener("click", async () => {
   const durationS = +document.getElementById("pulseDur").value;
-  const { ok, body } = await j("/api/portal/node/pulse", {
-    method: "POST",
-    body: JSON.stringify({ valveId, durationS }),
-  });
+  const n = document.querySelectorAll("#pulsePills [data-pv]").length;
+  if (pulseOpen) { pulseOpen = false; document.getElementById("pulseMsg").textContent = "Fechado"; renderPulsePills(n); return; }
+  const { ok, body } = await j("/api/portal/node/pulse", { method: "POST", body: JSON.stringify({ valveId: pulseValve, durationS }) });
   document.getElementById("pulseMsg").textContent = ok ? "OK" : (body.errors || ["erro"]).join("; ");
+  pulseOpen = ok; renderPulsePills(n);
   refresh();
 });
 
+let netZone = 0, netAction = "open";
 async function loadRoster() {
   const { ok, body } = await j("/api/portal/net/roster");
-  const sel = document.getElementById("netZone");
-  sel.innerHTML = "";
-  if (ok && Array.isArray(body) && body.length) {
-    body.forEach((z) => {
-      const o = document.createElement("option");
-      o.value = z.id;
-      o.textContent = `${z.id} — ${z.name}`;
-      sel.appendChild(o);
-    });
-  } else {
-    // Estação sem roster: permite digitar o número da zona (1..255).
-    for (let i = 1; i <= 24; i++) {
-      const o = document.createElement("option");
-      o.value = i;
-      o.textContent = "Zona " + i;
-      sel.appendChild(o);
-    }
-  }
+  const wrap = document.getElementById("netPills");
+  let items = (ok && Array.isArray(body) && body.length) ? body : Array.from({ length: 24 }, (_, i) => ({ id: i + 1, name: "Zona " + (i + 1) }));
+  if (!netZone && items.length) netZone = items[0].id;
+  wrap.innerHTML = items.map((z) => `<button type="button" class="fp-pill ${z.id === netZone ? "sel" : ""}" data-nz="${z.id}">${z.name}</button>`).join("");
+  wrap.querySelectorAll("[data-nz]").forEach((b) => b.onclick = () => { netZone = +b.dataset.nz; loadRoster(); });
 }
-
-document.getElementById("netForm").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const zoneId = +document.getElementById("netZone").value;
-  const kind = document.getElementById("netAction").value;
+document.querySelectorAll("#netSeg button").forEach((b) => b.addEventListener("click", () => {
+  netAction = b.dataset.act;
+  document.querySelectorAll("#netSeg button").forEach((x) => x.classList.toggle("sel", x === b));
+}));
+document.getElementById("netGo").addEventListener("click", async () => {
   const durationS = +document.getElementById("netDur").value;
-  const payload = kind === "open" ? { kind, zoneId, durationS } : { kind, zoneId };
-  const { ok, body } = await j("/api/portal/net/command", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
+  const payload = netAction === "open" ? { kind: "open", zoneId: netZone, durationS } : { kind: "close", zoneId: netZone };
+  const { ok, body } = await j("/api/portal/net/command", { method: "POST", body: JSON.stringify(payload) });
   document.getElementById("netMsg").textContent = ok ? "Enviado" : (body.errors || ["erro"]).join("; ");
 });
 
@@ -207,23 +289,32 @@ function initService() {
   // Esconde as abas de nó/rede-local; o device SERVICO usa Clientes/Rede(cliente)/Log.
   document.querySelectorAll('nav.tabs button:not(.svc-only):not(.survey-tab)').forEach((b) => b.classList.add("hidden"));
   document.querySelector('[data-tab="svcclients"]').click();
+  document.getElementById("hdrName").textContent = "Dispositivo de Serviço";
+  document.getElementById("hdrSub").textContent = "Cofre multi-cliente";
+  document.querySelectorAll(".node-mais").forEach((b) => b.classList.add("hidden"));
   loadClients();
   loadSvcLog();
 }
 
+let svcConfirmClient = null;
 async function loadClients() {
   const { ok, body } = await j("/api/portal/service/clients");
   const el = document.getElementById("clientsList");
   if (!ok || !body.clients) { el.textContent = "—"; return; }
-  el.innerHTML = body.clients.map((c) =>
-    `<p>${c.active ? "▶ " : ""}<b>${c.nome || c.id}</b> <small class="muted">${c.canal} · ${c.estacoes} nós</small>
-     ${c.active ? "<em>(ativo)</em>" : `<button data-sel="${c.id}">Selecionar</button>`}</p>`
-  ).join("") || "nenhum cliente no cofre";
-  el.querySelectorAll("button[data-sel]").forEach((b) => (b.onclick = () => selectClient(b.dataset.sel)));
+  el.innerHTML = `<div class="stack">` + (body.clients.map((c) => {
+    const badge = c.active ? `<span style="font-size:11px;font-weight:700;color:var(--green);">▶ ativo</span>`
+      : `<button data-sel="${c.id}">Selecionar</button>`;
+    const confirm = svcConfirmClient === c.id ? `<div class="fp-confirm"><div class="msg">Re-tunar no canal deste cliente? O dispositivo reinicia (~3 s).</div>
+      <div class="btns"><button class="btn ghost sm" data-cxl="1">Cancelar</button><button class="btn danger sm" data-cok="${c.id}">Confirmar</button></div></div>` : "";
+    return `<div class="fp-node"><div class="hd"><div><div style="font-weight:600;color:var(--text);font-size:14px;">${c.nome || c.id}</div>
+      <div class="meta">canal ${c.canal} · ${c.estacoes} nós</div></div>${badge}</div>${confirm}</div>`;
+  }).join("") || "nenhum cliente no cofre") + `</div>`;
+  el.querySelectorAll("button[data-sel]").forEach((b) => b.onclick = () => { svcConfirmClient = b.dataset.sel; loadClients(); });
+  const cxl = el.querySelector("[data-cxl]"); if (cxl) cxl.onclick = () => { svcConfirmClient = null; loadClients(); };
+  const cok = el.querySelector("[data-cok]"); if (cok) cok.onclick = () => doSelectClient(cok.dataset.cok);
 }
-
-async function selectClient(id) {
-  if (!confirm("Re-tunar no canal deste cliente? O device REINICIA (~3 s).")) return;
+async function doSelectClient(id) {
+  svcConfirmClient = null;
   await j("/api/portal/service/select", { method: "POST", body: JSON.stringify({ id }) });
   document.getElementById("clientsMsg").textContent = "Re-tunando… reconecte ao portal após o reboot.";
 }
@@ -251,18 +342,21 @@ async function pollScanSvc() {
   const { ok, body } = await j("/api/portal/service/scan");
   const el = document.getElementById("svcNodes");
   if (!ok || !body.nodes || !body.nodes.length) { el.textContent = "nenhum respondente ainda"; return; }
-  el.innerHTML = "<table><tr><th>nó</th><th>papel</th><th>epoch</th><th>bat</th><th>fw</th><th>snr</th><th></th></tr>" +
-    body.nodes.map((n) => {
-      const hx = nodeHex(n.node);
-      return `<tr><td class="mono">${hx}</td><td>${ROLES[n.role] || n.role}</td><td>${n.epoch}</td>
-        <td>${(n.vbat / 100).toFixed(1)}V</td><td>0x${(n.fw || 0).toString(16)}</td><td>${(n.snr / 4).toFixed(0)}</td>
-        <td><button data-rd="${hx}">Ler cfg</button> <button data-pulse="${hx}">Pulso</button>
-            <button data-zone="${hx}">Zona</button> <button data-rs="${hx}">RESYNC</button></td></tr>`;
-    }).join("") + "</table>";
-  el.querySelectorAll("button[data-rd]").forEach((b) => (b.onclick = () => readConfig(b.dataset.rd)));
-  el.querySelectorAll("button[data-pulse]").forEach((b) => (b.onclick = () => nodeAction(b.dataset.pulse, "pulse")));
-  el.querySelectorAll("button[data-zone]").forEach((b) => (b.onclick = () => nodeAction(b.dataset.zone, "zone")));
-  el.querySelectorAll("button[data-rs]").forEach((b) => (b.onclick = () => nodeAction(b.dataset.rs, "resync")));
+  el.innerHTML = `<div class="stack">` + body.nodes.map((n) => {
+    const hx = nodeHex(n.node);
+    return `<div class="fp-node"><div class="hd"><span class="id">${hx}</span><span style="font-size:11px;font-weight:600;color:var(--green);">${ROLES[n.role] || n.role}</span></div>
+      <div class="meta">epoch ${n.epoch} · ${(n.vbat / 100).toFixed(1).replace('.', ',')} V · fw 0x${(n.fw || 0).toString(16)} · snr ${(n.snr / 4).toFixed(0)}</div>
+      <div class="acts">
+        <button class="fp-pill" data-rd="${hx}">Ler cfg</button>
+        <button class="fp-pill" data-pulse="${hx}">Pulso</button>
+        <button class="fp-pill" data-zone="${hx}">Zona</button>
+        <button class="fp-pill" style="color:var(--red);border-color:oklch(0.55 0.16 30 / 0.4);" data-rs="${hx}">RESYNC</button>
+      </div></div>`;
+  }).join("") + `</div>`;
+  el.querySelectorAll("button[data-rd]").forEach((b) => b.onclick = () => readConfig(b.dataset.rd));
+  el.querySelectorAll("button[data-pulse]").forEach((b) => b.onclick = () => nodeAction(b.dataset.pulse, "pulse"));
+  el.querySelectorAll("button[data-zone]").forEach((b) => b.onclick = () => nodeAction(b.dataset.zone, "zone"));
+  el.querySelectorAll("button[data-rs]").forEach((b) => b.onclick = () => nodeAction(b.dataset.rs, "resync"));
 }
 
 async function nodeAction(node, action) {
@@ -302,12 +396,19 @@ function fillEditor(c) {
   CFG_PINS.forEach((k) => (html += `<label>${k} (csv) <input id="cfg_${k}" value="${(c[k] || []).join(",")}"></label>`));
   html += `<label>sensores (JSON) <textarea id="cfg_sensores" rows="4">${JSON.stringify(c.sensores || [])}</textarea></label>`;
   html += `<label>localInterlocks (JSON) <textarea id="cfg_localInterlocks" rows="4">${JSON.stringify(c.localInterlocks || [])}</textarea></label>`;
-  html += `<label>Rota <select id="cfg_route"><option value="direct">Direta (epoch+1)</option><option value="gateway">Via gateway</option></select></label>`;
-  html += `<button type="button" id="cfgSave">Gravar config</button>`;
+  html += `<div><div class="fp-lbl">Rota de gravação</div><div class="fp-seg" id="cfgSeg">
+    <button type="button" data-r="direct" class="sel">Direta (epoch+1)</button>
+    <button type="button" data-r="gateway">Via gateway</button></div></div>`;
+  html += `<button type="button" id="cfgSave" class="btn solid sm">Gravar config</button>`;
   const box = document.getElementById("cfgEditor");
   box.innerHTML = html;
   box.classList.remove("hidden");
   document.getElementById("cfgSave").onclick = writeConfig;
+  window.__cfgRoute = "direct";
+  box.querySelectorAll("#cfgSeg button").forEach((b) => b.onclick = () => {
+    window.__cfgRoute = b.dataset.r;
+    box.querySelectorAll("#cfgSeg button").forEach((x) => x.classList.toggle("sel", x === b));
+  });
 }
 
 async function writeConfig() {
@@ -322,7 +423,7 @@ async function writeConfig() {
     document.getElementById("cfgMsg").textContent = "JSON inválido em sensores/localInterlocks";
     return;
   }
-  const route = g("route").value;
+  const route = window.__cfgRoute || "direct";
   const { ok, body } = await j("/api/portal/service/node/config/write",
     { method: "POST", body: JSON.stringify({ node: cfgNode, route, config }) });
   document.getElementById("cfgMsg").textContent = ok ? "Config gravada" : (body.errors || ["erro"]).join("; ");
@@ -332,9 +433,10 @@ async function loadSvcLog() {
   const { ok, body } = await j("/api/portal/service/log");
   const el = document.getElementById("svcLogList");
   if (!ok || !body.log || !body.log.length) { el.textContent = "log vazio"; return; }
-  el.innerHTML = body.log.map((r) =>
-    `<p class="mono">up=${r.up}${r.ts ? " ts=" + r.ts : ""} <b>${r.ev}</b>${r.node ? " 0x" + (r.node >>> 0).toString(16) : ""}</p>`
-  ).join("");
+  el.innerHTML = `<div class="fp-log">` + body.log.map((r) => {
+    const ac = `${r.ev}${r.node ? " · 0x" + (r.node >>> 0).toString(16) : ""}`;
+    return `<div class="row"><span class="ts">up=${r.up}</span><span class="ac">${ac}</span></div>`;
+  }).join("") + `</div>`;
 }
 
 document.getElementById("svcScanBtn").addEventListener("click", startScanSvc);
@@ -359,3 +461,4 @@ document.getElementById("svStop").addEventListener("click", async () => {
   const { ok } = await j(svBase() + "/stop", { method: "POST" });
   document.getElementById("svMsg").textContent = ok ? "Beacon parado" : "erro";
 });
+

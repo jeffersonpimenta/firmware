@@ -98,6 +98,18 @@ async function renderOverview() {
   syncChip.textContent = ov.hasRtc ? 'com relógio' : 'sem relógio';
   syncChip.className = 'chip ' + (ov.hasRtc ? 'green' : 'amber');
 
+  const tb = document.getElementById('timeBadge');
+  if (tb) {
+    if (ov.hasRtc) {
+      const now = new Date();
+      const p = (n) => String(n).padStart(2, '0');
+      tb.textContent = `${p(now.getHours())}:${p(now.getMinutes())}`;
+      tb.classList.remove('hidden');
+    } else {
+      tb.classList.add('hidden');
+    }
+  }
+
   const alertN = num(ov.alertCount);
   let html =
     `<div class="row3">
@@ -2563,6 +2575,9 @@ function renderMais() {
     ['tamper', 'Tamper / manutenção', 'Violação de gabinete e janela de manutenção'],
     ['auditlog', 'Log de auditoria', 'Histórico completo de ações e eventos'],
     ['cobertura', 'Cobertura', 'Pesquisa de sinal (site survey)'],
+    ['malha', 'Malha / Enlace', 'Qualidade de rádio (SNR/RSSI) de cada nó'],
+    ['wifi', 'Rede Wi-Fi', 'Conectar o gateway a uma rede Wi-Fi local'],
+    ['horario', 'Horário', 'Fonte de hora, fuso e sincronização dos nós'],
     ['sistema', 'Sistema', 'Backup e chave da rede'],
   ];
   view.innerHTML = items
@@ -2660,6 +2675,512 @@ function renderSistema() {
   rBtn.addEventListener('click', () => restoreBackup(rBtn, rFile, rStatus));
 }
 
+// ===== Malha / Enlace (SNR/RSSI/bateria por nó) =====
+async function renderMalha() {
+  const list = await getJson('/stations').catch(() => []);
+  if (!list || !list.length) {
+    view.innerHTML = `<div class="card"><div class="sub">Nenhuma estação conhecida.</div></div>`;
+    return;
+  }
+  view.innerHTML = list
+    .map((s) => {
+      s = s || {};
+      const snrQ = s.snrQuarterDb;
+      const snr = snrQ != null ? (num(snrQ) / 4).toFixed(1) + ' dB' : '—';
+      const rssi = s.rssiDbm != null ? num(s.rssiDbm) + ' dBm' : '—';
+      const vbat = s.vbatCentiV != null ? fmtVolts(s.vbatCentiV) : '—';
+      // qualidade por SNR (quarter-dB): >=24 (6 dB) bom, >=8 (2 dB) médio, senão fraco
+      const q = snrQ == null ? 'gray' : num(snrQ) >= 24 ? 'green' : num(snrQ) >= 8 ? 'amber' : 'red';
+      const name = s.name ? esc(s.name) : nodeHex(s.node);
+      return `<div class="card">
+        <div class="sens-hdr"><span class="name">${name}</span><span class="chip ${q}">${snr}</span></div>
+        <div class="row3">
+          <div class="card stat"><div class="lbl">SNR</div><div class="val">${snr}</div></div>
+          <div class="card stat"><div class="lbl">RSSI</div><div class="val">${rssi}</div></div>
+          <div class="card stat"><div class="lbl">Bateria</div><div class="val">${vbat}</div></div>
+        </div>
+      </div>`;
+    })
+    .join('');
+}
+
+// ===== Rede Wi-Fi (gateway) — endpoints /api/portal/wifi/* =====
+// Mock networks para testes de UI (descomente para ativar).
+const WF_MOCK_NETWORKS = [
+  { ssid: 'Casa', rssi: -45, secure: 1 },
+  { ssid: 'Vizinhos', rssi: -62, secure: 1 },
+  { ssid: 'Wifi Publico', rssi: -75, secure: 0 },
+  { ssid: 'Irrigacao-IOT', rssi: -55, secure: 1 },
+];
+let wfUseMock = false;
+
+// Fetch helpers exclusivos (não usam API = /api/irrigation).
+async function wfGet(path) {
+  if (wfUseMock) return wfMockGet(path);
+  const r = await fetch(path);
+  const j = await r.json().catch(() => ({}));
+  return { ok: r.ok, status: r.status, body: j };
+}
+async function wfPost(path, body) {
+  if (wfUseMock) return wfMockPost(path, body);
+  const r = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const j = await r.json().catch(() => ({}));
+  return { ok: r.ok, status: r.status, body: j };
+}
+
+// Mock responses para testes (simula endpoints WiFi).
+let wfMockState = { enabled: false, connectedSsid: null, scanInProgress: false, connectState: 'idle' };
+async function wfMockGet(path) {
+  await new Promise(r => setTimeout(r, 100)); // simula latência
+  if (path === '/api/portal/wifi') {
+    return { ok: true, status: 200, body: { enabled: wfMockState.enabled, connectedSsid: wfMockState.connectedSsid } };
+  }
+  if (path === '/api/portal/wifi/scan') {
+    return { ok: true, status: 200, body: { scanning: wfMockState.scanInProgress, networks: wfMockState.scanInProgress ? [] : WF_MOCK_NETWORKS } };
+  }
+  if (path === '/api/portal/wifi/connect') {
+    return { ok: true, status: 200, body: { state: wfMockState.connectState, ssid: wfMockState.connectedSsid, error: null } };
+  }
+  return { ok: false, status: 404, body: {} };
+}
+async function wfMockPost(path, body) {
+  await new Promise(r => setTimeout(r, 100));
+  if (path === '/api/portal/wifi/toggle') {
+    wfMockState.enabled = body.enabled;
+    wfMockState.scanInProgress = body.enabled;
+    return { ok: true, status: 200, body: {} };
+  }
+  if (path === '/api/portal/wifi/scan') {
+    wfMockState.scanInProgress = true;
+    setTimeout(() => { wfMockState.scanInProgress = false; }, 2000);
+    return { ok: true, status: 200, body: {} };
+  }
+  if (path === '/api/portal/wifi/connect') {
+    wfMockState.connectState = 'connecting';
+    wfMockState.connectedSsid = body.ssid;
+    setTimeout(() => { wfMockState.connectState = 'success'; }, 2000);
+    return { ok: true, status: 200, body: {} };
+  }
+  if (path === '/api/portal/wifi/forget') {
+    wfMockState.connectedSsid = null;
+    return { ok: true, status: 200, body: {} };
+  }
+  return { ok: false, status: 404, body: {} };
+}
+
+// Estado local do módulo Wi-Fi do painel (reiniciado a cada entrada na tela).
+let wfEnabled = false;
+let wfSelectedNet = null;
+let wfScanTimer = null;
+let wfConnectTimer = null;
+let wfPollGen = 0;
+let wfConnectFails = 0;
+
+function wfClearTimers() {
+  wfPollGen++;
+  if (wfScanTimer)    { clearTimeout(wfScanTimer);    wfScanTimer    = null; }
+  if (wfConnectTimer) { clearTimeout(wfConnectTimer); wfConnectTimer = null; }
+}
+
+// Renderiza toda a tela Wi-Fi no #view (padrão sub-screen do painel: re-render em cada transição).
+// vista: 'list' | 'password' | 'connecting' | 'success' | 'error'
+function wfRender(vista, extra) {
+  extra = extra || {};
+  // Barra de cabeçalho do toggle (comum ao estado 'list')
+  const trackBg = wfEnabled ? 'var(--green)' : 'oklch(0.85 0.006 100)';
+  const knobLeft = wfEnabled ? '18px' : '2px';
+  const toggleHtml = `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px;">
+      <div style="font-size:18px;font-weight:700;color:var(--text);">Rede Wi-Fi</div>
+      <div id="wfToggle" style="cursor:pointer;width:44px;height:26px;border-radius:999px;background:${trackBg};position:relative;flex-shrink:0;">
+        <div style="position:absolute;top:2px;left:${knobLeft};width:22px;height:22px;border-radius:999px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,0.25);transition:left 0.15s;"></div>
+      </div>
+    </div>`;
+
+  let body = '';
+  if (vista === 'list') {
+    if (!wfEnabled) {
+      body = toggleHtml + `
+        <div class="card" style="padding:28px 16px;text-align:center;margin-top:4px;">
+          <div style="font-size:13px;color:var(--muted);">Wi-Fi desativado. Ative para buscar redes próximas.</div>
+        </div>`;
+    } else {
+      const nets = extra.networks || [];
+      const connSsid = extra.connectedSsid || null;
+      const scanning = !!extra.scanning;
+
+      let networksHtml = '';
+      if (scanning) {
+        networksHtml = `
+          <div class="card" style="padding:24px 16px;text-align:center;margin-top:4px;">
+            <div style="width:22px;height:22px;border-radius:999px;border:2.5px solid var(--border);border-top-color:var(--green);margin:0 auto 10px;animation:wifiSpin 0.8s linear infinite;"></div>
+            <div style="font-size:12.5px;color:var(--muted);">Buscando redes próximas…</div>
+          </div>`;
+      } else if (!nets.length) {
+        networksHtml = `
+          <div class="card" style="padding:24px 16px;text-align:center;margin-top:4px;">
+            <div style="font-size:13px;font-weight:600;color:var(--text);">Nenhuma rede encontrada</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:4px;">Aproxime o gateway do roteador e tente novamente.</div>
+            <button id="wfRescan" style="margin-top:12px;border:1px solid var(--border);padding:9px 14px;border-radius:8px;background:transparent;color:var(--text);font-size:12.5px;font-weight:600;">Buscar novamente</button>
+          </div>`;
+      } else {
+        const hasConn = nets.some((n) => n.ssid === connSsid);
+        const hint = hasConn
+          ? `<div style="font-size:11px;color:var(--muted);padding:4px 2px 0;">Toque em uma rede conectada para esquecê-la.</div>`
+          : '';
+        const rows = nets.map((net) => {
+          const connected = net.ssid === connSsid;
+          const border = connected ? 'oklch(0.47 0.1 150 / 0.35)' : 'var(--border)';
+          const sig = net.rssi >= -65 ? 3 : net.rssi >= -80 ? 2 : 1;
+          const lit = 'var(--green)', dim = 'oklch(0.85 0.006 100)';
+          const bars = `<div style="display:flex;align-items:flex-end;gap:2px;height:14px;flex-shrink:0;">
+            <div style="width:3px;height:5px;border-radius:1px;background:${sig >= 1 ? lit : dim};"></div>
+            <div style="width:3px;height:9px;border-radius:1px;background:${sig >= 2 ? lit : dim};"></div>
+            <div style="width:3px;height:14px;border-radius:1px;background:${sig >= 3 ? lit : dim};"></div>
+          </div>`;
+          const badge = connected
+            ? `<span style="font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:999px;background:oklch(0.47 0.1 150 / 0.12);color:var(--green);white-space:nowrap;flex-shrink:0;">Conectado</span>`
+            : '';
+          return `<div data-wfssid="${esc(net.ssid)}" data-wfsec="${net.secure ? 1 : 0}" data-wfconn="${connected ? 1 : 0}"
+            style="cursor:pointer;background:var(--card);border:1px solid ${border};box-shadow:var(--shadow-card);border-radius:14px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;">
+            <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+              ${bars}
+              <div style="font-size:14px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(net.ssid)}</div>
+            </div>
+            ${badge}
+          </div>`;
+        }).join('');
+        networksHtml = `<div style="display:flex;flex-direction:column;gap:8px;margin-top:4px;">${rows}</div>${hint}`;
+      }
+
+      body = toggleHtml + `
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px;">
+          <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.04em;">Redes disponíveis</div>
+          <span id="wfRefresh" style="cursor:pointer;font-size:11px;font-weight:600;color:var(--green);">Atualizar</span>
+        </div>
+        ${networksHtml}`;
+    }
+  } else if (vista === 'password') {
+    body = `
+      <div style="font-size:18px;font-weight:700;color:var(--text);margin-bottom:2px;">${esc((wfSelectedNet || {}).ssid || '')}</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">Digite a senha da rede para conectar o gateway</div>
+      <div class="card" style="padding:14px 16px;display:flex;flex-direction:column;gap:10px;">
+        <input type="password" id="wfPskInput" placeholder="Senha (mín. 8 caracteres)"
+          style="border:1px solid var(--border);border-radius:8px;padding:10px 11px;font-size:14px;background:oklch(0.97 0.003 100);color:var(--text);font-family:inherit;width:100%;box-sizing:border-box;" />
+        <div style="display:flex;gap:8px;">
+          <button id="wfPskCancel" style="flex:1;border:1px solid var(--border);padding:10px;border-radius:8px;background:transparent;color:var(--muted);font-size:13px;font-weight:600;">Cancelar</button>
+          <button id="wfPskConnect" style="flex:1;border:none;padding:10px;border-radius:8px;background:var(--green);color:#fff;font-size:13px;font-weight:700;">Conectar</button>
+        </div>
+      </div>`;
+  } else if (vista === 'connecting') {
+    body = `
+      <div class="card" style="padding:40px 16px;text-align:center;margin-top:40px;">
+        <div style="width:28px;height:28px;border-radius:999px;border:3px solid var(--border);border-top-color:var(--green);margin:0 auto 14px;animation:wifiSpin 0.8s linear infinite;"></div>
+        <div style="font-size:14px;font-weight:600;color:var(--text);">Conectando a ${esc((wfSelectedNet || {}).ssid || '')}…</div>
+      </div>`;
+  } else if (vista === 'success') {
+    body = `
+      <div class="card" style="border-color:oklch(0.47 0.1 150 / 0.35);padding:32px 20px;text-align:center;margin-top:24px;">
+        <div style="width:44px;height:44px;border-radius:999px;background:oklch(0.47 0.1 150 / 0.12);display:flex;align-items:center;justify-content:center;margin:0 auto 14px;">
+          <span style="color:var(--green);font-size:22px;font-weight:700;">✓</span>
+        </div>
+        <div style="font-size:15px;font-weight:700;color:var(--text);">Conectado a ${esc(extra.ssid || '')}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px;">O gateway já está na rede local.</div>
+        <button id="wfSuccessBtn" style="margin-top:18px;border:none;padding:11px 20px;border-radius:8px;background:var(--green);color:#fff;font-size:13px;font-weight:700;">Concluído</button>
+      </div>`;
+  } else if (vista === 'error') {
+    const msg = esc(extra.msg || 'Falha ao conectar. Verifique a senha e tente novamente.');
+    body = `
+      <div class="card redbox" style="margin-top:16px;">
+        <div style="font-size:14px;font-weight:700;color:var(--red);">Falha ao conectar</div>
+        <div style="font-size:12.5px;color:var(--text);margin-top:4px;">${msg}</div>
+        <div style="display:flex;gap:8px;margin-top:14px;">
+          <button id="wfErrCancel" style="flex:1;border:1px solid var(--border);padding:10px;border-radius:8px;background:transparent;color:var(--muted);font-size:13px;font-weight:600;">Cancelar</button>
+          <button id="wfErrRetry" style="flex:1;border:none;padding:10px;border-radius:8px;background:var(--red);color:#fff;font-size:13px;font-weight:700;">Tentar novamente</button>
+        </div>
+      </div>`;
+  }
+
+  view.innerHTML = `<div style="display:flex;flex-direction:column;gap:12px;">${body}</div>`;
+  wfWire(vista, extra);
+}
+
+function wfWire(vista, extra) {
+  extra = extra || {};
+  const q = (id) => view.querySelector('#' + id);
+
+  if (vista === 'list') {
+    const toggle = q('wfToggle');
+    if (toggle) toggle.addEventListener('click', () => wfDoToggle());
+    const refresh = q('wfRefresh');
+    if (refresh) refresh.addEventListener('click', () => wfStartScan());
+    const rescan = q('wfRescan');
+    if (rescan) rescan.addEventListener('click', () => wfStartScan());
+    view.querySelectorAll('[data-wfssid]').forEach((el) => {
+      el.addEventListener('click', () => {
+        if (+el.dataset.wfconn) { wfDoForget(); return; }
+        const ssid = el.dataset.wfssid;
+        const secure = +el.dataset.wfsec;
+        wfSelectedNet = (extra.networks || []).find((n) => n.ssid === ssid) || { ssid, rssi: 0, secure: !!secure };
+        if (!secure) {
+          wfDoConnect('');
+        } else {
+          wfRender('password');
+        }
+      });
+    });
+  } else if (vista === 'password') {
+    const cancel = q('wfPskCancel');
+    if (cancel) cancel.addEventListener('click', () => { wfSelectedNet = null; wfStartScan(); });
+    const connect = q('wfPskConnect');
+    if (connect) connect.addEventListener('click', () => {
+      const psk = (q('wfPskInput') || {}).value || '';
+      wfDoConnect(psk);
+    });
+  } else if (vista === 'success') {
+    const btn = q('wfSuccessBtn');
+    if (btn) btn.addEventListener('click', () => { wfSelectedNet = null; wfStartScan(); });
+  } else if (vista === 'error') {
+    const cancel = q('wfErrCancel');
+    if (cancel) cancel.addEventListener('click', () => { wfSelectedNet = null; wfStartScan(); });
+    const retry = q('wfErrRetry');
+    if (retry) retry.addEventListener('click', () => wfRender('password'));
+  }
+}
+
+async function wfDoToggle() {
+  wfClearTimers();
+  wfEnabled = !wfEnabled;
+  // Render optimista imediato antes do POST
+  wfRender('list', { scanning: wfEnabled, networks: [], connectedSsid: null });
+  const r = await wfPost('/api/portal/wifi/toggle', { enabled: wfEnabled });
+  if (!r.ok) {
+    const msg = r.status === 403
+      ? ((r.body.errors || []).join('; ') || 'portal fechado — pressione o botao do gateway')
+      : 'Falha ao alterar estado Wi-Fi.';
+    wfEnabled = !wfEnabled; // reverte
+    wfRender('error', { msg });
+    return;
+  }
+  if (wfEnabled) {
+    wfStartScan();
+  } else {
+    wfRender('list', { networks: [], connectedSsid: null });
+  }
+}
+
+async function wfDoForget() {
+  const r = await wfPost('/api/portal/wifi/forget', {});
+  if (!r.ok) {
+    const msg = r.status === 403
+      ? ((r.body.errors || []).join('; ') || 'portal fechado — pressione o botao do gateway')
+      : 'Falha ao esquecer a rede.';
+    wfRender('error', { msg });
+    return;
+  }
+  wfStartScan();
+}
+
+async function wfStartScan() {
+  wfClearTimers();
+  const myGen = wfPollGen;
+  wfRender('list', { scanning: true, networks: [], connectedSsid: null });
+  await wfPost('/api/portal/wifi/scan', {});
+  wfPollScan(myGen);
+}
+
+async function wfPollScan(myGen) {
+  const r = await wfGet('/api/portal/wifi/scan');
+  if (myGen !== wfPollGen) return;
+  if (!r.ok) { wfRender('list', { networks: [], connectedSsid: null }); return; }
+  if (r.body.scanning) {
+    wfScanTimer = setTimeout(() => wfPollScan(myGen), 1500);
+    return;
+  }
+  // Scan concluído — busca SSID conectado
+  const st = await wfGet('/api/portal/wifi');
+  if (myGen !== wfPollGen) return;
+  const connSsid = (st.ok && st.body.connectedSsid) || null;
+  wfRender('list', { networks: r.body.networks || [], connectedSsid: connSsid });
+}
+
+async function wfDoConnect(psk) {
+  wfClearTimers();
+  wfConnectFails = 0;
+  const ssid = (wfSelectedNet || {}).ssid || '';
+  const myGen = wfPollGen;
+  wfRender('connecting');
+  await wfPost('/api/portal/wifi/connect', { ssid, psk });
+  wfPollConnect(ssid, myGen);
+}
+
+async function wfPollConnect(ssid, myGen) {
+  const r = await wfGet('/api/portal/wifi/connect');
+  if (myGen !== wfPollGen) return;
+  if (!r.ok) {
+    wfConnectFails++;
+    if (wfConnectFails >= 20) {
+      wfRender('error', { msg: 'Sem resposta do dispositivo.' });
+      return;
+    }
+    wfConnectTimer = setTimeout(() => wfPollConnect(ssid, myGen), 1500);
+    return;
+  }
+  wfConnectFails = 0;
+  const state = r.body.state;
+  if (state === 'connecting' || state === 'idle') {
+    wfConnectTimer = setTimeout(() => wfPollConnect(ssid, myGen), 1500);
+    return;
+  }
+  if (state === 'success') {
+    wfRender('success', { ssid: r.body.ssid || ssid });
+  } else {
+    wfRender('error', { msg: r.body.error || 'Falha ao conectar. Verifique a senha e tente novamente.' });
+  }
+}
+
+// Entrada principal do roteador: carrega estado inicial e decide a vista.
+async function renderWifi() {
+  wfClearTimers();
+  wfSelectedNet = null;
+  wfConnectFails = 0;
+  const r = await wfGet('/api/portal/wifi');
+  if (!r.ok) {
+    wfEnabled = false;
+    wfRender('list', { networks: [], connectedSsid: null });
+    return;
+  }
+  wfEnabled = !!r.body.enabled;
+  if (wfEnabled) {
+    await wfStartScan();
+  } else {
+    wfRender('list', { networks: [], connectedSsid: null });
+  }
+}
+
+// ===== Horário (relógio do gateway) — endpoints /api/irrigation/time* =====
+const TZ_PRESETS = [
+  ['America/Sao_Paulo', '<-03>3'],
+  ['America/Manaus', '<-04>4'],
+  ['America/Rio_Branco', '<-05>5'],
+  ['America/Noronha', '<-02>2'],
+  ['UTC', 'GMT0'],
+];
+
+function fmtEpochLocal(epoch) {
+  if (!epoch) return '—';
+  const d = new Date(epoch * 1000);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+async function renderHorario() {
+  const t = (await getJson('/time').catch(() => ({}))) || {};
+  const stations = (await getJson('/stations').catch(() => [])) || [];
+  const isNtp = t.source === 'ntp';
+  const lastSync =
+    t.lastSyncS == null || t.lastSyncS < 0
+      ? 'nunca'
+      : t.lastSyncS === 0
+      ? 'agora mesmo'
+      : fmtSince(t.lastSyncS);
+
+  const tzRows = TZ_PRESETS.map(
+    ([label, posix]) =>
+      `<button class="tzrow${t.tz === posix ? ' sel' : ''}" data-tz="${esc(posix)}">${esc(label)}</button>`
+  ).join('');
+
+  const devRows =
+    (Array.isArray(stations) ? stations : [])
+      .map((s) => {
+        const [cls, lbl] = stationSyncLabel(s.sync);
+        const nm = s.name ? esc(s.name) : nodeHex(s.node);
+        return `<div class="fp-kv"><span class="k">${nm}</span><span class="chip ${cls}">${esc(lbl)}</span></div>`;
+      })
+      .join('') || '<div class="sub">Nenhuma estação conhecida.</div>';
+
+  view.innerHTML = `
+    <div class="card">
+      <div class="sens-hdr"><span class="name">Relógio do gateway</span></div>
+      <div class="sub">Agora: ${fmtEpochLocal(t.nowEpoch)} · ${esc(t.tzLabel || '—')}</div>
+    </div>
+    <div class="card stack">
+      <div class="fp-lbl">Fonte de hora</div>
+      <div class="fp-seg" id="srcSeg">
+        <button data-src="ntp" class="${isNtp ? 'sel' : ''}">NTP (automática)</button>
+        <button data-src="manual" class="${!isNtp ? 'sel' : ''}">Manual</button>
+      </div>
+      <div id="srcBody"></div>
+      <span id="timeMsg" class="sub"></span>
+    </div>
+    <div class="card">
+      <div class="sens-hdr"><span class="name">Fuso horário</span></div>
+      <div class="tzlist">${tzRows}</div>
+    </div>
+    <div class="card">
+      <div class="sens-hdr"><span class="name">Sincronização por dispositivo</span></div>
+      <div class="sub">Epoch de config de cada estação — reflete se recebeu o horário/config mais recente.</div>
+      ${devRows}
+    </div>`;
+
+  const srcBody = view.querySelector('#srcBody');
+  const msg = view.querySelector('#timeMsg');
+  function paintSource(src) {
+    if (src === 'ntp') {
+      srcBody.innerHTML = `
+        <div class="fp-kv"><span class="k">Servidor</span><span class="v">${esc(t.ntpServer || '—')}</span></div>
+        <div class="fp-kv"><span class="k">Última sincronização</span><span class="v">${esc(lastSync)}</span></div>
+        ${t.staUp ? '<button class="btn ghost sm" id="syncNow">Sincronizar agora</button>' : '<div class="sub">Sem WiFi — NTP indisponível.</div>'}`;
+      const sn = srcBody.querySelector('#syncNow');
+      if (sn)
+        sn.addEventListener('click', async () => {
+          const r = await postJson('/time/sync', {});
+          msg.textContent = r.ok ? 'Sincronização NTP disparada.' : 'Falha: ' + (r.body.reason || 'sem WiFi');
+          setTimeout(() => renderHorario().catch(() => {}), 1500);
+        });
+    } else {
+      const nowIso = t.nowEpoch ? new Date(t.nowEpoch * 1000) : new Date();
+      const p = (n) => String(n).padStart(2, '0');
+      const dv = `${nowIso.getFullYear()}-${p(nowIso.getMonth() + 1)}-${p(nowIso.getDate())}`;
+      const tv = `${p(nowIso.getHours())}:${p(nowIso.getMinutes())}`;
+      srcBody.innerHTML = `
+        <label>Data <input type="date" id="mDate" value="${dv}"></label>
+        <label>Hora <input type="time" id="mTime" value="${tv}"></label>
+        <button class="btn solid sm" id="mSet">Definir data e hora</button>`;
+      srcBody.querySelector('#mSet').addEventListener('click', async () => {
+        const d = srcBody.querySelector('#mDate').value;
+        const h = srcBody.querySelector('#mTime').value;
+        if (!d || !h) {
+          msg.textContent = 'Preencha data e hora.';
+          return;
+        }
+        const epoch = Math.floor(new Date(`${d}T${h}:00`).getTime() / 1000);
+        const r = await postJson('/time', { epoch });
+        msg.textContent = r.ok ? 'Data e hora aplicadas.' : 'Falha: ' + (r.body.reason || 'erro');
+        setTimeout(() => renderHorario().catch(() => {}), 1500);
+      });
+    }
+  }
+  paintSource(isNtp ? 'ntp' : 'manual');
+  view.querySelectorAll('#srcSeg button').forEach((b) =>
+    b.addEventListener('click', () => {
+      view.querySelectorAll('#srcSeg button').forEach((x) => x.classList.toggle('sel', x === b));
+      paintSource(b.dataset.src);
+    })
+  );
+  view.querySelectorAll('.tzrow').forEach((b) =>
+    b.addEventListener('click', async () => {
+      const r = await postJson('/timezone', { tz: b.dataset.tz });
+      msg.textContent = r.ok ? 'Fuso atualizado.' : 'Falha ao definir fuso.';
+      setTimeout(() => renderHorario().catch(() => {}), 800);
+    })
+  );
+}
+
 // ===== Roteamento =====
 const RENDER = {
   overview: renderOverview,
@@ -2675,6 +3196,9 @@ const RENDER = {
   auditlog: renderAuditLog,
   tamper: renderTamper,
   cobertura: renderCobertura,
+  malha: renderMalha,
+  wifi: renderWifi,
+  horario: renderHorario,
   mais: renderMais,
   sistema: renderSistema,
 };
@@ -2683,10 +3207,10 @@ const RENDER = {
 const SECTION_LABELS = {
   espelhamento: 'Espelhamento', grupos: 'Grupos', niveis: 'Nível', intertravamentos: 'Intertravamentos',
   sensores: 'Sensores', gpo: 'Saídas (GPO)', tamper: 'Tamper', auditlog: 'Log', cobertura: 'Cobertura',
-  sistema: 'Sistema',
+  malha: 'Malha', wifi: 'Rede Wi-Fi', horario: 'Horário', sistema: 'Sistema',
 };
 // Telas que se auto-atualizam (poll 3 s) via re-render completo.
-const POLLED = { overview: 1, stations: 1, sensores: 1, cobertura: 1, espelhamento: 1 };
+const POLLED = { overview: 1, stations: 1, sensores: 1, cobertura: 1, espelhamento: 1, malha: 1 };
 
 const subbar = document.getElementById('subbar');
 const subTitle = document.getElementById('subTitle');
@@ -2700,6 +3224,8 @@ function clearTimer() {
     clearInterval(timer);
     timer = null;
   }
+  // Cancela polls Wi-Fi em voo ao sair de qualquer tela (gen guard invalida callbacks pendentes).
+  wfClearTimers();
 }
 
 // Rota primária (botão da barra inferior).
@@ -2747,5 +3273,18 @@ document.querySelectorAll('.tab').forEach((t) => {
   if (t.disabled) return;
   t.addEventListener('click', () => show(t.dataset.tab));
 });
+
+const timeBadgeEl = document.getElementById('timeBadge');
+if (timeBadgeEl) timeBadgeEl.addEventListener('click', () => showSub('horario'));
+
+// Dev: ativar mock WiFi via console ou URL. Ex: wfToggleMock() ou ?wf-mock=1
+function wfToggleMock() {
+  wfUseMock = !wfUseMock;
+  console.log(`WiFi mock ${wfUseMock ? 'ativado' : 'desativado'}`);
+  wfMockState = { enabled: false, connectedSsid: null, scanInProgress: false, connectState: 'idle' };
+}
+if (new URLSearchParams(window.location.search).has('wf-mock')) {
+  wfToggleMock();
+}
 
 show('overview');

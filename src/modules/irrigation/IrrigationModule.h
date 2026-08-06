@@ -36,6 +36,13 @@ struct PortalGpoReq;
 struct PortalCoords;
 struct SurveyStartReq;
 struct ProvisionReq;
+struct LinkCtx;
+// Fase 8a — provisionamento WiFi STA
+struct WifiStatusCtx;
+struct WifiScanCtx;
+struct WifiConnectReq;
+struct WifiConnectCtx;
+struct WifiToggleReq;
 }
 
 // Saída de nível (relé/MOSFET) dos GPOs.
@@ -131,8 +138,15 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     bool gwDeleteMirrorMapping(int8_t input);
     size_t gwBuildMirror(char *buf, size_t cap);
 
+    // Fase 8b: página Horário. gwBuildTimeStatus monta o TimeStatusCtx + serializa.
+    size_t gwBuildTimeStatus(char *buf, size_t cap);
+    bool gwSetManualTime(uint32_t epoch);  // perhapsSetRTC(Device, force) — true se aplicou
+    bool gwSetTimezone(const char *posix); // grava config.device.tzdef + setenv + persiste
+    bool gwSyncNtpNow();                   // dispara NTP; false se WiFi STA down
+
     // --- Serviço do portal de campo (todos os papéis). Chamados pela cola HTTP (IrrigationPortalEndpoints). ---
     void portalFillNodeState(IrrigationWeb::NodeStateCtx &out) const;
+    void portalFillLink(IrrigationWeb::LinkCtx &out) const;
     bool portalPulse(const IrrigationWeb::PortalPulseReq &p);
     bool portalRunNetCommand(const IrrigationWeb::NetCommand &c);
     void portalFillSensors(IrrigationWeb::PortalSensorsCtx &out) const;
@@ -161,6 +175,15 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     bool svcPortalImport(const char *json, size_t n, bool replace, char *err, size_t errCap); // §11.7 valida+merge
     bool svcPortalSeedConfig(uint32_t node, IrrigationSettings &out); // out = último blob lido do nó (campos geridos)
     uint32_t gwTimeAdopted() const { return 0; } // TODO banca: ts adotado do gateway (HB/ACK); 0=sem RTC
+
+    // Fase 8a — provisionamento WiFi STA (glue ESP32; stub no native)
+    void portalWifiStatus(IrrigationWeb::WifiStatusCtx &out);
+    void portalWifiStartScan();
+    void portalWifiScanResult(IrrigationWeb::WifiScanCtx &out);
+    bool portalWifiConnect(const IrrigationWeb::WifiConnectReq &req);
+    void portalWifiConnectProgress(IrrigationWeb::WifiConnectCtx &out);
+    void portalWifiForget();
+    void portalWifiToggle(bool enabled);
 
     // Fase 8d — site survey (§8.5). Portais (nó §7.2 / SERVICO §11.8) iniciam o beacon;
     // o painel do gateway lê o log. portalStart/Stop valem p/ qualquer papel que beacona.
@@ -280,6 +303,13 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     uint32_t txSeq = 0;
     uint32_t lastHeartbeatMs = 0;
     uint32_t lastGatewayRxMs = 0; // last millis() we received a packet from boundGateway
+    // Enlace (repetidor): última métrica de rx do gateway + ring de histórico p/ o portal.
+    int8_t linkSnrQ = 0;
+    int16_t linkRssi = 0;
+    uint8_t linkHist[12] = {0};
+    uint8_t linkHistCount = 0;
+    uint8_t linkHistHead = 0;
+    void noteGatewayLink(int8_t snrQ, int16_t rssi);
     bool safeMode = false;
     bool provisioned = false; // false = nó de fábrica (sem config salva no boot) → wizard de 1º boot (§6)
     bool bootHeartbeatPending = true;

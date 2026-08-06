@@ -1260,6 +1260,88 @@ static void test_import_two_zones_isolated()
     TEST_ASSERT_EQUAL_HEX32(32u, z2->node);  // 0x20 — não deve ter "herdado" node da zona 1
 }
 
+static void test_buildTimeStatus_ntp()
+{
+    TimeStatusCtx c = {};
+    c.nowEpoch = 1754500320;
+    c.quality = 3; // RTCQualityNTP
+    c.ntpServer = "pool.ntp.org";
+    c.lastSyncS = 120;
+    c.tz = "<-03>3";
+    c.staUp = true;
+    char buf[512];
+    size_t n = buildTimeStatus(c, buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_TRUE(contains(buf, "\"nowEpoch\":1754500320"));
+    TEST_ASSERT_TRUE(contains(buf, "\"hasRtc\":true"));
+    TEST_ASSERT_TRUE(contains(buf, "\"source\":\"ntp\""));
+    TEST_ASSERT_TRUE(contains(buf, "\"ntpServer\":\"pool.ntp.org\""));
+    TEST_ASSERT_TRUE(contains(buf, "\"lastSyncS\":120"));
+    TEST_ASSERT_TRUE(contains(buf, "\"tz\":\"<-03>3\""));
+    TEST_ASSERT_TRUE(contains(buf, "\"tzLabel\":\"America/Sao_Paulo\""));
+    TEST_ASSERT_TRUE(contains(buf, "\"staUp\":true"));
+}
+
+static void test_buildTimeStatus_manual_and_none()
+{
+    TimeStatusCtx c = {};
+    c.nowEpoch = 1754500320;
+    c.quality = 1; // RTCQualityDevice -> manual
+    c.lastSyncS = -1;
+    c.tz = "GMT0";
+    char buf[512];
+    TEST_ASSERT_GREATER_THAN(0, buildTimeStatus(c, buf, sizeof(buf)));
+    TEST_ASSERT_TRUE(contains(buf, "\"source\":\"manual\""));
+    TEST_ASSERT_TRUE(contains(buf, "\"lastSyncS\":-1"));
+    TEST_ASSERT_TRUE(contains(buf, "\"tzLabel\":\"UTC\""));
+
+    TimeStatusCtx z = {};
+    z.nowEpoch = 0; z.quality = 0; z.tz = "";
+    char buf2[512];
+    TEST_ASSERT_GREATER_THAN(0, buildTimeStatus(z, buf2, sizeof(buf2)));
+    TEST_ASSERT_TRUE(contains(buf2, "\"source\":\"none\""));
+    TEST_ASSERT_TRUE(contains(buf2, "\"hasRtc\":false"));
+    TEST_ASSERT_TRUE(contains(buf2, "\"tzLabel\":\"Personalizado\""));
+}
+
+static void test_tzPresets_lookup()
+{
+    TEST_ASSERT_TRUE(tzIsValidPreset("<-03>3"));
+    TEST_ASSERT_TRUE(tzIsValidPreset("GMT0"));
+    TEST_ASSERT_FALSE(tzIsValidPreset("Europe/Paris"));
+    TEST_ASSERT_EQUAL_STRING("America/Manaus", tzLabelFor("<-04>4"));
+    TEST_ASSERT_EQUAL_STRING("Personalizado", tzLabelFor("bogus"));
+}
+
+static void test_parseTimeSet_ok()
+{
+    const char *j = "{\"epoch\":1754500320}";
+    uint32_t epoch = 0;
+    ParseResult r = parseTimeSet(j, strlen(j), epoch);
+    TEST_ASSERT_TRUE(r.ok);
+    TEST_ASSERT_EQUAL_UINT32(1754500320u, epoch);
+}
+static void test_parseTimeSet_rejectsImplausible()
+{
+    const char *j = "{\"epoch\":100}"; // antes de 2020 -> inválido
+    uint32_t epoch = 0;
+    ParseResult r = parseTimeSet(j, strlen(j), epoch);
+    TEST_ASSERT_FALSE(r.ok);
+}
+static void test_parseTimezone_ok_and_reject()
+{
+    char tz[40] = {0};
+    const char *ok = "{\"tz\":\"<-03>3\"}";
+    ParseResult r = parseTimezone(ok, strlen(ok), tz, sizeof(tz));
+    TEST_ASSERT_TRUE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("<-03>3", tz);
+
+    char tz2[40] = {0};
+    const char *bad = "{\"tz\":\"Europe/Paris\"}"; // fora do preset
+    ParseResult r2 = parseTimezone(bad, strlen(bad), tz2, sizeof(tz2));
+    TEST_ASSERT_FALSE(r2.ok);
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -1358,6 +1440,13 @@ void setup()
     RUN_TEST(test_import_rejects_bad_envelope);
     // Sistema restore — Task 3 (review fix: element isolation via NUL-terminated buffer)
     RUN_TEST(test_import_two_zones_isolated);
+    // Fase 8b — Horário
+    RUN_TEST(test_buildTimeStatus_ntp);
+    RUN_TEST(test_buildTimeStatus_manual_and_none);
+    RUN_TEST(test_tzPresets_lookup);
+    RUN_TEST(test_parseTimeSet_ok);
+    RUN_TEST(test_parseTimeSet_rejectsImplausible);
+    RUN_TEST(test_parseTimezone_ok_and_reject);
     exit(UNITY_END());
 }
 

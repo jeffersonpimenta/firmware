@@ -1027,6 +1027,87 @@ static void hSurveyClear(HTTPRequest *req, HTTPResponse *res)
 }
 
 // ---------------------------------------------------------------------------
+// Fase 8b: Horário (relógio do gateway)
+// ---------------------------------------------------------------------------
+
+// GET /api/irrigation/time — estado do relógio do gateway
+static void hTime(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!gwReady()) {
+        res->setStatusCode(404);
+        return;
+    }
+    char buf[512];
+    if (!irrigationModule->gwBuildTimeStatus(buf, sizeof(buf))) {
+        res->setStatusCode(500);
+        return;
+    }
+    sendJson(res, buf);
+}
+
+// POST /api/irrigation/time — set manual { epoch }
+static void hTimeSet(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!gwReady()) {
+        res->setStatusCode(404);
+        return;
+    }
+    char body[128];
+    size_t nb = readBody(req, body, sizeof(body));
+    uint32_t epoch = 0;
+    ParseResult pr = parseTimeSet(body, nb, epoch);
+    if (!pr.ok) {
+        sendParseErrors(res, pr);
+        return;
+    }
+    if (!irrigationModule->gwSetManualTime(epoch)) {
+        sendJson(res, "{\"ok\":false,\"reason\":\"epoch inválido\"}", 400);
+        return;
+    }
+    char buf[512];
+    irrigationModule->gwBuildTimeStatus(buf, sizeof(buf));
+    sendJson(res, buf);
+}
+
+// POST /api/irrigation/timezone — { tz } (preset POSIX)
+static void hTimezone(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!gwReady()) {
+        res->setStatusCode(404);
+        return;
+    }
+    char body[128];
+    size_t nb = readBody(req, body, sizeof(body));
+    char tz[40] = {0};
+    ParseResult pr = parseTimezone(body, nb, tz, sizeof(tz));
+    if (!pr.ok) {
+        sendParseErrors(res, pr);
+        return;
+    }
+    if (!irrigationModule->gwSetTimezone(tz)) {
+        sendJson(res, "{\"ok\":false,\"reason\":\"fuso desconhecido\"}", 400);
+        return;
+    }
+    sendJson(res, "{\"ok\":true}");
+}
+
+// POST /api/irrigation/time/sync — dispara NTP agora (só com WiFi STA)
+static void hTimeSync(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!gwReady()) {
+        res->setStatusCode(404);
+        return;
+    }
+    if (!irrigationModule->gwSyncNtpNow()) {
+        sendJson(res, "{\"ok\":false,\"reason\":\"sem WiFi\"}", 409);
+        return;
+    }
+    sendJson(res, "{\"ok\":true}");
+}
+
+// ---------------------------------------------------------------------------
 // Registro
 // ---------------------------------------------------------------------------
 
@@ -1076,6 +1157,11 @@ void registerIrrigationHandlers(HTTPServer *server)
     // Fase 8d: site survey (§8.5)
     server->registerNode(new ResourceNode("/api/irrigation/survey", "GET", &hSurvey));
     server->registerNode(new ResourceNode("/api/irrigation/survey/clear", "POST", &hSurveyClear));
+    // Fase 8b: Horário (relógio do gateway)
+    server->registerNode(new ResourceNode("/api/irrigation/time", "GET", &hTime));
+    server->registerNode(new ResourceNode("/api/irrigation/time", "POST", &hTimeSet));
+    server->registerNode(new ResourceNode("/api/irrigation/timezone", "POST", &hTimezone));
+    server->registerNode(new ResourceNode("/api/irrigation/time/sync", "POST", &hTimeSync));
 }
 
 #endif

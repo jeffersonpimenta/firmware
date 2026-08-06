@@ -84,7 +84,7 @@ static int32_t ethNetworkConnectedPoll()
             LOG_INFO("Ethernet IP changed (%u.%u.%u.%u), restarting mDNS", ip & 0xff, (ip >> 8) & 0xff, (ip >> 16) & 0xff,
                      (ip >> 24) & 0xff);
             MDNS.end();
-            if (MDNS.begin("Meshtastic")) {
+            if (MDNS.begin("irrigacao")) {
                 MDNS.addService("meshtastic", "tcp", SERVER_API_DEFAULT_PORT);
                 MDNS.addServiceTxt("meshtastic", "tcp", "shortname", String(owner.short_name));
                 MDNS.addServiceTxt("meshtastic", "tcp", "id", String(nodeDB->getNodeId().c_str()));
@@ -154,10 +154,10 @@ static void onNetworkConnected()
         LOG_INFO("Start network services");
 
         // start mdns
-        if (!MDNS.begin("Meshtastic")) {
+        if (!MDNS.begin("irrigacao")) {
             LOG_ERROR("Error setting up mDNS responder!");
         } else {
-            LOG_INFO("mDNS Host: Meshtastic.local");
+            LOG_INFO("mDNS Host: irrigacao.local");
             MDNS.addService("meshtastic", "tcp", SERVER_API_DEFAULT_PORT);
 // ESPmDNS (ESP32) and SimpleMDNS (RP2040) have slightly different APIs for adding TXT records
 #ifdef ARCH_ESP32
@@ -632,5 +632,29 @@ static void WiFiEvent(WiFiEvent_t event)
 uint8_t getWifiDisconnectReason()
 {
     return wifiDisconnectReason;
+}
+
+// Fase 8b (irrigação): gatilho NTP + timestamp p/ a página Horário do painel.
+// lastrun_ntp é global neste arquivo; só recebe millis() após um NTP bem-sucedido.
+void triggerNtpUpdate()
+{
+#ifndef DISABLE_NTP
+    lastrun_ntp = 0; // próximo serialAndWifiHandler() refaz o NTP se WiFi conectado
+#endif
+}
+
+unsigned long ntpLastRunMs()
+{
+#ifndef DISABLE_NTP
+    return lastrun_ntp;
+#else
+    return 0;
+#endif
+}
+#else  // !HAS_WIFI: stubs para satisfazer a declaração no header
+void triggerNtpUpdate() {}
+unsigned long ntpLastRunMs()
+{
+    return 0;
 }
 #endif // HAS_WIFI

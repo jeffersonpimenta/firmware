@@ -24,6 +24,9 @@ struct NodeStateCtx {
     uint16_t vpanelCentiV = 0; // 0 se não medido
     uint8_t flags = 0;         // HbFlags (tamper/safe/hibernation)
     uint32_t apSecondsLeft = 0;
+    uint32_t uptimeS = 0; // segundos desde o boot (millis()/1000)
+    uint32_t nowEpoch = 0; // getValidTime local (0 = sem relógio) — display-only (fase 8b)
+    bool hasTime = false;
 };
 size_t buildNodeState(const NodeStateCtx &ctx, char *buf, size_t cap);
 
@@ -83,5 +86,61 @@ struct PortalCoords {
 };
 size_t buildCoords(const PortalCoords &c, char *buf, size_t cap);
 ParseResult parseCoords(const char *json, size_t len, PortalCoords &out);
+
+// --- Aba "Enlace" (repetidor, §7.2) ---
+struct LinkNeighbor {
+    uint32_t node = 0;
+    int8_t snrQuarterDb = 0;
+    uint8_t hops = 0;
+    char name[16] = {0};
+};
+struct LinkCtx {
+    int8_t snrQuarterDb = 0;  // enlace ao gateway (último rx)
+    int16_t rssiDbm = 0;
+    uint8_t histCount = 0;
+    uint8_t hist[12] = {0};   // amostras já normalizadas 0..100 p/ a barra
+    uint8_t neighborCount = 0;
+    LinkNeighbor neighbors[8];
+};
+size_t buildLink(const LinkCtx &ctx, char *buf, size_t cap);
+
+// --- Aba "Rede Wi-Fi" (fase 8a) ---
+struct WifiStatusCtx {
+    bool enabled = false;         // config.network.wifi_enabled
+    bool staUp = false;           // WiFi.isConnected()
+    char connectedSsid[33] = {0}; // "" se não conectado
+    char ip[16] = {0};            // "" se sem IP
+};
+size_t buildWifiStatus(const WifiStatusCtx &ctx, char *buf, size_t cap);
+
+struct WifiScanItem {
+    char ssid[33] = {0};
+    int16_t rssi = 0;
+    bool secure = true;
+};
+// ~600 B: alocar no heap do endpoint (não no stack da task HTTP), como buildPortalLog.
+struct WifiScanCtx {
+    bool scanning = false; // true → frontend mostra spinner, ignora items
+    uint8_t count = 0;     // <= 16
+    WifiScanItem items[16];
+};
+size_t buildWifiScan(const WifiScanCtx &ctx, char *buf, size_t cap);
+
+struct WifiConnectReq {
+    char ssid[33] = {0};
+    char psk[64] = {0}; // vazio = rede aberta
+};
+ParseResult parseWifiConnect(const char *json, size_t len, WifiConnectReq &out);
+
+enum class WifiConnectState : uint8_t { Idle = 0, Connecting = 1, Success = 2, Error = 3 };
+struct WifiConnectCtx {
+    WifiConnectState state = WifiConnectState::Idle;
+    char ssid[33] = {0};
+    char error[48] = {0}; // sempre emitido; string vazia salvo quando state==Error
+};
+size_t buildWifiConnect(const WifiConnectCtx &ctx, char *buf, size_t cap);
+
+struct WifiToggleReq { bool enabled = false; };
+ParseResult parseWifiToggle(const char *json, size_t len, WifiToggleReq &out);
 
 } // namespace IrrigationWeb

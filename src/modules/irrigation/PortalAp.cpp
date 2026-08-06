@@ -16,14 +16,19 @@ static DNSServer sDns;
 #define IRRIGATION_PORTAL_PIN "irrig1234"
 #endif
 
+static bool staConfigured()
+{
+    return config.network.wifi_enabled && config.network.wifi_ssid[0] != '\0';
+}
+
 static void bringUp()
 {
     char ssid[33];
     snprintf(ssid, sizeof(ssid), "Irrigacao-%s", owner.short_name);
-    WiFi.mode(WIFI_AP);
+    WiFi.mode(staConfigured() ? WIFI_AP_STA : WIFI_AP); // AP_STA mantém o STA da base vivo
     WiFi.softAP(ssid, IRRIGATION_PORTAL_PIN);
     sDns.start(53, "*", WiFi.softAPIP()); // DNS cativo: resolve tudo para o device
-    LOG_INFO("Irrigation portal: AP up (%s)", ssid);
+    LOG_INFO("Irrigation portal: AP up (%s), mode=%s", ssid, staConfigured() ? "AP_STA" : "AP");
     sApUp = true;
 }
 
@@ -31,6 +36,8 @@ static void tearDown()
 {
     sDns.stop();
     WiFi.softAPdisconnect(true);
+    if (staConfigured())
+        WiFi.mode(WIFI_STA); // volta a STA puro; NUNCA WIFI_OFF (mantém a LAN)
     LOG_INFO("Irrigation portal: AP down");
     sApUp = false;
 }

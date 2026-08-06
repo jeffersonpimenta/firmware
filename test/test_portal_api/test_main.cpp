@@ -2,8 +2,10 @@
 #include "TestUtil.h"
 #include "modules/irrigation/AuditLog.h"
 #include "modules/irrigation/PortalApi.h"
+#include <cstring>
 #include <stdio.h>
 #include <string.h>
+#include <string>
 #include <unity.h>
 
 using namespace IrrigationWeb;
@@ -256,6 +258,206 @@ static void test_buildNodeState_provisioned()
     TEST_ASSERT_TRUE(contains(buf, "\"provisioned\":true"));
 }
 
+static void test_buildNodeState_uptimeS()
+{
+    NodeStateCtx c = {};
+    c.role = 2;
+    c.name = "";
+    c.uptimeS = 1234567;
+    char buf[512];
+    size_t n = buildNodeState(c, buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_TRUE(contains(buf, "\"uptimeS\":1234567"));
+}
+
+static void test_buildNodeState_emits_clock()
+{
+    NodeStateCtx c = {};
+    c.role = 0;
+    c.name = "Est 1";
+    c.nowEpoch = 1754500320;
+    c.hasTime = true;
+    char buf[512];
+    size_t n = buildNodeState(c, buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_TRUE(contains(buf, "\"nowEpoch\":1754500320"));
+    TEST_ASSERT_TRUE(contains(buf, "\"hasTime\":true"));
+}
+
+static void test_buildLink_serializa()
+{
+    IrrigationWeb::LinkCtx ctx;
+    ctx.snrQuarterDb = 33;
+    ctx.rssiDbm = -72;
+    ctx.histCount = 3;
+    ctx.hist[0] = 40; ctx.hist[1] = 60; ctx.hist[2] = 80;
+    ctx.neighborCount = 1;
+    ctx.neighbors[0].node = 0xA1B2C3D4u;
+    ctx.neighbors[0].snrQuarterDb = 33;
+    ctx.neighbors[0].hops = 1;
+    strncpy(ctx.neighbors[0].name, "GW", sizeof(ctx.neighbors[0].name) - 1);
+    char buf[1024];
+    size_t n = IrrigationWeb::buildLink(ctx, buf, sizeof(buf));
+    TEST_ASSERT_TRUE(n > 0);
+    std::string s(buf, n);
+    TEST_ASSERT_TRUE(s.find("\"snrQuarterDb\":33") != std::string::npos);
+    TEST_ASSERT_TRUE(s.find("\"rssiDbm\":-72") != std::string::npos);
+    TEST_ASSERT_TRUE(s.find("\"history\":[40,60,80]") != std::string::npos);
+    TEST_ASSERT_TRUE(s.find("2712847316") != std::string::npos); // 0xA1B2C3D4
+    TEST_ASSERT_TRUE(s.find("\"hops\":1") != std::string::npos);
+    TEST_ASSERT_TRUE(s.find("\"name\":\"GW\"") != std::string::npos);
+}
+
+static void test_buildWifiStatus_connected()
+{
+    WifiStatusCtx c = {};
+    c.enabled = true; c.staUp = true;
+    strcpy(c.connectedSsid, "Fazenda_Escritorio");
+    strcpy(c.ip, "192.168.0.42");
+    char buf[128];
+    size_t n = buildWifiStatus(c, buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_TRUE(contains(buf, "\"enabled\":true"));
+    TEST_ASSERT_TRUE(contains(buf, "\"staUp\":true"));
+    TEST_ASSERT_TRUE(contains(buf, "\"connectedSsid\":\"Fazenda_Escritorio\""));
+    TEST_ASSERT_TRUE(contains(buf, "\"ip\":\"192.168.0.42\""));
+}
+static void test_buildWifiStatus_disconnected()
+{
+    WifiStatusCtx c = {};
+    char buf[128];
+    size_t n = buildWifiStatus(c, buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_TRUE(contains(buf, "\"enabled\":false"));
+    TEST_ASSERT_TRUE(contains(buf, "\"staUp\":false"));
+    TEST_ASSERT_TRUE(contains(buf, "\"connectedSsid\":\"\""));
+}
+static void test_buildWifiScan_list()
+{
+    WifiScanCtx c = {};
+    c.count = 2;
+    strcpy(c.items[0].ssid, "Fazenda_Escritorio"); c.items[0].rssi = -48; c.items[0].secure = true;
+    strcpy(c.items[1].ssid, "Aberta");             c.items[1].rssi = -70; c.items[1].secure = false;
+    char buf[512];
+    size_t n = buildWifiScan(c, buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_TRUE(contains(buf, "\"scanning\":false"));
+    TEST_ASSERT_TRUE(contains(buf, "\"ssid\":\"Fazenda_Escritorio\""));
+    TEST_ASSERT_TRUE(contains(buf, "\"rssi\":-48"));
+    TEST_ASSERT_TRUE(contains(buf, "\"secure\":true"));
+    TEST_ASSERT_TRUE(contains(buf, "\"secure\":false"));
+    TEST_ASSERT_TRUE(contains(buf, "\"ssid\":\"Aberta\""));
+}
+static void test_buildWifiScan_scanning()
+{
+    WifiScanCtx c = {};
+    c.scanning = true;
+    char buf[128];
+    size_t n = buildWifiScan(c, buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_TRUE(contains(buf, "\"scanning\":true"));
+    TEST_ASSERT_TRUE(contains(buf, "\"networks\":[]"));
+}
+static void test_parseWifiConnect_valid()
+{
+    WifiConnectReq p = {};
+    const char *j = "{\"ssid\":\"Fazenda\",\"psk\":\"segredo123\"}";
+    ParseResult r = parseWifiConnect(j, strlen(j), p);
+    TEST_ASSERT_TRUE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("Fazenda", p.ssid);
+    TEST_ASSERT_EQUAL_STRING("segredo123", p.psk);
+}
+static void test_parseWifiConnect_openNetwork()
+{
+    WifiConnectReq p = {};
+    const char *j = "{\"ssid\":\"Aberta\",\"psk\":\"\"}";
+    ParseResult r = parseWifiConnect(j, strlen(j), p);
+    TEST_ASSERT_TRUE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("", p.psk);
+}
+static void test_parseWifiConnect_rejectsEmptySsid()
+{
+    WifiConnectReq p = {};
+    const char *j = "{\"ssid\":\"\",\"psk\":\"segredo123\"}";
+    ParseResult r = parseWifiConnect(j, strlen(j), p);
+    TEST_ASSERT_FALSE(r.ok);
+}
+static void test_parseWifiConnect_rejectsShortPsk()
+{
+    WifiConnectReq p = {};
+    const char *j = "{\"ssid\":\"Fazenda\",\"psk\":\"curta\"}";
+    ParseResult r = parseWifiConnect(j, strlen(j), p);
+    TEST_ASSERT_FALSE(r.ok);
+}
+static void test_buildWifiConnect_connecting()
+{
+    WifiConnectCtx c = {};
+    c.state = WifiConnectState::Connecting;
+    strcpy(c.ssid, "Fazenda");
+    char buf[128];
+    size_t n = buildWifiConnect(c, buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_TRUE(contains(buf, "\"state\":\"connecting\""));
+    TEST_ASSERT_TRUE(contains(buf, "\"ssid\":\"Fazenda\""));
+}
+static void test_buildWifiConnect_error()
+{
+    WifiConnectCtx c = {};
+    c.state = WifiConnectState::Error;
+    strcpy(c.ssid, "Fazenda");
+    strcpy(c.error, "Senha incorreta.");
+    char buf[128];
+    size_t n = buildWifiConnect(c, buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_TRUE(contains(buf, "\"state\":\"error\""));
+    TEST_ASSERT_TRUE(contains(buf, "\"error\":\"Senha incorreta.\""));
+}
+static void test_buildWifiConnect_success()
+{
+    WifiConnectCtx c = {};
+    c.state = WifiConnectState::Success;
+    strcpy(c.ssid, "Fazenda");
+    char buf[128];
+    size_t n = buildWifiConnect(c, buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_TRUE(contains(buf, "\"state\":\"success\""));
+}
+static void test_parseWifiToggle_true()
+{
+    WifiToggleReq t = {};
+    const char *j = "{\"enabled\":true}";
+    ParseResult r = parseWifiToggle(j, strlen(j), t);
+    TEST_ASSERT_TRUE(r.ok);
+    TEST_ASSERT_TRUE(t.enabled);
+}
+static void test_parseWifiToggle_rejectsMissing()
+{
+    WifiToggleReq t = {};
+    const char *j = "{}";
+    ParseResult r = parseWifiToggle(j, strlen(j), t);
+    TEST_ASSERT_FALSE(r.ok);
+}
+static void test_buildWifiScan_truncationReturnsZero()
+{
+    WifiScanCtx c = {};
+    c.count = 16;
+    for (uint8_t i = 0; i < 16; i++) {
+        strcpy(c.items[i].ssid, "RedeLongaParaEstourarBuffer"); // 27 chars (cabe em ssid[33])
+        c.items[i].rssi = -55;
+        c.items[i].secure = true;
+    }
+    char buf[64]; // pequeno de propósito
+    TEST_ASSERT_EQUAL_UINT(0, buildWifiScan(c, buf, sizeof(buf)));
+}
+static void test_parseWifiConnect_missingPskKey()
+{
+    WifiConnectReq p = {};
+    const char *j = "{\"ssid\":\"Aberta\"}";
+    ParseResult r = parseWifiConnect(j, strlen(j), p);
+    TEST_ASSERT_TRUE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("", p.psk);
+}
+
 void setup()
 {
     UNITY_BEGIN();
@@ -280,6 +482,24 @@ void setup()
     RUN_TEST(test_parseProvision_rejectsBadRole);
     RUN_TEST(test_parseProvision_farmNameOptional);
     RUN_TEST(test_buildNodeState_provisioned);
+    RUN_TEST(test_buildNodeState_uptimeS);
+    RUN_TEST(test_buildNodeState_emits_clock);
+    RUN_TEST(test_buildLink_serializa);
+    RUN_TEST(test_buildWifiStatus_connected);
+    RUN_TEST(test_buildWifiStatus_disconnected);
+    RUN_TEST(test_buildWifiScan_list);
+    RUN_TEST(test_buildWifiScan_scanning);
+    RUN_TEST(test_parseWifiConnect_valid);
+    RUN_TEST(test_parseWifiConnect_openNetwork);
+    RUN_TEST(test_parseWifiConnect_rejectsEmptySsid);
+    RUN_TEST(test_parseWifiConnect_rejectsShortPsk);
+    RUN_TEST(test_buildWifiConnect_connecting);
+    RUN_TEST(test_buildWifiConnect_error);
+    RUN_TEST(test_buildWifiConnect_success);
+    RUN_TEST(test_parseWifiToggle_true);
+    RUN_TEST(test_parseWifiToggle_rejectsMissing);
+    RUN_TEST(test_buildWifiScan_truncationReturnsZero);
+    RUN_TEST(test_parseWifiConnect_missingPskKey);
     UNITY_END();
 }
 

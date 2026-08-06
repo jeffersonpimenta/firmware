@@ -84,6 +84,73 @@ size_t buildOverview(const OverviewCtx &ctx, char *buf, size_t cap)
     return w.done();
 }
 
+const TzPreset TZ_PRESETS[] = {
+    {"America/Sao_Paulo", "<-03>3"},
+    {"America/Manaus", "<-04>4"},
+    {"America/Rio_Branco", "<-05>5"},
+    {"America/Noronha", "<-02>2"},
+    {"UTC", "GMT0"},
+};
+const size_t TZ_PRESETS_COUNT = sizeof(TZ_PRESETS) / sizeof(TZ_PRESETS[0]);
+
+const char *tzLabelFor(const char *posix)
+{
+    if (posix)
+        for (size_t i = 0; i < TZ_PRESETS_COUNT; i++)
+            if (strcmp(posix, TZ_PRESETS[i].posix) == 0)
+                return TZ_PRESETS[i].label;
+    return "Personalizado";
+}
+bool tzIsValidPreset(const char *posix)
+{
+    if (!posix) return false;
+    for (size_t i = 0; i < TZ_PRESETS_COUNT; i++)
+        if (strcmp(posix, TZ_PRESETS[i].posix) == 0)
+            return true;
+    return false;
+}
+
+size_t buildTimeStatus(const TimeStatusCtx &ctx, char *buf, size_t cap)
+{
+    const char *source = ctx.quality >= 3 ? "ntp" : (ctx.nowEpoch != 0 ? "manual" : "none");
+    JsonWriter w(buf, cap);
+    w.beginObject();
+    w.keyNum("nowEpoch", (int64_t)ctx.nowEpoch);
+    w.keyBool("hasRtc", ctx.nowEpoch != 0);
+    w.keyStr("source", source);
+    w.keyNum("quality", ctx.quality);
+    w.keyStr("ntpServer", ctx.ntpServer ? ctx.ntpServer : "");
+    w.keyNum("lastSyncS", ctx.lastSyncS);
+    w.keyStr("tz", ctx.tz ? ctx.tz : "");
+    w.keyStr("tzLabel", tzLabelFor(ctx.tz));
+    w.keyBool("staUp", ctx.staUp);
+    w.endObject();
+    return w.done();
+}
+
+ParseResult parseTimeSet(const char *json, size_t len, uint32_t &epochOut)
+{
+    ParseResult r;
+    JsonReader rd(json, len);
+    int64_t epoch = 0;
+    if (!rd.getInt("epoch", epoch)) { r.fail("epoch ausente"); return r; }
+    if (epoch < 1600000000LL || epoch > 4102444800LL) { r.fail("epoch fora de range"); return r; }
+    epochOut = (uint32_t)epoch;
+    return r;
+}
+
+ParseResult parseTimezone(const char *json, size_t len, char *out, size_t outCap)
+{
+    ParseResult r;
+    JsonReader rd(json, len);
+    char tz[40] = {0};
+    if (!rd.getStr("tz", tz, sizeof(tz)) || tz[0] == '\0') { r.fail("tz ausente"); return r; }
+    if (!tzIsValidPreset(tz)) { r.fail("fuso desconhecido"); return r; }
+    strncpy(out, tz, outCap - 1);
+    out[outCap - 1] = '\0';
+    return r;
+}
+
 size_t buildAlerts(const AlertCenter &ac, uint32_t nowMs, uint32_t ackMs, char *buf, size_t cap)
 {
     JsonWriter w(buf, cap);
