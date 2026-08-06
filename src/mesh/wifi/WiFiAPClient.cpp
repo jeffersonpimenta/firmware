@@ -633,4 +633,28 @@ uint8_t getWifiDisconnectReason()
 {
     return wifiDisconnectReason;
 }
+
+// Fase 8b (irrigação): gatilho NTP + timestamp p/ a página Horário do painel.
+// lastrun_ntp é global neste arquivo; só recebe millis() após um NTP bem-sucedido.
+void triggerNtpUpdate()
+{
+#ifndef DISABLE_NTP
+    lastrun_ntp = 0; // próximo serialAndWifiHandler() refaz o NTP se WiFi conectado
+#endif
+}
+
+unsigned long ntpLastRunMs()
+{
+#ifndef DISABLE_NTP
+    return lastrun_ntp;
+#else
+    return 0;
+#endif
+}
+#else  // !HAS_WIFI: stubs para satisfazer a declaração no header
+void triggerNtpUpdate() {}
+unsigned long ntpLastRunMs()
+{
+    return 0;
+}
 #endif // HAS_WIFI

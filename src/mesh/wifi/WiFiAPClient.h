@@ -25,6 +25,12 @@ bool isWifiAvailable();
 
 uint8_t getWifiDisconnectReason();
 
+// Fase 8b (irrigação): força um novo fetch NTP no próximo tick (zera o throttle).
+// No-op se DISABLE_NTP. Seguro chamar quando WiFi não está conectado (fetch só corre com STA up).
+void triggerNtpUpdate();
+// millis() do último NTP set bem-sucedido; 0 se nunca sincronizou.
+unsigned long ntpLastRunMs();
+
 #if defined(USE_WS5500) || defined(USE_CH390D)
 // Startup Ethernet
 bool initEthernet();
