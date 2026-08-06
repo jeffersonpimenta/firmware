@@ -5,7 +5,6 @@
 
 const API = '/api/irrigation';
 const view = document.getElementById('view');
-const syncChip = document.getElementById('syncChip');
 let current = 'overview';
 let timer = null;
 
@@ -95,8 +94,6 @@ async function renderOverview() {
     getJson('/zones').catch(() => []),
   ]);
   const ov = o || {};
-  syncChip.textContent = ov.hasRtc ? 'com relógio' : 'sem relógio';
-  syncChip.className = 'chip ' + (ov.hasRtc ? 'green' : 'amber');
 
   const tb = document.getElementById('timeBadge');
   if (tb) {
@@ -3078,6 +3075,16 @@ function fmtEpochLocal(epoch) {
   return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+// POSIX TZ → rótulo GMT±X. No POSIX o offset é positivo a oeste de UTC
+// (`<-03>3` = 3h a oeste), então o GMT real é o sinal invertido → GMT-3.
+function gmtFromPosix(posix) {
+  if (!posix || posix === 'GMT0') return 'GMT+0';
+  const m = posix.match(/>([+-]?\d{1,2})/);
+  if (!m) return '';
+  const off = -parseInt(m[1], 10);
+  return 'GMT' + (off >= 0 ? '+' : '') + off;
+}
+
 async function renderHorario() {
   const t = (await getJson('/time').catch(() => ({}))) || {};
   const stations = (await getJson('/stations').catch(() => [])) || [];
@@ -3091,7 +3098,7 @@ async function renderHorario() {
 
   const tzRows = TZ_PRESETS.map(
     ([label, posix]) =>
-      `<button class="tzrow${t.tz === posix ? ' sel' : ''}" data-tz="${esc(posix)}">${esc(label)}</button>`
+      `<button class="tzrow${t.tz === posix ? ' sel' : ''}" data-tz="${esc(posix)}"><span>${esc(label)}</span><span class="gmt">${gmtFromPosix(posix)}</span></button>`
   ).join('');
 
   const devRows =
@@ -3099,20 +3106,28 @@ async function renderHorario() {
       .map((s) => {
         const [cls, lbl] = stationSyncLabel(s.sync);
         const nm = s.name ? esc(s.name) : nodeHex(s.node);
-        return `<div class="fp-kv"><span class="k">${nm}</span><span class="chip ${cls}">${esc(lbl)}</span></div>`;
+        return `<div class="hr-dev">
+          <div class="hr-dev-main">
+            <div class="nm">${nm}</div>
+            <div class="mt">Estação · ${nodeHex(s.node)}</div>
+          </div>
+          <span class="chip ${cls}">${esc(lbl)}</span>
+        </div>`;
       })
       .join('') || '<div class="sub">Nenhuma estação conhecida.</div>';
 
   view.innerHTML = `
-    <div class="card">
-      <div class="sens-hdr"><span class="name">Relógio do gateway</span></div>
-      <div class="sub">Agora: ${fmtEpochLocal(t.nowEpoch)} · ${esc(t.tzLabel || '—')}</div>
-    </div>
     <div class="card stack">
-      <div class="fp-lbl">Fonte de hora</div>
-      <div class="fp-seg" id="srcSeg">
-        <button data-src="ntp" class="${isNtp ? 'sel' : ''}">NTP (automática)</button>
-        <button data-src="manual" class="${!isNtp ? 'sel' : ''}">Manual</button>
+      <div>
+        <div class="sens-hdr"><span class="name">Relógio do gateway</span></div>
+        <div class="sub">Agora: ${fmtEpochLocal(t.nowEpoch)} · ${esc(t.tzLabel || '—')} · ${gmtFromPosix(t.tz)}</div>
+      </div>
+      <div>
+        <div class="fp-lbl">Fonte de hora</div>
+        <div class="fp-seg" id="srcSeg">
+          <button data-src="ntp" class="${isNtp ? 'sel' : ''}">NTP (automática)</button>
+          <button data-src="manual" class="${!isNtp ? 'sel' : ''}">Manual</button>
+        </div>
       </div>
       <div id="srcBody"></div>
       <span id="timeMsg" class="sub"></span>
@@ -3123,8 +3138,8 @@ async function renderHorario() {
     </div>
     <div class="card">
       <div class="sens-hdr"><span class="name">Sincronização por dispositivo</span></div>
-      <div class="sub">Epoch de config de cada estação — reflete se recebeu o horário/config mais recente.</div>
-      ${devRows}
+      <div class="sub hr-sync-note">Epoch de config de cada estação — reflete se recebeu o horário/config mais recente.</div>
+      <div class="hr-devs">${devRows}</div>
     </div>`;
 
   const srcBody = view.querySelector('#srcBody');
@@ -3132,8 +3147,10 @@ async function renderHorario() {
   function paintSource(src) {
     if (src === 'ntp') {
       srcBody.innerHTML = `
-        <div class="fp-kv"><span class="k">Servidor</span><span class="v">${esc(t.ntpServer || '—')}</span></div>
-        <div class="fp-kv"><span class="k">Última sincronização</span><span class="v">${esc(lastSync)}</span></div>
+        <div class="hr-box">
+          <div class="fp-kv"><span class="k">Servidor</span><span class="v">${esc(t.ntpServer || '—')}</span></div>
+          <div class="fp-kv"><span class="k">Última sincronização</span><span class="v">${esc(lastSync)}</span></div>
+        </div>
         ${t.staUp ? '<button class="btn ghost sm" id="syncNow">Sincronizar agora</button>' : '<div class="sub">Sem WiFi — NTP indisponível.</div>'}`;
       const sn = srcBody.querySelector('#syncNow');
       if (sn)
@@ -3148,8 +3165,10 @@ async function renderHorario() {
       const dv = `${nowIso.getFullYear()}-${p(nowIso.getMonth() + 1)}-${p(nowIso.getDate())}`;
       const tv = `${p(nowIso.getHours())}:${p(nowIso.getMinutes())}`;
       srcBody.innerHTML = `
-        <label>Data <input type="date" id="mDate" value="${dv}"></label>
-        <label>Hora <input type="time" id="mTime" value="${tv}"></label>
+        <div class="hr-manual">
+          <label>Data<input type="date" id="mDate" value="${dv}"></label>
+          <label>Hora<input type="time" id="mTime" value="${tv}"></label>
+        </div>
         <button class="btn solid sm" id="mSet">Definir data e hora</button>`;
       srcBody.querySelector('#mSet').addEventListener('click', async () => {
         const d = srcBody.querySelector('#mDate').value;
