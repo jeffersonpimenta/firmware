@@ -194,6 +194,8 @@ bool ProgramScheduler::deserialize(const uint8_t *buf, size_t n)
         p.daysMask = buf[off + 2];
         memcpy(&p.startMinute, buf + off + 3, 2);
         p.stepCount = buf[off + 5];
+        if (p.stepCount > 8) // blob corrompido: clamp p/ não indexar steps[] fora do array (8 elementos)
+            p.stepCount = 8;
         for (uint8_t j = 0; j < 8; j++) {
             p.steps[j].zoneId = buf[off + 6 + j * 3];
             memcpy(&p.steps[j].durationMin, buf + off + 7 + j * 3, 2);

@@ -328,6 +328,43 @@ let wifiState = {
   connectSsid: null,
 };
 
+// Estado do relógio do gateway — endpoints /time, /timezone, /time/sync (página Horário).
+// posix → rótulo (espelha tzLabelFor do backend: nome IANA, 'Personalizado' se desconhecido).
+const TZ_LABELS = {
+  '<-03>3': 'America/Sao_Paulo',
+  '<-04>4': 'America/Manaus',
+  '<-05>5': 'America/Rio_Branco',
+  '<-02>2': 'America/Noronha',
+  'GMT0': 'UTC',
+};
+let timeState = {
+  tz: '<-03>3',
+  source: 'ntp', // ntp | manual
+  ntpServer: 'pool.ntp.org',
+  lastSyncS: 0, // segundos desde o último NTP (0 = agora); só usado quando source==ntp
+  manualEpoch: null,
+  manualSetAtMs: null,
+};
+
+// Espelha buildTimeStatus() do backend (IrrigationWebApi.cpp).
+function mockTimeStatus() {
+  const nowEpoch =
+    timeState.source === 'manual' && timeState.manualEpoch
+      ? timeState.manualEpoch + Math.floor((Date.now() - timeState.manualSetAtMs) / 1000)
+      : Math.floor(Date.now() / 1000);
+  return {
+    nowEpoch,
+    hasRtc: true,
+    source: timeState.source,
+    quality: timeState.source === 'ntp' ? 4 : 2,
+    ntpServer: timeState.ntpServer,
+    lastSyncS: timeState.source === 'ntp' ? timeState.lastSyncS : -1,
+    tz: timeState.tz,
+    tzLabel: TZ_LABELS[timeState.tz] || 'Personalizado',
+    staUp: !!wifiState.connectedSsid,
+  };
+}
+
 // Substitui fetch global
 const origFetch = window.fetch;
 window.fetch = async function (url, opts) {
@@ -421,6 +458,7 @@ window.fetch = async function (url, opts) {
   }
 
   // GET
+  if (path.startsWith('/time')) return mockResponse(mockTimeStatus());
   if (path.startsWith('/zones')) return mockResponse(STATE.zones);
   if (path.startsWith('/stations')) return mockResponse(STATE.stations);
   if (path.startsWith('/overview')) return mockResponse(STATE.overview);
@@ -490,6 +528,25 @@ function mockResponse(data, status = 200) {
 }
 
 function handlePost(path, body) {
+  // Horário (relógio do gateway) — espelha hTimeSet/hTimezone/hTimeSync do backend.
+  if (path === '/time/sync') {
+    if (!wifiState.connectedSsid) return mockResponse({ ok: false, reason: 'sem WiFi' }, 409);
+    timeState.source = 'ntp';
+    timeState.lastSyncS = 0;
+    return mockResponse({ ok: true });
+  }
+  if (path === '/time') {
+    if (!body.epoch || body.epoch < 1600000000) return mockResponse({ ok: false, reason: 'epoch inválido' }, 400);
+    timeState.source = 'manual';
+    timeState.manualEpoch = body.epoch;
+    timeState.manualSetAtMs = Date.now();
+    return mockResponse(mockTimeStatus()); // backend devolve o status completo no sucesso
+  }
+  if (path === '/timezone') {
+    if (!TZ_LABELS[body.tz]) return mockResponse({ ok: false, reason: 'fuso desconhecido' }, 400);
+    timeState.tz = body.tz;
+    return mockResponse({ ok: true });
+  }
   // Zonas
   if (path === '/zones') {
     if (!body.name || !body.name.trim()) return mockResponse({ errors: ['Nome obrigatório.'] }, 400);

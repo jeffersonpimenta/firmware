@@ -1,6 +1,7 @@
 #include "modules/irrigation/IrrigationPortalEndpoints.h"
 #if !MESHTASTIC_EXCLUDE_WEBSERVER
 
+#include "modules/irrigation/IrrigationEndpointHelpers.h" // sendJson/sendParseErrors/readBody
 #include "modules/irrigation/IrrigationModule.h"
 #include "modules/irrigation/PortalApi.h"
 
@@ -8,49 +9,10 @@
 #include <cstdlib> // malloc/free explícitos (hLog aloca ~10 KB no heap)
 
 #undef str
-#include <HTTPRequest.hpp>
-#include <HTTPResponse.hpp>
 #include <ResourceNode.hpp>
 
 using namespace httpsserver;
 using namespace IrrigationWeb;
-
-static void sendJson(HTTPResponse *res, const char *body, int status = 200)
-{
-    res->setStatusCode(status);
-    res->setHeader("Content-Type", "application/json");
-    res->setHeader("Access-Control-Allow-Origin", "*");
-    res->print(body);
-}
-
-static void sendParseErrors(HTTPResponse *res, const ParseResult &pr)
-{
-    char err[256];
-    JsonWriter w(err, sizeof(err));
-    w.beginObject();
-    w.key("errors");
-    w.beginArray();
-    for (uint8_t i = 0; i < pr.errorCount; i++)
-        w.str(pr.errors[i].msg);
-    w.endArray();
-    w.endObject();
-    if (w.done() == 0) {
-        sendJson(res, "{\"errors\":[\"erro\"]}", 400);
-        return;
-    }
-    sendJson(res, err, 400);
-}
-
-static size_t readBody(HTTPRequest *req, char *buf, size_t cap)
-{
-    if (cap == 0)
-        return 0;
-    size_t n = req->readBytes(reinterpret_cast<byte *>(buf), cap - 1);
-    if (n >= cap)
-        n = cap - 1;
-    buf[n] = '\0';
-    return n;
-}
 
 static void hNode(HTTPRequest *req, HTTPResponse *res)
 {
