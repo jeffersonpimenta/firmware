@@ -8,6 +8,12 @@ function fmtUptime(s) {
   const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600);
   return d > 0 ? `${d} d ${h} h` : `${h} h ${Math.floor((s % 3600) / 60)} m`;
 }
+function fmtClock(epoch, has) {
+  if (!has || !epoch) return "sem relógio";
+  const d = new Date(epoch * 1000);
+  const p = (n) => String(n).padStart(2, "0");
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
 function setHeader(s) {
   document.getElementById("hdrName").textContent = s.name || "(sem nome)";
   document.getElementById("hdrSub").textContent = (ROLES[s.role] || "Nó") + " · canal privado";
@@ -41,6 +47,7 @@ function renderNode(s) {
         ${solar ? `<div class="fp-stat"><div class="lbl">Gateway</div><div class="val sm">${gw}</div></div>` : ''}
         <div class="fp-stat"><div class="lbl">Uptime</div><div class="val sm">${fmtUptime(s.uptimeS || 0)}</div></div>
       </div>
+      <div class="fp-stat" style="margin-top:8px;"><div class="lbl">Relógio</div><div class="val sm">${fmtClock(s.nowEpoch, s.hasTime)}</div></div>
       <div class="muted" style="font-size:12px;margin-top:12px;">${sync}</div>
       ${tamper}`;
     return;
@@ -57,6 +64,7 @@ function renderNode(s) {
       <div class="fp-stat"><div class="lbl">Gateway</div><div class="val sm">${gw}</div></div>
     </div>
     <div class="muted" style="font-size:12px;margin-top:10px;">${sync}${s.safeMode ? " · <b>modo seguro</b>" : ""}</div>
+    <div class="fp-stat" style="margin-top:8px;"><div class="lbl">Relógio</div><div class="val sm">${fmtClock(s.nowEpoch, s.hasTime)}</div></div>
     <div style="margin-top:6px;"><div class="fp-lbl">Válvulas</div><div class="fp-pills">${valves.join("") || "<span class='muted'>—</span>"}</div></div>
     ${tamper}`;
   renderPulsePills(s.numValves);

@@ -277,6 +277,8 @@ const MOCK_DATA = {
     valveStates: 1, gpoStates: 0, vbatCentiV: 1250, vpanelCentiV: 1350,
     flags: 0, apSecondsLeft: 540, latE7: -221234567, lonE7: -476543210,
     uptimeS: 1234567,
+    nowEpoch: Math.floor(Date.now() / 1000),
+    hasTime: true,
   },
   portalSensors: {
     sensors: [
