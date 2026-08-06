@@ -102,4 +102,42 @@ struct LinkCtx {
 };
 size_t buildLink(const LinkCtx &ctx, char *buf, size_t cap);
 
+// --- Aba "Rede Wi-Fi" (fase 8a) ---
+struct WifiStatusCtx {
+    bool enabled = false;         // config.network.wifi_enabled
+    bool staUp = false;           // WiFi.isConnected()
+    char connectedSsid[33] = {0}; // "" se não conectado
+    char ip[16] = {0};            // "" se sem IP
+};
+size_t buildWifiStatus(const WifiStatusCtx &ctx, char *buf, size_t cap);
+
+struct WifiScanItem {
+    char ssid[33] = {0};
+    int16_t rssi = 0;
+    bool secure = true;
+};
+struct WifiScanCtx {
+    bool scanning = false; // true → frontend mostra spinner, ignora items
+    uint8_t count = 0;     // <= 16
+    WifiScanItem items[16];
+};
+size_t buildWifiScan(const WifiScanCtx &ctx, char *buf, size_t cap);
+
+struct WifiConnectReq {
+    char ssid[33] = {0};
+    char psk[64] = {0}; // vazio = rede aberta
+};
+ParseResult parseWifiConnect(const char *json, size_t len, WifiConnectReq &out);
+
+enum class WifiConnectState : uint8_t { Idle = 0, Connecting = 1, Success = 2, Error = 3 };
+struct WifiConnectCtx {
+    WifiConnectState state = WifiConnectState::Idle;
+    char ssid[33] = {0};
+    char error[48] = {0}; // preenchido só quando state==Error
+};
+size_t buildWifiConnect(const WifiConnectCtx &ctx, char *buf, size_t cap);
+
+struct WifiToggleReq { bool enabled = false; };
+ParseResult parseWifiToggle(const char *json, size_t len, WifiToggleReq &out);
+
 } // namespace IrrigationWeb
