@@ -1471,3 +1471,10 @@ body {
 
 /* Wi-Fi screen wrapper — herda o gap do .panel pai */
 #wifi-screen { display: flex; flex-direction: column; gap: 12px; }
+
+/* ===== Horário (relógio do gateway) ===== */
+.hdr-right { display: flex; align-items: center; gap: 8px; }
+.timebadge { cursor: pointer; }
+.tzlist { display: flex; flex-direction: column; gap: 6px; }
+.tzrow { text-align: left; border: 1px solid var(--border, #ddd); background: #fff; padding: 10px 12px; border-radius: 10px; font-weight: 600; cursor: pointer; }
+.tzrow.sel { border-color: var(--green, #2e7d5b); color: var(--green, #2e7d5b); background: rgba(46, 125, 91, 0.08); }

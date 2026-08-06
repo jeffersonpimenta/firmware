@@ -98,6 +98,18 @@ async function renderOverview() {
   syncChip.textContent = ov.hasRtc ? 'com relógio' : 'sem relógio';
   syncChip.className = 'chip ' + (ov.hasRtc ? 'green' : 'amber');
 
+  const tb = document.getElementById('timeBadge');
+  if (tb) {
+    if (ov.hasRtc) {
+      const now = new Date();
+      const p = (n) => String(n).padStart(2, '0');
+      tb.textContent = `${p(now.getHours())}:${p(now.getMinutes())}`;
+      tb.classList.remove('hidden');
+    } else {
+      tb.classList.add('hidden');
+    }
+  }
+
   const alertN = num(ov.alertCount);
   let html =
     `<div class="row3">
@@ -2171,6 +2183,7 @@ function renderMais() {
     ['cobertura', 'Cobertura', 'Pesquisa de sinal (site survey)'],
     ['malha', 'Malha / Enlace', 'Qualidade de rádio (SNR/RSSI) de cada nó'],
     ['wifi', 'Rede Wi-Fi', 'Conectar o gateway a uma rede Wi-Fi local'],
+    ['horario', 'Horário', 'Fonte de hora, fuso e sincronização dos nós'],
     ['sistema', 'Sistema', 'Backup e chave da rede'],
   ];
   view.innerHTML = items
@@ -2622,6 +2635,125 @@ async function renderWifi() {
   }
 }
 
+// ===== Horário (relógio do gateway) — endpoints /api/irrigation/time* =====
+const TZ_PRESETS = [
+  ['America/Sao_Paulo', '<-03>3'],
+  ['America/Manaus', '<-04>4'],
+  ['America/Rio_Branco', '<-05>5'],
+  ['America/Noronha', '<-02>2'],
+  ['UTC', 'GMT0'],
+];
+
+function fmtEpochLocal(epoch) {
+  if (!epoch) return '—';
+  const d = new Date(epoch * 1000);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+async function renderHorario() {
+  const t = (await getJson('/time').catch(() => ({}))) || {};
+  const stations = (await getJson('/stations').catch(() => [])) || [];
+  const isNtp = t.source === 'ntp';
+  const lastSync =
+    t.lastSyncS == null || t.lastSyncS < 0
+      ? 'nunca'
+      : t.lastSyncS === 0
+      ? 'agora mesmo'
+      : fmtSince(t.lastSyncS);
+
+  const tzRows = TZ_PRESETS.map(
+    ([label, posix]) =>
+      `<button class="tzrow${t.tz === posix ? ' sel' : ''}" data-tz="${esc(posix)}">${esc(label)}</button>`
+  ).join('');
+
+  const devRows =
+    (Array.isArray(stations) ? stations : [])
+      .map((s) => {
+        const [cls, lbl] = stationSyncLabel(s.sync);
+        const nm = s.name ? esc(s.name) : nodeHex(s.node);
+        return `<div class="fp-kv"><span class="k">${nm}</span><span class="chip ${cls}">${esc(lbl)}</span></div>`;
+      })
+      .join('') || '<div class="sub">Nenhuma estação conhecida.</div>';
+
+  view.innerHTML = `
+    <div class="card">
+      <div class="sens-hdr"><span class="name">Relógio do gateway</span></div>
+      <div class="sub">Agora: ${fmtEpochLocal(t.nowEpoch)} · ${esc(t.tzLabel || '—')}</div>
+    </div>
+    <div class="card stack">
+      <div class="fp-lbl">Fonte de hora</div>
+      <div class="fp-seg" id="srcSeg">
+        <button data-src="ntp" class="${isNtp ? 'sel' : ''}">NTP (automática)</button>
+        <button data-src="manual" class="${!isNtp ? 'sel' : ''}">Manual</button>
+      </div>
+      <div id="srcBody"></div>
+      <span id="timeMsg" class="sub"></span>
+    </div>
+    <div class="card">
+      <div class="sens-hdr"><span class="name">Fuso horário</span></div>
+      <div class="tzlist">${tzRows}</div>
+    </div>
+    <div class="card">
+      <div class="sens-hdr"><span class="name">Sincronização por dispositivo</span></div>
+      <div class="sub">Epoch de config de cada estação — reflete se recebeu o horário/config mais recente.</div>
+      ${devRows}
+    </div>`;
+
+  const srcBody = view.querySelector('#srcBody');
+  const msg = view.querySelector('#timeMsg');
+  function paintSource(src) {
+    if (src === 'ntp') {
+      srcBody.innerHTML = `
+        <div class="fp-kv"><span class="k">Servidor</span><span class="v">${esc(t.ntpServer || '—')}</span></div>
+        <div class="fp-kv"><span class="k">Última sincronização</span><span class="v">${esc(lastSync)}</span></div>
+        ${t.staUp ? '<button class="btn ghost sm" id="syncNow">Sincronizar agora</button>' : '<div class="sub">Sem WiFi — NTP indisponível.</div>'}`;
+      const sn = srcBody.querySelector('#syncNow');
+      if (sn)
+        sn.addEventListener('click', async () => {
+          const r = await postJson('/time/sync', {});
+          msg.textContent = r.ok ? 'Sincronização NTP disparada.' : 'Falha: ' + (r.body.reason || 'sem WiFi');
+          setTimeout(() => renderHorario().catch(() => {}), 1500);
+        });
+    } else {
+      const nowIso = t.nowEpoch ? new Date(t.nowEpoch * 1000) : new Date();
+      const p = (n) => String(n).padStart(2, '0');
+      const dv = `${nowIso.getFullYear()}-${p(nowIso.getMonth() + 1)}-${p(nowIso.getDate())}`;
+      const tv = `${p(nowIso.getHours())}:${p(nowIso.getMinutes())}`;
+      srcBody.innerHTML = `
+        <label>Data <input type="date" id="mDate" value="${dv}"></label>
+        <label>Hora <input type="time" id="mTime" value="${tv}"></label>
+        <button class="btn solid sm" id="mSet">Definir data e hora</button>`;
+      srcBody.querySelector('#mSet').addEventListener('click', async () => {
+        const d = srcBody.querySelector('#mDate').value;
+        const h = srcBody.querySelector('#mTime').value;
+        if (!d || !h) {
+          msg.textContent = 'Preencha data e hora.';
+          return;
+        }
+        const epoch = Math.floor(new Date(`${d}T${h}:00`).getTime() / 1000);
+        const r = await postJson('/time', { epoch });
+        msg.textContent = r.ok ? 'Data e hora aplicadas.' : 'Falha: ' + (r.body.reason || 'erro');
+        setTimeout(() => renderHorario().catch(() => {}), 1500);
+      });
+    }
+  }
+  paintSource(isNtp ? 'ntp' : 'manual');
+  view.querySelectorAll('#srcSeg button').forEach((b) =>
+    b.addEventListener('click', () => {
+      view.querySelectorAll('#srcSeg button').forEach((x) => x.classList.toggle('sel', x === b));
+      paintSource(b.dataset.src);
+    })
+  );
+  view.querySelectorAll('.tzrow').forEach((b) =>
+    b.addEventListener('click', async () => {
+      const r = await postJson('/timezone', { tz: b.dataset.tz });
+      msg.textContent = r.ok ? 'Fuso atualizado.' : 'Falha ao definir fuso.';
+      setTimeout(() => renderHorario().catch(() => {}), 800);
+    })
+  );
+}
+
 // ===== Roteamento =====
 const RENDER = {
   overview: renderOverview,
@@ -2638,6 +2770,7 @@ const RENDER = {
   cobertura: renderCobertura,
   malha: renderMalha,
   wifi: renderWifi,
+  horario: renderHorario,
   mais: renderMais,
   sistema: renderSistema,
 };
@@ -2645,7 +2778,7 @@ const RENDER = {
 // Rótulo mostrado na barra de volta ao entrar numa tela secundária via "Mais".
 const SECTION_LABELS = {
   grupos: 'Grupos', niveis: 'Nível', intertravamentos: 'Intertravamentos', sensores: 'Sensores',
-  gpo: 'Saídas (GPO)', tamper: 'Tamper', auditlog: 'Log', cobertura: 'Cobertura', malha: 'Malha', wifi: 'Rede Wi-Fi', sistema: 'Sistema',
+  gpo: 'Saídas (GPO)', tamper: 'Tamper', auditlog: 'Log', cobertura: 'Cobertura', malha: 'Malha', wifi: 'Rede Wi-Fi', horario: 'Horário', sistema: 'Sistema',
 };
 // Telas que se auto-atualizam (poll 3 s) via re-render completo.
 const POLLED = { overview: 1, stations: 1, sensores: 1, cobertura: 1, malha: 1 };
@@ -2711,6 +2844,9 @@ document.querySelectorAll('.tab').forEach((t) => {
   if (t.disabled) return;
   t.addEventListener('click', () => show(t.dataset.tab));
 });
+
+const timeBadgeEl = document.getElementById('timeBadge');
+if (timeBadgeEl) timeBadgeEl.addEventListener('click', () => showSub('horario'));
 
 // Dev: ativar mock WiFi via console ou URL. Ex: wfToggleMock() ou ?wf-mock=1
 function wfToggleMock() {
