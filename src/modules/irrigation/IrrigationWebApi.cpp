@@ -83,6 +83,50 @@ size_t buildOverview(const OverviewCtx &ctx, char *buf, size_t cap)
     return w.done();
 }
 
+const TzPreset TZ_PRESETS[] = {
+    {"America/Sao_Paulo", "<-03>3"},
+    {"America/Manaus", "<-04>4"},
+    {"America/Rio_Branco", "<-05>5"},
+    {"America/Noronha", "<-02>2"},
+    {"UTC", "GMT0"},
+};
+const size_t TZ_PRESETS_COUNT = sizeof(TZ_PRESETS) / sizeof(TZ_PRESETS[0]);
+
+const char *tzLabelFor(const char *posix)
+{
+    if (posix)
+        for (size_t i = 0; i < TZ_PRESETS_COUNT; i++)
+            if (strcmp(posix, TZ_PRESETS[i].posix) == 0)
+                return TZ_PRESETS[i].label;
+    return "Personalizado";
+}
+bool tzIsValidPreset(const char *posix)
+{
+    if (!posix) return false;
+    for (size_t i = 0; i < TZ_PRESETS_COUNT; i++)
+        if (strcmp(posix, TZ_PRESETS[i].posix) == 0)
+            return true;
+    return false;
+}
+
+size_t buildTimeStatus(const TimeStatusCtx &ctx, char *buf, size_t cap)
+{
+    const char *source = ctx.quality >= 3 ? "ntp" : (ctx.nowEpoch != 0 ? "manual" : "none");
+    JsonWriter w(buf, cap);
+    w.beginObject();
+    w.keyNum("nowEpoch", (int64_t)ctx.nowEpoch);
+    w.keyBool("hasRtc", ctx.nowEpoch != 0);
+    w.keyStr("source", source);
+    w.keyNum("quality", ctx.quality);
+    w.keyStr("ntpServer", ctx.ntpServer ? ctx.ntpServer : "");
+    w.keyNum("lastSyncS", ctx.lastSyncS);
+    w.keyStr("tz", ctx.tz ? ctx.tz : "");
+    w.keyStr("tzLabel", tzLabelFor(ctx.tz));
+    w.keyBool("staUp", ctx.staUp);
+    w.endObject();
+    return w.done();
+}
+
 size_t buildAlerts(const AlertCenter &ac, uint32_t nowMs, uint32_t ackMs, char *buf, size_t cap)
 {
     JsonWriter w(buf, cap);

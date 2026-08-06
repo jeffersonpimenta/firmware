@@ -1137,6 +1137,59 @@ static void test_parseStationPulse_rejects_bad_tipo()
     TEST_ASSERT_FALSE(pr.ok);
 }
 
+static void test_buildTimeStatus_ntp()
+{
+    TimeStatusCtx c = {};
+    c.nowEpoch = 1754500320;
+    c.quality = 3; // RTCQualityNTP
+    c.ntpServer = "pool.ntp.org";
+    c.lastSyncS = 120;
+    c.tz = "<-03>3";
+    c.staUp = true;
+    char buf[512];
+    size_t n = buildTimeStatus(c, buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_TRUE(contains(buf, "\"nowEpoch\":1754500320"));
+    TEST_ASSERT_TRUE(contains(buf, "\"hasRtc\":true"));
+    TEST_ASSERT_TRUE(contains(buf, "\"source\":\"ntp\""));
+    TEST_ASSERT_TRUE(contains(buf, "\"ntpServer\":\"pool.ntp.org\""));
+    TEST_ASSERT_TRUE(contains(buf, "\"lastSyncS\":120"));
+    TEST_ASSERT_TRUE(contains(buf, "\"tz\":\"<-03>3\""));
+    TEST_ASSERT_TRUE(contains(buf, "\"tzLabel\":\"America/Sao_Paulo\""));
+    TEST_ASSERT_TRUE(contains(buf, "\"staUp\":true"));
+}
+
+static void test_buildTimeStatus_manual_and_none()
+{
+    TimeStatusCtx c = {};
+    c.nowEpoch = 1754500320;
+    c.quality = 1; // RTCQualityDevice -> manual
+    c.lastSyncS = -1;
+    c.tz = "GMT0";
+    char buf[512];
+    TEST_ASSERT_GREATER_THAN(0, buildTimeStatus(c, buf, sizeof(buf)));
+    TEST_ASSERT_TRUE(contains(buf, "\"source\":\"manual\""));
+    TEST_ASSERT_TRUE(contains(buf, "\"lastSyncS\":-1"));
+    TEST_ASSERT_TRUE(contains(buf, "\"tzLabel\":\"UTC\""));
+
+    TimeStatusCtx z = {};
+    z.nowEpoch = 0; z.quality = 0; z.tz = "";
+    char buf2[512];
+    TEST_ASSERT_GREATER_THAN(0, buildTimeStatus(z, buf2, sizeof(buf2)));
+    TEST_ASSERT_TRUE(contains(buf2, "\"source\":\"none\""));
+    TEST_ASSERT_TRUE(contains(buf2, "\"hasRtc\":false"));
+    TEST_ASSERT_TRUE(contains(buf2, "\"tzLabel\":\"Personalizado\""));
+}
+
+static void test_tzPresets_lookup()
+{
+    TEST_ASSERT_TRUE(tzIsValidPreset("<-03>3"));
+    TEST_ASSERT_TRUE(tzIsValidPreset("GMT0"));
+    TEST_ASSERT_FALSE(tzIsValidPreset("Europe/Paris"));
+    TEST_ASSERT_EQUAL_STRING("America/Manaus", tzLabelFor("<-04>4"));
+    TEST_ASSERT_EQUAL_STRING("Personalizado", tzLabelFor("bogus"));
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -1225,6 +1278,10 @@ void setup()
     RUN_TEST(test_parseStationDelete_rejects_zero);
     RUN_TEST(test_parseStationPulse_ok);
     RUN_TEST(test_parseStationPulse_rejects_bad_tipo);
+    // Fase 8b — Horário
+    RUN_TEST(test_buildTimeStatus_ntp);
+    RUN_TEST(test_buildTimeStatus_manual_and_none);
+    RUN_TEST(test_tzPresets_lookup);
     exit(UNITY_END());
 }
 

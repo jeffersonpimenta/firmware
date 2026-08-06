@@ -63,6 +63,27 @@ struct OverviewCtx {
 };
 size_t buildOverview(const OverviewCtx &ctx, char *buf, size_t cap);
 
+// --- Fase 8b: Horário (relógio do gateway) ---
+struct TzPreset {
+    const char *label; // IANA-like exibido na UI
+    const char *posix; // string gravada em config.device.tzdef
+};
+extern const TzPreset TZ_PRESETS[];
+extern const size_t TZ_PRESETS_COUNT;
+// "Personalizado" se posix não bate nenhum preset (ou é vazio).
+const char *tzLabelFor(const char *posix);
+bool tzIsValidPreset(const char *posix);
+
+struct TimeStatusCtx {
+    uint32_t nowEpoch = 0;      // 0 = sem relógio válido
+    int quality = 0;            // getRTCQuality() cru (NTP=3, GPS=2, Device=1, None=0)
+    const char *ntpServer = ""; // config.network.ntp_server
+    int32_t lastSyncS = -1;     // segundos desde o último NTP set; -1 = nunca
+    const char *tz = "";        // config.device.tzdef
+    bool staUp = false;         // WiFi STA conectado
+};
+size_t buildTimeStatus(const TimeStatusCtx &ctx, char *buf, size_t cap);
+
 // Alertas não reconhecidos (§8.1–§8.3): serializa os alertas do AlertCenter com atMs > ackMs.
 // ageS = (nowMs - atMs)/1000. JSON: [{type,node,arg,ageS}]. "[]" se nada pendente.
 size_t buildAlerts(const AlertCenter &ac, uint32_t nowMs, uint32_t ackMs, char *buf, size_t cap);
