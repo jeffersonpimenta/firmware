@@ -428,7 +428,7 @@ static void test_buildWifiScan_truncationReturnsZero()
     WifiScanCtx c = {};
     c.count = 16;
     for (uint8_t i = 0; i < 16; i++) {
-        strcpy(c.items[i].ssid, "RedeComNomeBemLongoParaEstourar32"); // 33-char boundary
+        strcpy(c.items[i].ssid, "RedeLongaParaEstourarBuffer"); // 27 chars (cabe em ssid[33])
         c.items[i].rssi = -55;
         c.items[i].secure = true;
     }
