@@ -460,6 +460,8 @@ let wifiEnabled = false;       // reflete o toggle atual
 let wifiSelectedNet = null;    // {ssid, rssi, secure} da rede escolhida
 let wifiScanTimer = null;      // timer de polling do scan
 let wifiConnectTimer = null;   // timer de polling do connect
+let wifiPollGen = 0;           // geração; incrementado em wifiClearTimers para cancelar polls em voo
+let wifiConnectFails = 0;      // contador de respostas !ok consecutivas no poller de connect
 
 // Helpers de visibilidade
 function wifiShow(id) { const e = document.getElementById(id); if (e) e.classList.remove("hidden"); }
@@ -474,8 +476,9 @@ function wifiRenderToggle() {
   knob.style.left = wifiEnabled ? "18px" : "2px";
 }
 
-// Cancela todos os timers pendentes de Wi-Fi
+// Cancela todos os timers pendentes de Wi-Fi e invalida polls em voo
 function wifiClearTimers() {
+  wifiPollGen++;
   if (wifiScanTimer)    { clearTimeout(wifiScanTimer);    wifiScanTimer    = null; }
   if (wifiConnectTimer) { clearTimeout(wifiConnectTimer); wifiConnectTimer = null; }
 }
@@ -579,24 +582,27 @@ function wifiRenderNetworks(networks, connectedSsid) {
 // Inicia um scan: POST /scan depois POLL GET /scan a cada 1500ms
 async function wifiStartScan() {
   wifiClearTimers();
+  const myGen = wifiPollGen;
   wifiHide("wifiEmpty");
   wifiHide("wifiNetworksList");
   const hint = document.getElementById("wifiForgetHint");
   if (hint) hint.classList.add("hidden");
   wifiShow("wifiScanning");
   await j("/api/portal/wifi/scan", { method: "POST" });
-  wifiPollScan();
+  wifiPollScan(myGen);
 }
 
-async function wifiPollScan() {
+async function wifiPollScan(myGen) {
   const { ok, body } = await j("/api/portal/wifi/scan");
+  if (myGen !== wifiPollGen) return;
   if (!ok) { wifiHide("wifiScanning"); return; }
   if (body.scanning) {
-    wifiScanTimer = setTimeout(wifiPollScan, 1500);
+    wifiScanTimer = setTimeout(() => wifiPollScan(myGen), 1500);
     return;
   }
   // Scan concluído
   const { ok: stOk, body: stBody } = await j("/api/portal/wifi");
+  if (myGen !== wifiPollGen) return;
   const connectedSsid = stOk ? stBody.connectedSsid : null;
   wifiRenderNetworks(body.networks || [], connectedSsid);
 }
@@ -607,14 +613,29 @@ async function wifiDoConnect(psk) {
   wifiShowSubView("connecting");
   document.getElementById("wifiConnectingLabel").textContent = "Conectando a " + ssid + "…";
   wifiClearTimers();
+  wifiConnectFails = 0;
+  const myGen = wifiPollGen;
   await j("/api/portal/wifi/connect", { method: "POST", body: JSON.stringify({ ssid, psk }) });
-  wifiPollConnect(ssid);
+  wifiPollConnect(ssid, myGen);
 }
 
-async function wifiPollConnect(ssid) {
+async function wifiPollConnect(ssid, myGen) {
   const { ok, body } = await j("/api/portal/wifi/connect");
-  if (!ok || body.state === "connecting" || body.state === "idle") {
-    wifiConnectTimer = setTimeout(() => wifiPollConnect(ssid), 1500);
+  if (myGen !== wifiPollGen) return;
+  if (!ok) {
+    wifiConnectFails++;
+    if (wifiConnectFails >= 20) {
+      const msg = document.getElementById("wifiErrorMsg");
+      if (msg) msg.textContent = "Sem resposta do dispositivo.";
+      wifiShowSubView("error");
+      return;
+    }
+    wifiConnectTimer = setTimeout(() => wifiPollConnect(ssid, myGen), 1500);
+    return;
+  }
+  wifiConnectFails = 0;
+  if (body.state === "connecting" || body.state === "idle") {
+    wifiConnectTimer = setTimeout(() => wifiPollConnect(ssid, myGen), 1500);
     return;
   }
   if (body.state === "success") {
