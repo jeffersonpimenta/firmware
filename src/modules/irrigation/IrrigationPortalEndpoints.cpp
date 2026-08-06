@@ -288,6 +288,120 @@ static void hProvision(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, "{\"ok\":true,\"reboot\":true}");
 }
 
+// ── Wi-Fi management (§7) ────────────────────────────────────────────────────
+
+static void hWifiStatus(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!irrigationModule) {
+        res->setStatusCode(404);
+        return;
+    }
+    WifiStatusCtx c = {};
+    irrigationModule->portalWifiStatus(c);
+    char buf[160];
+    if (!buildWifiStatus(c, buf, sizeof(buf))) {
+        res->setStatusCode(500);
+        return;
+    }
+    sendJson(res, buf);
+}
+
+static void hWifiScanStart(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!irrigationModule) {
+        res->setStatusCode(404);
+        return;
+    }
+    irrigationModule->portalWifiStartScan();
+    sendJson(res, "{\"ok\":true}");
+}
+
+static void hWifiScanResult(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!irrigationModule) {
+        res->setStatusCode(404);
+        return;
+    }
+    WifiScanCtx c = {};
+    irrigationModule->portalWifiScanResult(c);
+    char buf[1024]; // 16 redes * ~56 B
+    if (!buildWifiScan(c, buf, sizeof(buf))) {
+        res->setStatusCode(500);
+        return;
+    }
+    sendJson(res, buf);
+}
+
+static void hWifiConnectStart(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!irrigationModule) {
+        res->setStatusCode(404);
+        return;
+    }
+    char body[160];
+    size_t nb = readBody(req, body, sizeof(body));
+    WifiConnectReq p;
+    ParseResult pr = parseWifiConnect(body, nb, p);
+    if (!pr.ok) {
+        sendParseErrors(res, pr);
+        return;
+    }
+    if (!irrigationModule->portalWifiConnect(p)) {
+        sendJson(res, "{\"errors\":[\"conexao rejeitada\"]}", 400);
+        return;
+    }
+    sendJson(res, "{\"ok\":true}");
+}
+
+static void hWifiConnectProgress(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!irrigationModule) {
+        res->setStatusCode(404);
+        return;
+    }
+    WifiConnectCtx c = {};
+    irrigationModule->portalWifiConnectProgress(c);
+    char buf[160];
+    if (!buildWifiConnect(c, buf, sizeof(buf))) {
+        res->setStatusCode(500);
+        return;
+    }
+    sendJson(res, buf);
+}
+
+static void hWifiForget(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!irrigationModule) {
+        res->setStatusCode(404);
+        return;
+    }
+    irrigationModule->portalWifiForget();
+    sendJson(res, "{\"ok\":true}");
+}
+
+static void hWifiToggle(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!irrigationModule) {
+        res->setStatusCode(404);
+        return;
+    }
+    char body[64];
+    size_t nb = readBody(req, body, sizeof(body));
+    WifiToggleReq t;
+    ParseResult pr = parseWifiToggle(body, nb, t);
+    if (!pr.ok) {
+        sendParseErrors(res, pr);
+        return;
+    }
+    irrigationModule->portalWifiToggle(t.enabled);
+    sendJson(res, "{\"ok\":true}");
+}
+
 void registerIrrigationPortalHandlers(HTTPServer *server)
 {
     server->registerNode(new ResourceNode("/api/portal/provision", "POST", &hProvision));
@@ -303,6 +417,13 @@ void registerIrrigationPortalHandlers(HTTPServer *server)
     server->registerNode(new ResourceNode("/api/portal/survey/start", "POST", &hSurveyStart));
     server->registerNode(new ResourceNode("/api/portal/survey/stop", "POST", &hSurveyStop));
     server->registerNode(new ResourceNode("/api/portal/link", "GET", &hLink));
+    server->registerNode(new ResourceNode("/api/portal/wifi", "GET", &hWifiStatus));
+    server->registerNode(new ResourceNode("/api/portal/wifi/scan", "POST", &hWifiScanStart));
+    server->registerNode(new ResourceNode("/api/portal/wifi/scan", "GET", &hWifiScanResult));
+    server->registerNode(new ResourceNode("/api/portal/wifi/connect", "POST", &hWifiConnectStart));
+    server->registerNode(new ResourceNode("/api/portal/wifi/connect", "GET", &hWifiConnectProgress));
+    server->registerNode(new ResourceNode("/api/portal/wifi/forget", "POST", &hWifiForget));
+    server->registerNode(new ResourceNode("/api/portal/wifi/toggle", "POST", &hWifiToggle));
 }
 
 #endif
