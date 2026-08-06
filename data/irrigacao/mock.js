@@ -295,6 +295,13 @@ const MOCK_DATA = {
     { id: 2, name: 'Pomar', padraoMin: 30 },
     { id: 3, name: 'Pastagem', padraoMin: 45 },
   ],
+  // WiFi — mock networks para testes de UI
+  wifiNetworks: [
+    { ssid: 'Casa', rssi: -45, secure: 1 },
+    { ssid: 'Vizinhos', rssi: -62, secure: 1 },
+    { ssid: 'Wifi Publico', rssi: -75, secure: 0 },
+    { ssid: 'Irrigacao-IOT', rssi: -55, secure: 1 },
+  ],
 };
 
 // Estado mutável (alterações de UI persiste até reload)
@@ -303,6 +310,15 @@ let STATE = JSON.parse(JSON.stringify(MOCK_DATA));
 STATE.portalNode.provisioned = !/[?&]wizard(=1)?/.test(location.search);
 // ?role=N → força papel do nó (ex.: ?role=3 para device SERVIÇO §11.8).
 { const m = location.search.match(/[?&]role=(\d)/); if (m) STATE.portalNode.role = +m[1]; }
+
+// WiFi state — gerenciado pelos endpoints mock
+let wifiState = {
+  enabled: false,
+  connectedSsid: null,
+  scanInProgress: false,
+  connectState: 'idle', // idle | connecting | success | failed
+  connectSsid: null,
+};
 
 // Substitui fetch global
 const origFetch = window.fetch;
@@ -319,6 +335,13 @@ window.fetch = async function (url, opts) {
     const ppath = clean.replace(/.*\/api\/portal/, '');
     if (method === 'POST') {
       if (ppath === '/provision') { STATE.portalNode.provisioned = true; return mockResponse({ ok: true, reboot: true }); }
+      // WiFi toggle
+      if (ppath === '/wifi/toggle') {
+        const body = opts.body ? JSON.parse(opts.body) : {};
+        wifiState.enabled = body.enabled;
+        if (body.enabled) wifiState.scanInProgress = true;
+        return mockResponse({ ok: true });
+      }
       return mockResponse({ ok: true });
     }
     if (ppath.startsWith('/node')) return mockResponse(STATE.portalNode);
@@ -352,6 +375,33 @@ window.fetch = async function (url, opts) {
         { node: 0xe5f6a7b8, role: 0, epoch: 17, vbat: 1180, fw: 0x20301, snr: 8  },
       ],
     });
+    // WiFi endpoints
+    if (ppath.startsWith('/wifi/toggle')) return mockResponse({ ok: true });
+    if (ppath.startsWith('/wifi/scan') && method === 'POST') {
+      wifiState.scanInProgress = true;
+      setTimeout(() => { wifiState.scanInProgress = false; }, 1500);
+      return mockResponse({ ok: true });
+    }
+    if (ppath.startsWith('/wifi/scan') && method === 'GET') {
+      return mockResponse({ scanning: wifiState.scanInProgress, networks: wifiState.scanInProgress ? [] : MOCK_DATA.wifiNetworks });
+    }
+    if (ppath.startsWith('/wifi/connect') && method === 'POST') {
+      wifiState.connectState = 'connecting';
+      wifiState.connectSsid = (opts.body ? JSON.parse(opts.body) : {}).ssid;
+      setTimeout(() => { wifiState.connectState = 'success'; wifiState.connectedSsid = wifiState.connectSsid; }, 1500);
+      return mockResponse({ ok: true });
+    }
+    if (ppath.startsWith('/wifi/connect') && method === 'GET') {
+      return mockResponse({ state: wifiState.connectState, ssid: wifiState.connectSsid, error: null });
+    }
+    if (ppath.startsWith('/wifi/forget')) {
+      wifiState.connectedSsid = null;
+      wifiState.connectSsid = null;
+      return mockResponse({ ok: true });
+    }
+    if (ppath.startsWith('/wifi') && method === 'GET') {
+      return mockResponse({ enabled: wifiState.enabled, connectedSsid: wifiState.connectedSsid });
+    }
     return mockResponse({ ok: true });
   }
 

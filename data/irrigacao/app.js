@@ -2265,13 +2265,24 @@ async function renderMalha() {
 }
 
 // ===== Rede Wi-Fi (gateway) — endpoints /api/portal/wifi/* =====
+// Mock networks para testes de UI (descomente para ativar).
+const WF_MOCK_NETWORKS = [
+  { ssid: 'Casa', rssi: -45, secure: 1 },
+  { ssid: 'Vizinhos', rssi: -62, secure: 1 },
+  { ssid: 'Wifi Publico', rssi: -75, secure: 0 },
+  { ssid: 'Irrigacao-IOT', rssi: -55, secure: 1 },
+];
+let wfUseMock = false;
+
 // Fetch helpers exclusivos (não usam API = /api/irrigation).
 async function wfGet(path) {
+  if (wfUseMock) return wfMockGet(path);
   const r = await fetch(path);
   const j = await r.json().catch(() => ({}));
   return { ok: r.ok, status: r.status, body: j };
 }
 async function wfPost(path, body) {
+  if (wfUseMock) return wfMockPost(path, body);
   const r = await fetch(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -2279,6 +2290,46 @@ async function wfPost(path, body) {
   });
   const j = await r.json().catch(() => ({}));
   return { ok: r.ok, status: r.status, body: j };
+}
+
+// Mock responses para testes (simula endpoints WiFi).
+let wfMockState = { enabled: false, connectedSsid: null, scanInProgress: false, connectState: 'idle' };
+async function wfMockGet(path) {
+  await new Promise(r => setTimeout(r, 100)); // simula latência
+  if (path === '/api/portal/wifi') {
+    return { ok: true, status: 200, body: { enabled: wfMockState.enabled, connectedSsid: wfMockState.connectedSsid } };
+  }
+  if (path === '/api/portal/wifi/scan') {
+    return { ok: true, status: 200, body: { scanning: wfMockState.scanInProgress, networks: wfMockState.scanInProgress ? [] : WF_MOCK_NETWORKS } };
+  }
+  if (path === '/api/portal/wifi/connect') {
+    return { ok: true, status: 200, body: { state: wfMockState.connectState, ssid: wfMockState.connectedSsid, error: null } };
+  }
+  return { ok: false, status: 404, body: {} };
+}
+async function wfMockPost(path, body) {
+  await new Promise(r => setTimeout(r, 100));
+  if (path === '/api/portal/wifi/toggle') {
+    wfMockState.enabled = body.enabled;
+    wfMockState.scanInProgress = body.enabled;
+    return { ok: true, status: 200, body: {} };
+  }
+  if (path === '/api/portal/wifi/scan') {
+    wfMockState.scanInProgress = true;
+    setTimeout(() => { wfMockState.scanInProgress = false; }, 2000);
+    return { ok: true, status: 200, body: {} };
+  }
+  if (path === '/api/portal/wifi/connect') {
+    wfMockState.connectState = 'connecting';
+    wfMockState.connectedSsid = body.ssid;
+    setTimeout(() => { wfMockState.connectState = 'success'; }, 2000);
+    return { ok: true, status: 200, body: {} };
+  }
+  if (path === '/api/portal/wifi/forget') {
+    wfMockState.connectedSsid = null;
+    return { ok: true, status: 200, body: {} };
+  }
+  return { ok: false, status: 404, body: {} };
 }
 
 // Estado local do módulo Wi-Fi do painel (reiniciado a cada entrada na tela).
@@ -2660,5 +2711,15 @@ document.querySelectorAll('.tab').forEach((t) => {
   if (t.disabled) return;
   t.addEventListener('click', () => show(t.dataset.tab));
 });
+
+// Dev: ativar mock WiFi via console ou URL. Ex: wfToggleMock() ou ?wf-mock=1
+function wfToggleMock() {
+  wfUseMock = !wfUseMock;
+  console.log(`WiFi mock ${wfUseMock ? 'ativado' : 'desativado'}`);
+  wfMockState = { enabled: false, connectedSsid: null, scanInProgress: false, connectState: 'idle' };
+}
+if (new URLSearchParams(window.location.search).has('wf-mock')) {
+  wfToggleMock();
+}
 
 show('overview');
