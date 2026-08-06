@@ -127,6 +127,12 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     // Alertas não reconhecidos (§8.1–§8.3) p/ a Visão Geral do painel. Vazio ("[]") fora do gateway.
     size_t gwBuildAlerts(char *buf, size_t cap);
 
+    // Fase 8b: página Horário. gwBuildTimeStatus monta o TimeStatusCtx + serializa.
+    size_t gwBuildTimeStatus(char *buf, size_t cap);
+    bool gwSetManualTime(uint32_t epoch);  // perhapsSetRTC(Device, force) — true se aplicou
+    bool gwSetTimezone(const char *posix); // grava config.device.tzdef + setenv + persiste
+    bool gwSyncNtpNow();                   // dispara NTP; false se WiFi STA down
+
     // --- Serviço do portal de campo (todos os papéis). Chamados pela cola HTTP (IrrigationPortalEndpoints). ---
     void portalFillNodeState(IrrigationWeb::NodeStateCtx &out) const;
     void portalFillLink(IrrigationWeb::LinkCtx &out) const;

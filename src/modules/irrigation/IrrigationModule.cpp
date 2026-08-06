@@ -14,6 +14,7 @@
 #include "gps/RTC.h"
 #include "main.h"
 #include "mesh/Channels.h"
+#include "mesh/wifi/WiFiAPClient.h" // Fase 8b: triggerNtpUpdate/ntpLastRunMs (free functions)
 #include <string.h>
 
 // Default manual open duration when the user double-presses the station button (spec §5.2).
@@ -2350,6 +2351,63 @@ bool IrrigationModule::computeLocalSecs(uint32_t &out) const
     return epochLocal != 0;
 }
 
+// --- Fase 8b: cola da página Horário (fonte de hora / manual / fuso / sync NTP) ---
+size_t IrrigationModule::gwBuildTimeStatus(char *buf, size_t cap)
+{
+    IrrigationWeb::TimeStatusCtx c = {};
+    c.nowEpoch = getValidTime(RTCQualityDevice, true);
+    c.quality = (int)getRTCQuality();
+#if defined(ARCH_ESP32)
+    c.staUp = WiFi.isConnected();
+    unsigned long last = ntpLastRunMs();
+    c.lastSyncS = (last != 0) ? (int32_t)((millis() - last) / 1000UL) : -1;
+#else
+    c.staUp = false;
+    c.lastSyncS = -1;
+#endif
+    c.ntpServer = config.network.ntp_server[0] ? config.network.ntp_server : "pool.ntp.org";
+    c.tz = config.device.tzdef; // "" se não definido
+    return IrrigationWeb::buildTimeStatus(c, buf, cap);
+}
+
+bool IrrigationModule::gwSetManualTime(uint32_t epoch)
+{
+    if (epoch < 1600000000u)
+        return false;
+    struct timeval tv;
+    tv.tv_sec = (time_t)epoch;
+    tv.tv_usec = 0;
+    perhapsSetRTC(RTCQualityDevice, &tv, /*forceUpdate=*/true);
+    LOG_INFO("Irrigation GW: hora definida manualmente (epoch=%u)", epoch);
+    return true;
+}
+
+bool IrrigationModule::gwSetTimezone(const char *posix)
+{
+    if (!posix || !IrrigationWeb::tzIsValidPreset(posix))
+        return false;
+    strncpy(config.device.tzdef, posix, sizeof(config.device.tzdef) - 1);
+    config.device.tzdef[sizeof(config.device.tzdef) - 1] = '\0';
+    setenv("TZ", config.device.tzdef, 1);
+    tzset();
+    if (service)
+        service->reloadConfig(SEGMENT_CONFIG); // persiste + reaplica config
+    LOG_INFO("Irrigation GW: fuso ajustado (%s)", config.device.tzdef);
+    return true;
+}
+
+bool IrrigationModule::gwSyncNtpNow()
+{
+#if defined(ARCH_ESP32)
+    if (!WiFi.isConnected())
+        return false;
+    triggerNtpUpdate();
+    return true;
+#else
+    return false;
+#endif
+}
+
 // --- Serviço do painel web (gateway). Ponte entre a cola HTTP (Task 10) e o estado do gateway. ---
 bool IrrigationModule::gwIsGateway() const
 {
@@ -2672,6 +2730,8 @@ void IrrigationModule::portalFillNodeState(IrrigationWeb::NodeStateCtx &out) con
     out.flags = safeMode ? HB_FLAG_SAFE_MODE : 0;
     out.apSecondsLeft = portal.secondsLeft(millis());
     out.uptimeS = millis() / 1000;
+    out.nowEpoch = getValidTime(RTCQualityDevice, true);
+    out.hasTime = out.nowEpoch != 0;
 }
 
 void IrrigationModule::noteGatewayLink(int8_t snrQ, int16_t rssi)
