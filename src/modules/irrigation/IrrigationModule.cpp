@@ -2355,7 +2355,9 @@ bool IrrigationModule::computeLocalSecs(uint32_t &out) const
 size_t IrrigationModule::gwBuildTimeStatus(char *buf, size_t cap)
 {
     IrrigationWeb::TimeStatusCtx c = {};
-    c.nowEpoch = getValidTime(RTCQualityDevice, true);
+    // Epoch UTC real (local=false): o navegador aplica o fuso ao formatar. Passar local=true
+    // embutiria o offset do fuso e o cliente o somaria de novo (hora dobrada).
+    c.nowEpoch = getValidTime(RTCQualityDevice, false);
     c.quality = (int)getRTCQuality();
 #if defined(ARCH_ESP32)
     c.staUp = WiFi.isConnected();
@@ -2389,9 +2391,10 @@ bool IrrigationModule::gwSetTimezone(const char *posix)
     strncpy(config.device.tzdef, posix, sizeof(config.device.tzdef) - 1);
     config.device.tzdef[sizeof(config.device.tzdef) - 1] = '\0';
     setenv("TZ", config.device.tzdef, 1);
-    tzset();
-    if (service)
-        service->reloadConfig(SEGMENT_CONFIG); // persiste + reaplica config
+    tzset(); // aplica o fuso já neste boot (localtime passa a usar o novo TZ)
+    // Persiste só o segmento de config (main.cpp relê tzdef no próximo boot). Evita o
+    // reloadConfig(), que dispara reconfig de rádio/observers — desnecessário p/ um fuso.
+    nodeDB->saveToDisk(SEGMENT_CONFIG);
     LOG_INFO("Irrigation GW: fuso ajustado (%s)", config.device.tzdef);
     return true;
 }
@@ -2730,7 +2733,7 @@ void IrrigationModule::portalFillNodeState(IrrigationWeb::NodeStateCtx &out) con
     out.flags = safeMode ? HB_FLAG_SAFE_MODE : 0;
     out.apSecondsLeft = portal.secondsLeft(millis());
     out.uptimeS = millis() / 1000;
-    out.nowEpoch = getValidTime(RTCQualityDevice, true);
+    out.nowEpoch = getValidTime(RTCQualityDevice, false); // UTC real; o portal aplica o fuso ao formatar
     out.hasTime = out.nowEpoch != 0;
 }
 
