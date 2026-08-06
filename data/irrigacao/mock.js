@@ -350,7 +350,8 @@ window.fetch = async function (url, opts) {
         if (body.enabled) wifiState.scanInProgress = true;
         return mockResponse({ ok: true });
       }
-      return mockResponse({ ok: true });
+      // Demais POSTs (/wifi/scan, /wifi/connect, /wifi/forget) caem nos handlers
+      // dedicados abaixo, que tratam método — não retornar aqui.
     }
     if (ppath.startsWith('/node')) return mockResponse(STATE.portalNode);
     if (ppath.startsWith('/sensors')) return mockResponse(STATE.portalSensors);
