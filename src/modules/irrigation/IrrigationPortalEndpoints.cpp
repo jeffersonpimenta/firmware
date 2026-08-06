@@ -289,11 +289,17 @@ static void hProvision(HTTPRequest *req, HTTPResponse *res)
 }
 
 // ── Wi-Fi management (§7) ────────────────────────────────────────────────────
+// WiFi só existe no gateway (nós são bateria/solar — não provisionam WiFi nem varrem redes).
+// Todos os endpoints WiFi respondem 404 fora do gateway.
+static bool wifiOnGateway()
+{
+    return irrigationModule && irrigationModule->gwIsGateway();
+}
 
 static void hWifiStatus(HTTPRequest *req, HTTPResponse *res)
 {
     (void)req;
-    if (!irrigationModule) {
+    if (!wifiOnGateway()) {
         res->setStatusCode(404);
         return;
     }
@@ -310,7 +316,7 @@ static void hWifiStatus(HTTPRequest *req, HTTPResponse *res)
 static void hWifiScanStart(HTTPRequest *req, HTTPResponse *res)
 {
     (void)req;
-    if (!irrigationModule) {
+    if (!wifiOnGateway()) {
         res->setStatusCode(404);
         return;
     }
@@ -321,7 +327,7 @@ static void hWifiScanStart(HTTPRequest *req, HTTPResponse *res)
 static void hWifiScanResult(HTTPRequest *req, HTTPResponse *res)
 {
     (void)req;
-    if (!irrigationModule) {
+    if (!wifiOnGateway()) {
         res->setStatusCode(404);
         return;
     }
@@ -340,7 +346,7 @@ static void hWifiScanResult(HTTPRequest *req, HTTPResponse *res)
 // qualquer um na LAN reconfiguraria o Wi-Fi. Leitura (status/scan) permanece livre.
 static bool wifiWriteAllowed()
 {
-    return irrigationModule && irrigationModule->portalSession().apShouldBeUp();
+    return wifiOnGateway() && irrigationModule->portalSession().apShouldBeUp();
 }
 
 static void hWifiConnectStart(HTTPRequest *req, HTTPResponse *res)
@@ -371,7 +377,7 @@ static void hWifiConnectStart(HTTPRequest *req, HTTPResponse *res)
 static void hWifiConnectProgress(HTTPRequest *req, HTTPResponse *res)
 {
     (void)req;
-    if (!irrigationModule) {
+    if (!wifiOnGateway()) {
         res->setStatusCode(404);
         return;
     }
