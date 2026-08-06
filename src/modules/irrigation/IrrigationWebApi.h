@@ -150,6 +150,12 @@ class JsonReader
 ParseResult parseZoneUpsert(const char *json, size_t len, Zone &out);
 ParseResult parseZoneDelete(const char *json, size_t len, uint8_t &outId);
 
+// --- Fase 8b: Horário (parsers) ---
+// epoch plausível: >= 1_600_000_000 (2020-09) e <= 4_102_444_800 (2100).
+ParseResult parseTimeSet(const char *json, size_t len, uint32_t &epochOut);
+// Copia tz para out (validado contra TZ_PRESETS). Rejeita fora do preset.
+ParseResult parseTimezone(const char *json, size_t len, char *out, size_t outCap);
+
 ParseResult parseProgramUpsert(const char *json, size_t len, Program &out);
 ParseResult parseProgramToggle(const char *json, size_t len, uint8_t &outId, bool &outEnabled);
 ParseResult parseProgramDelete(const char *json, size_t len, uint8_t &outId);

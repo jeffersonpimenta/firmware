@@ -1190,6 +1190,35 @@ static void test_tzPresets_lookup()
     TEST_ASSERT_EQUAL_STRING("Personalizado", tzLabelFor("bogus"));
 }
 
+static void test_parseTimeSet_ok()
+{
+    const char *j = "{\"epoch\":1754500320}";
+    uint32_t epoch = 0;
+    ParseResult r = parseTimeSet(j, strlen(j), epoch);
+    TEST_ASSERT_TRUE(r.ok);
+    TEST_ASSERT_EQUAL_UINT32(1754500320u, epoch);
+}
+static void test_parseTimeSet_rejectsImplausible()
+{
+    const char *j = "{\"epoch\":100}"; // antes de 2020 -> inválido
+    uint32_t epoch = 0;
+    ParseResult r = parseTimeSet(j, strlen(j), epoch);
+    TEST_ASSERT_FALSE(r.ok);
+}
+static void test_parseTimezone_ok_and_reject()
+{
+    char tz[40] = {0};
+    const char *ok = "{\"tz\":\"<-03>3\"}";
+    ParseResult r = parseTimezone(ok, strlen(ok), tz, sizeof(tz));
+    TEST_ASSERT_TRUE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("<-03>3", tz);
+
+    char tz2[40] = {0};
+    const char *bad = "{\"tz\":\"Europe/Paris\"}"; // fora do preset
+    ParseResult r2 = parseTimezone(bad, strlen(bad), tz2, sizeof(tz2));
+    TEST_ASSERT_FALSE(r2.ok);
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -1282,6 +1311,9 @@ void setup()
     RUN_TEST(test_buildTimeStatus_ntp);
     RUN_TEST(test_buildTimeStatus_manual_and_none);
     RUN_TEST(test_tzPresets_lookup);
+    RUN_TEST(test_parseTimeSet_ok);
+    RUN_TEST(test_parseTimeSet_rejectsImplausible);
+    RUN_TEST(test_parseTimezone_ok_and_reject);
     exit(UNITY_END());
 }
 

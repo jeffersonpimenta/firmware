@@ -127,6 +127,29 @@ size_t buildTimeStatus(const TimeStatusCtx &ctx, char *buf, size_t cap)
     return w.done();
 }
 
+ParseResult parseTimeSet(const char *json, size_t len, uint32_t &epochOut)
+{
+    ParseResult r;
+    JsonReader rd(json, len);
+    int64_t epoch = 0;
+    if (!rd.getInt("epoch", epoch)) { r.fail("epoch ausente"); return r; }
+    if (epoch < 1600000000LL || epoch > 4102444800LL) { r.fail("epoch fora de range"); return r; }
+    epochOut = (uint32_t)epoch;
+    return r;
+}
+
+ParseResult parseTimezone(const char *json, size_t len, char *out, size_t outCap)
+{
+    ParseResult r;
+    JsonReader rd(json, len);
+    char tz[40] = {0};
+    if (!rd.getStr("tz", tz, sizeof(tz)) || tz[0] == '\0') { r.fail("tz ausente"); return r; }
+    if (!tzIsValidPreset(tz)) { r.fail("fuso desconhecido"); return r; }
+    strncpy(out, tz, outCap - 1);
+    out[outCap - 1] = '\0';
+    return r;
+}
+
 size_t buildAlerts(const AlertCenter &ac, uint32_t nowMs, uint32_t ackMs, char *buf, size_t cap)
 {
     JsonWriter w(buf, cap);
