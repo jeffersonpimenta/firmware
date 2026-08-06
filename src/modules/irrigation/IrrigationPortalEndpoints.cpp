@@ -335,10 +335,22 @@ static void hWifiScanResult(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, buf);
 }
 
+// Escrita de rede (connect/forget/toggle) exige a janela do portal aberta (botão do gateway
+// pressionado). Com STA sempre-on os endpoints ficam alcançáveis pela LAN; sem esta trava
+// qualquer um na LAN reconfiguraria o Wi-Fi. Leitura (status/scan) permanece livre.
+static bool wifiWriteAllowed()
+{
+    return irrigationModule && irrigationModule->portalSession().apShouldBeUp();
+}
+
 static void hWifiConnectStart(HTTPRequest *req, HTTPResponse *res)
 {
     if (!irrigationModule) {
         res->setStatusCode(404);
+        return;
+    }
+    if (!wifiWriteAllowed()) {
+        sendJson(res, "{\"errors\":[\"portal fechado — pressione o botao do gateway\"]}", 403);
         return;
     }
     char body[160];
@@ -380,6 +392,10 @@ static void hWifiForget(HTTPRequest *req, HTTPResponse *res)
         res->setStatusCode(404);
         return;
     }
+    if (!wifiWriteAllowed()) {
+        sendJson(res, "{\"errors\":[\"portal fechado — pressione o botao do gateway\"]}", 403);
+        return;
+    }
     irrigationModule->portalWifiForget();
     sendJson(res, "{\"ok\":true}");
 }
@@ -388,6 +404,10 @@ static void hWifiToggle(HTTPRequest *req, HTTPResponse *res)
 {
     if (!irrigationModule) {
         res->setStatusCode(404);
+        return;
+    }
+    if (!wifiWriteAllowed()) {
+        sendJson(res, "{\"errors\":[\"portal fechado — pressione o botao do gateway\"]}", 403);
         return;
     }
     char body[64];
