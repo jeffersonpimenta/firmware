@@ -1465,3 +1465,9 @@ body {
 .field-portal .fp-active .dot { width: 8px; height: 8px; border-radius: 999px; background: var(--green); }
 .field-portal .fp-pulseopen { text-align: center; padding: 10px; border-radius: 10px; background: oklch(0.47 0.1 150 / 0.12); color: var(--green); font-size: 13px; font-weight: 600; }
 .field-portal .card .stack { display: flex; flex-direction: column; gap: 10px; }
+
+/* ===== Wi-Fi spinner (portal de campo) ===== */
+@keyframes wifiSpin { to { transform: rotate(360deg); } }
+
+/* Wi-Fi screen wrapper — herda o gap do .panel pai */
+#wifi-screen { display: flex; flex-direction: column; gap: 12px; }
