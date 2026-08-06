@@ -270,6 +270,20 @@ static void test_buildNodeState_uptimeS()
     TEST_ASSERT_TRUE(contains(buf, "\"uptimeS\":1234567"));
 }
 
+static void test_buildNodeState_emits_clock()
+{
+    NodeStateCtx c = {};
+    c.role = 0;
+    c.name = "Est 1";
+    c.nowEpoch = 1754500320;
+    c.hasTime = true;
+    char buf[512];
+    size_t n = buildNodeState(c, buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_TRUE(contains(buf, "\"nowEpoch\":1754500320"));
+    TEST_ASSERT_TRUE(contains(buf, "\"hasTime\":true"));
+}
+
 static void test_buildLink_serializa()
 {
     IrrigationWeb::LinkCtx ctx;
@@ -469,6 +483,7 @@ void setup()
     RUN_TEST(test_parseProvision_farmNameOptional);
     RUN_TEST(test_buildNodeState_provisioned);
     RUN_TEST(test_buildNodeState_uptimeS);
+    RUN_TEST(test_buildNodeState_emits_clock);
     RUN_TEST(test_buildLink_serializa);
     RUN_TEST(test_buildWifiStatus_connected);
     RUN_TEST(test_buildWifiStatus_disconnected);

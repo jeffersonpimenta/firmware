@@ -23,6 +23,8 @@ size_t buildNodeState(const NodeStateCtx &ctx, char *buf, size_t cap)
     w.keyNum("flags", ctx.flags);
     w.keyNum("apSecondsLeft", (int64_t)ctx.apSecondsLeft);
     w.keyNum("uptimeS", (int64_t)ctx.uptimeS);
+    w.keyNum("nowEpoch", (int64_t)ctx.nowEpoch);
+    w.keyBool("hasTime", ctx.hasTime);
     w.endObject();
     return w.done();
 }
