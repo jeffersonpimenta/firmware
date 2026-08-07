@@ -1,7 +1,7 @@
+#include "configuration.h" // ARCH_ESP32 é macro de header (não -D): precisa vir ANTES do guard abaixo
 #include "modules/irrigation/PortalAp.h"
 #if defined(ARCH_ESP32) && !MESHTASTIC_EXCLUDE_WEBSERVER
 
-#include "configuration.h"
 #include "main.h" // owner
 #include "modules/irrigation/IrrigationModule.h"
 #include <DNSServer.h>
