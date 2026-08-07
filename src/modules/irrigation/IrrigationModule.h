@@ -87,6 +87,9 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     uint16_t gwUnackedAlertCount() const { return (uint16_t)gateway.alerts.unackedCount(lastAckAllMs); }
     bool gwHasRtc() const;
     uint32_t gwLocalSecs() const;
+    // Supressão meteorológica — wrappers finos para os endpoints /weather.
+    bool gwStaConnected() const; // true se WiFi STA conectado (ARCH_ESP32); false caso contrário
+    const char *gwNodeLabel() const; // owner.long_name ou "Gateway"
     // Fase 9: estado de pareamento pendente (§6) para o overview/painel.
     bool gwPairingPending() const;
     uint32_t gwPairingNode() const;

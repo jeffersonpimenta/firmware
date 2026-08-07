@@ -2652,6 +2652,22 @@ uint32_t IrrigationModule::gwLocalSecs() const
     return s;
 }
 
+bool IrrigationModule::gwStaConnected() const
+{
+#if defined(ARCH_ESP32)
+    return WiFi.isConnected();
+#else
+    return false;
+#endif
+}
+
+const char *IrrigationModule::gwNodeLabel() const
+{
+    if (owner.long_name[0])
+        return owner.long_name;
+    return "Gateway";
+}
+
 bool IrrigationModule::gwApplyZoneUpsert(const Zone &z)
 {
     if (!gateway.zones.upsert(z))

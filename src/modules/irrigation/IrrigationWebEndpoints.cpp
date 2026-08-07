@@ -1066,6 +1066,82 @@ static void hTimeSync(HTTPRequest *req, HTTPResponse *res)
 }
 
 // ---------------------------------------------------------------------------
+// Supressão meteorológica (Task 12)
+// ---------------------------------------------------------------------------
+
+// GET /api/irrigation/weather — status completo (config + cache + regras)
+static void hWeatherGet(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!gwReady()) { res->setStatusCode(404); return; }
+    WeatherStatusCtx c = {};
+    c.cfg      = &irrigationModule->gwWeatherConfig();
+    c.rules    = &irrigationModule->gwWeatherRules();
+    c.cache    = &irrigationModule->gwWeatherCache();
+    c.nowEpoch = irrigationModule->gwLocalSecs();
+    c.staUp    = irrigationModule->gwStaConnected();
+    c.location = irrigationModule->gwNodeLabel();
+    char buf[3072];
+    if (!buildWeatherStatus(c, buf, sizeof(buf))) { res->setStatusCode(500); return; }
+    sendJson(res, buf);
+}
+
+// POST /api/irrigation/weather/config — habilita/desabilita + coordenadas
+static void hWeatherConfigPost(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!gwReady()) { res->setStatusCode(404); return; }
+    char body[256];
+    size_t nb = readBody(req, body, sizeof(body));
+    WeatherConfigParse p = parseWeatherConfig(body, nb);
+    if (!p.ok) { sendJson(res, "{\"ok\":false,\"reason\":\"coordenadas inválidas\"}", 400); return; }
+    bool ok = irrigationModule->gwWeatherSetConfig(p.enabled, p.latE7, p.lonE7);
+    sendJson(res, ok ? "{\"ok\":true}" : "{\"ok\":false}");
+}
+
+// POST /api/irrigation/weather/rule — upsert de regra de supressão
+static void hWeatherRulePost(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!gwReady()) { res->setStatusCode(404); return; }
+    char body[1024];
+    size_t nb = readBody(req, body, sizeof(body));
+    WeatherRuleParse p = parseWeatherRule(body, nb);
+    if (!p.ok) {
+        char e[128];
+        snprintf(e, sizeof(e), "{\"ok\":false,\"errors\":[\"%s\"]}", p.err);
+        sendJson(res, e, 400);
+        return;
+    }
+    uint8_t id = irrigationModule->gwWeatherUpsertRule(p.rule);
+    if (!id) { sendJson(res, "{\"ok\":false,\"errors\":[\"tabela cheia\"]}", 400); return; }
+    char out[64];
+    snprintf(out, sizeof(out), "{\"ok\":true,\"id\":%u}", id);
+    sendJson(res, out);
+}
+
+// POST /api/irrigation/weather/rule/delete — remove regra por id
+static void hWeatherRuleDelete(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!gwReady()) { res->setStatusCode(404); return; }
+    char body[64];
+    size_t nb = readBody(req, body, sizeof(body));
+    (void)nb;
+    int id = 0;
+    const char *p = strstr(body, "\"id\"");
+    if (p) id = atoi(p + 4 + strspn(p + 4, "\": "));
+    bool ok = id && irrigationModule->gwWeatherDeleteRule((uint8_t)id);
+    sendJson(res, ok ? "{\"ok\":true}" : "{\"ok\":false}");
+}
+
+// POST /api/irrigation/weather/refresh — dispara poll imediato Open-Meteo
+static void hWeatherRefresh(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!gwReady()) { res->setStatusCode(404); return; }
+    bool ok = irrigationModule->gwWeatherRefresh();
+    sendJson(res, ok ? "{\"ok\":true,\"staUp\":true}" : "{\"ok\":false,\"reason\":\"sem WiFi\"}");
+}
+
+// ---------------------------------------------------------------------------
 // Registro
 // ---------------------------------------------------------------------------
 
@@ -1120,6 +1196,12 @@ void registerIrrigationHandlers(HTTPServer *server)
     server->registerNode(new ResourceNode("/api/irrigation/time", "POST", &hTimeSet));
     server->registerNode(new ResourceNode("/api/irrigation/timezone", "POST", &hTimezone));
     server->registerNode(new ResourceNode("/api/irrigation/time/sync", "POST", &hTimeSync));
+    // Supressão meteorológica (Task 12)
+    server->registerNode(new ResourceNode("/api/irrigation/weather", "GET", &hWeatherGet));
+    server->registerNode(new ResourceNode("/api/irrigation/weather/config", "POST", &hWeatherConfigPost));
+    server->registerNode(new ResourceNode("/api/irrigation/weather/rule", "POST", &hWeatherRulePost));
+    server->registerNode(new ResourceNode("/api/irrigation/weather/rule/delete", "POST", &hWeatherRuleDelete));
+    server->registerNode(new ResourceNode("/api/irrigation/weather/refresh", "POST", &hWeatherRefresh));
 }
 
 #endif
