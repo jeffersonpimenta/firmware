@@ -7,7 +7,8 @@ enum class AuditOrigin : uint8_t {
     SISTEMA = 0, CRONOGRAMA, PAINEL, PORTAL_CAMPO, BOTAO_FISICO,
     ENTRADA_FISICA, INTERTRAVAMENTO, FAILSAFE_TIMER, SERVICO,
     GRUPO_HIDRAULICO, // = 9 (append-only ABI; rótulo JS no 7b)
-    NIVEL             // = 10 (controle de nível por boia) — append-only
+    NIVEL,            // = 10 (controle de nível por boia) — append-only
+    CLIMA             // = 11 (supressão por previsão meteorológica) — append-only
 };
 // Valores são ABI persistida (log em flash) e contrato com os rótulos do JS (portal/app.js):
 // só APPEND no fim, nunca reordenar/remover. FACTORY_RESET (log é apagado no reset, não se
@@ -18,6 +19,7 @@ enum class AuditAction : uint8_t {
     HIBERNA_IN, HIBERNA_OUT,
     CMD_REJEITADO, // comando NACKado antes do despacho (motivo em target = NackReason)
     ESPELHO,       // toggle/mapeamento do modo espelho (bypass de painel — safety-relevant)
+    CMD_SUPRIMIDO, // abertura suprimida por regra meteorológica (target = zoneId)
 };
 enum class AuditResult : uint8_t { OK = 0, NACK, TIMEOUT };
 
