@@ -64,6 +64,7 @@ static void hOverview(HTTPRequest *req, HTTPResponse *res)
     c.pairingPending = irrigationModule->gwPairingPending();
     c.pairingNodeId = irrigationModule->gwPairingNode();
     c.pairingSecondsLeft = irrigationModule->gwPairingSecondsLeft();
+    c.selfNode = irrigationModule->gwSelfNode();
     char buf[512];
     if (!buildOverview(c, buf, sizeof(buf))) {
         res->setStatusCode(500);

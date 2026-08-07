@@ -51,6 +51,16 @@ static void test_buildOverview_truncationReturnsZero()
     TEST_ASSERT_EQUAL_UINT(0, buildOverview(c, buf, sizeof(buf)));
 }
 
+static void test_overview_emits_self_node()
+{
+    OverviewCtx c = {};
+    c.selfNode = 0xDEADBEEF;
+    char buf[512];
+    size_t n = buildOverview(c, buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_TRUE(contains(buf, "\"selfNode\":3735928559")); // 0xDEADBEEF
+}
+
 // Arrays de escalares precisam de vírgula entre elementos (str/num/boolean chamam sep_).
 static void test_jsonWriter_scalarArrayCommas()
 {
@@ -1349,6 +1359,7 @@ void setup()
     RUN_TEST(test_computeSync_states);
     RUN_TEST(test_buildOverview_json);
     RUN_TEST(test_buildOverview_truncationReturnsZero);
+    RUN_TEST(test_overview_emits_self_node);
     RUN_TEST(test_buildAlerts_filtersAcked);
     RUN_TEST(test_ackMatch_singleAlert);
     RUN_TEST(test_unackedCount_matchesAlertsFilter);

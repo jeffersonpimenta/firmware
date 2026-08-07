@@ -90,6 +90,7 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     // Supressão meteorológica — wrappers finos para os endpoints /weather.
     bool gwStaConnected() const; // true se WiFi STA conectado (ARCH_ESP32); false caso contrário
     const char *gwNodeLabel() const; // owner.long_name ou "Gateway"
+    uint32_t gwSelfNode() const;     // nodeDB->getNodeNum() — painel oferece "Gateway (local)" no form de zona
     // Fase 9: estado de pareamento pendente (§6) para o overview/painel.
     bool gwPairingPending() const;
     uint32_t gwPairingNode() const;
@@ -247,6 +248,9 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     void svcSendResyncRequest(uint32_t node);  // §11.5 RESYNC_SEQ REQUEST (FROM_SERVICE)
     void svcExportToConsole();                 // §11.7 despeja o envelope do cofre no serial (bancada)
     void handleGwAck(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
+    // Núcleo de confirmação de comando: tracker + motor de grupos + alerta no NACK.
+    // Chamado pelo ACK de rádio (handleGwAck) e pelo drive local (ACK sintético no gwTick).
+    void confirmCommand(uint32_t node, uint32_t seq, uint8_t reason, bool ok);
     void handleGwHeartbeat(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
     void handleGwEvento(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
     void handleGwSetConfig(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
@@ -254,7 +258,9 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     // Fonte única de hora local do gateway: true + segundos-de-epoch local se há RTC válido; false caso contrário.
     bool computeLocalSecs(uint32_t &out) const;
     uint32_t gwSendValveCmd(uint32_t node, uint8_t index, uint8_t tipo, uint8_t action, uint16_t durationS,
-                            uint8_t zoneId, uint8_t attempts); // decisão §1 — retorna o txSeq usado (0 se falhou)
+                            uint8_t zoneId, uint8_t attempts,
+                            AuditOrigin origin = AuditOrigin::PAINEL); // decisão §1 — retorna o txSeq usado (0 se falhou)
+                            // node==self ⇒ aciona saída LOCAL (origin usado só nesse caminho de auditoria)
     // Fase 7b: ponto único de decisão de roteamento de open/close de UMA zona.
     // Zona de grupo hidráulico => motor (setDesired); zona livre => false (caminho atual).
     bool routeZoneToGroup(uint8_t zoneId, bool open, uint16_t durationS);
@@ -321,6 +327,14 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     };
     EpochCooldown epochCooldowns[StationRegistry::MAX];
     uint32_t txSeq = 0;
+    // ACK sintético do drive local: confirmado no próximo gwTick para não reentrar no
+    // loop de emissão do motor de grupos (noteSent roda depois de gwSendValveCmd).
+    struct LocalAck {
+        uint32_t node = 0;
+        uint32_t seq = 0;
+    };
+    LocalAck pendingLocalAck[8];
+    uint8_t pendingLocalAckCount = 0;
     uint32_t lastHeartbeatMs = 0;
     uint32_t lastGatewayRxMs = 0; // last millis() we received a packet from boundGateway
     // Enlace (repetidor): última métrica de rx do gateway + ring de histórico p/ o portal.

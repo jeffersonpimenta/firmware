@@ -2364,8 +2364,38 @@ void IrrigationModule::gwRebuildLocalInterlocks()
 
 // Decisão §1: envia CmdValvula ou CmdGpo e registra no tracker.
 uint32_t IrrigationModule::gwSendValveCmd(uint32_t node, uint8_t index, uint8_t tipo, uint8_t action, uint16_t durationS,
-                                          uint8_t zoneId, uint8_t attempts)
+                                          uint8_t zoneId, uint8_t attempts, AuditOrigin origin)
 {
+    // Alvo = próprio gateway ⇒ aciona a saída LOCAL diretamente (sem rádio).
+    if (isLocalTarget(node, nodeDB->getNodeNum())) {
+        // Modo seguro: bloqueia ativação (paridade com a estação); desligar segue permitido.
+        if (safeMode && action == 1) {
+            auditEvent(origin, tipo == 1 ? AuditAction::GPO_ON : AuditAction::ABRIR, index, AuditResult::NACK, node);
+            return 0;
+        }
+        if (tipo == 1) {
+            gpos.command(index, action, durationS, millis());
+        } else if (action) {
+            valves.open(index, durationS, 0 /*teto compilado; clamp de maxMin já no chamador*/, millis());
+        } else {
+            valves.close(index);
+        }
+        auditEvent(origin,
+                   action ? (tipo == 1 ? AuditAction::GPO_ON : AuditAction::ABRIR)
+                          : (tipo == 1 ? AuditAction::GPO_OFF : AuditAction::FECHAR),
+                   index, AuditResult::OK, node);
+        uint32_t usedSeq = ++txSeq;
+        // Enfileira ACK sintético (drenado no gwTick, após noteSent do motor de grupos).
+        if (pendingLocalAckCount < 8) {
+            pendingLocalAck[pendingLocalAckCount].node = node;
+            pendingLocalAck[pendingLocalAckCount].seq = usedSeq;
+            pendingLocalAckCount++;
+        }
+        LOG_DEBUG("Irrigation GW: drive LOCAL zone=%u idx=%u tipo=%u action=%u dur=%u", zoneId, index, tipo, action,
+                  durationS);
+        return usedSeq;
+    }
+
     meshtastic_MeshPacket *p = allocDataPacket();
     p->to = node;
     uint32_t usedSeq = ++txSeq; // mesmo seq p/ CmdGpo/CmdValvula e o tracker.track abaixo
@@ -2666,6 +2696,11 @@ const char *IrrigationModule::gwNodeLabel() const
     if (owner.long_name[0])
         return owner.long_name;
     return "Gateway";
+}
+
+uint32_t IrrigationModule::gwSelfNode() const
+{
+    return nodeDB->getNodeNum();
 }
 
 bool IrrigationModule::gwApplyZoneUpsert(const Zone &z)
@@ -3210,6 +3245,12 @@ bool IrrigationModule::routeZoneToGroup(uint8_t zoneId, bool open, uint16_t dura
 // Decisão §2: loop principal do gateway — scheduler, espelho, retries, silêncio.
 void IrrigationModule::gwTick()
 {
+    // Drena ACKs sintéticos do drive local: confirma DEPOIS que o loop de emissão
+    // do motor de grupos registrou noteSent (evita reentrância).
+    for (uint8_t i = 0; i < pendingLocalAckCount; i++)
+        confirmCommand(pendingLocalAck[i].node, pendingLocalAck[i].seq, 0 /*reason*/, true /*ok*/);
+    pendingLocalAckCount = 0;
+
     // --- Fase 6b: motor de intertravamentos — avaliação 1×/tick, antes do scheduler ---
     {
         // Monta snapshot de sensores a partir do cache de telemetria das estações.
@@ -3322,7 +3363,7 @@ void IrrigationModule::gwTick()
                                AuditResult::NACK, z->node);
                     // Não abre; se a regra persistir, continuará bloqueado no próximo tick.
                 } else if (gateway.openGate.request(a.zoneId, dur) == OpenGate::Decision::ADMIT) {
-                    gwSendValveCmd(z->node, z->index, z->tipo, 1, dur, a.zoneId, attempts);
+                    gwSendValveCmd(z->node, z->index, z->tipo, 1, dur, a.zoneId, attempts, AuditOrigin::CRONOGRAMA);
                 }
                 // HOLD: enfileirado com dur clampeado; dreno abaixo libera quando houver capacidade.
             } else { // CLOSE
@@ -3374,7 +3415,8 @@ void IrrigationModule::gwTick()
             const GroupEmit &em = emits[i];
             const StationEntry *st = gateway.stations.byNode(em.node);
             uint8_t attempts = (st && st->retries > 0) ? st->retries : 3;
-            uint32_t seq = gwSendValveCmd(em.node, em.index, em.tipo, em.action, em.durationS, em.zoneId, attempts);
+            uint32_t seq = gwSendValveCmd(em.node, em.index, em.tipo, em.action, em.durationS, em.zoneId, attempts,
+                                          AuditOrigin::GRUPO_HIDRAULICO);
             if (seq == 0) {
                 // encode/alloc falhou: tick() já armou pend.inUse=true; limpa para que o próximo tick reemita
                 gateway.groupEngine.onCmdFailed(em.node, em.zoneId, em.action);
@@ -3600,6 +3642,32 @@ void IrrigationModule::handleRemoteCmd(const meshtastic_MeshPacket &mp, const He
 }
 
 // Decisão §3: MSG_ACK recebido pelo gateway.
+void IrrigationModule::confirmCommand(uint32_t node, uint32_t seq, uint8_t reason, bool ok)
+{
+    if (!ok) {
+        // Task 6, decisão §6: NACK é resposta definitiva — remove pendência e alerta.
+        // onAck remove a pendência independente do status.
+        if (gateway.tracker.onAck(node, seq)) {
+            LOG_WARN("Irrigation GW: NACK from 0x%08x seq=%u reason=%u", node, seq, reason);
+            // Determina zoneId a partir do ackedSeq — o tracker já removeu o slot,
+            // então logamos com zoneId=0 (informação de alerta é best-effort aqui;
+            // o diagnóstico detalhado é Fase 6).
+            Alert a;
+            a.type = AlertType::CMD_FAIL;
+            a.node = node;
+            a.arg = reason; // reason como arg conforme decisão §6
+            a.atMs = millis();
+            gateway.alerts.push(a);
+        }
+        // Fase 7a: NACK é FALHA — o motor de grupos NÃO deve avançar como se tivesse ligado.
+        gateway.groupEngine.onNack(node, seq);
+    } else {
+        gateway.tracker.onAck(node, seq);
+        // Fase 7a: só o ACK OK avança o handshake do motor de grupos.
+        gateway.groupEngine.onAck(node, seq);
+    }
+}
+
 void IrrigationModule::handleGwAck(const meshtastic_MeshPacket &mp, const Header &h)
 {
     Ack ack;
@@ -3608,28 +3676,7 @@ void IrrigationModule::handleGwAck(const meshtastic_MeshPacket &mp, const Header
         return;
     }
 
-    // Task 6, decisão §6: NACK é resposta definitiva — remove pendência e alerta.
-    if (ack.status != ACK_OK) {
-        // onAck remove a pendência independente do status.
-        if (gateway.tracker.onAck(mp.from, ack.ackedSeq)) {
-            LOG_WARN("Irrigation GW: NACK from 0x%08x seq=%u reason=%u", mp.from, ack.ackedSeq, ack.reason);
-            // Determina zoneId a partir do ackedSeq — o tracker já removeu o slot,
-            // então logamos com zoneId=0 (informação de alerta é best-effort aqui;
-            // o diagnóstico detalhado é Fase 6).
-            Alert a;
-            a.type = AlertType::CMD_FAIL;
-            a.node = mp.from;
-            a.arg = ack.reason; // reason como arg conforme decisão §6
-            a.atMs = millis();
-            gateway.alerts.push(a);
-        }
-        // Fase 7a: NACK é FALHA — o motor de grupos NÃO deve avançar como se tivesse ligado.
-        gateway.groupEngine.onNack(mp.from, ack.ackedSeq);
-    } else {
-        gateway.tracker.onAck(mp.from, ack.ackedSeq);
-        // Fase 7a: só o ACK OK avança o handshake do motor de grupos.
-        gateway.groupEngine.onAck(mp.from, ack.ackedSeq);
-    }
+    confirmCommand(mp.from, ack.ackedSeq, ack.reason, ack.status == ACK_OK);
 
     // Reconciliação de epoch (mesma regra do HB — decisão §3).
     gwReconcileEpoch(mp.from, ack.configEpoch);

@@ -81,6 +81,7 @@ size_t buildOverview(const OverviewCtx &ctx, char *buf, size_t cap)
     w.keyBool("pairingPending", ctx.pairingPending);
     w.keyNum("pairingNodeId", (int64_t)ctx.pairingNodeId);
     w.keyNum("pairingSecondsLeft", ctx.pairingSecondsLeft);
+    w.keyNum("selfNode", (int64_t)ctx.selfNode);
     w.endObject();
     return w.done();
 }

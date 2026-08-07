@@ -63,6 +63,7 @@ struct OverviewCtx {
     uint16_t pairingSecondsLeft = 0;
     uint8_t runningZoneId = 0;
     uint16_t runningRemainMin = 0;
+    uint32_t selfNode = 0; // node do próprio gateway (p/ opção "Gateway (local)" no form de zona)
 };
 size_t buildOverview(const OverviewCtx &ctx, char *buf, size_t cap);
 
