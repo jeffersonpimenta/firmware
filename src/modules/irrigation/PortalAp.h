@@ -9,6 +9,6 @@
 // Cola só-ESP32 do captive portal (Fase 5b). Dirigida pela PortalSession do módulo:
 // quando apShouldBeUp() vira true, sobe softAP (WPA2) + DNSServer cativo; quando vira false,
 // derruba tudo. Chamar portalApLoop() periodicamente (do runOnce do módulo).
-void portalApLoop(uint32_t nowMs);
+void portalApLoop(unsigned long nowMs); // unsigned long (= millis()) evita mismatch de mangling uint32_t entre TUs
 
 #endif

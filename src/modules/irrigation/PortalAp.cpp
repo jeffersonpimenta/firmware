@@ -42,7 +42,7 @@ static void tearDown()
     sApUp = false;
 }
 
-void portalApLoop(uint32_t nowMs)
+void portalApLoop(unsigned long nowMs)
 {
     if (!irrigationModule)
         return;
