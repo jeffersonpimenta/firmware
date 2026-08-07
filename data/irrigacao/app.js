@@ -5,7 +5,6 @@
 
 const API = '/api/irrigation';
 const view = document.getElementById('view');
-const syncChip = document.getElementById('syncChip');
 let current = 'overview';
 let timer = null;
 
@@ -95,8 +94,6 @@ async function renderOverview() {
     getJson('/zones').catch(() => []),
   ]);
   const ov = o || {};
-  syncChip.textContent = ov.hasRtc ? 'com relógio' : 'sem relógio';
-  syncChip.className = 'chip ' + (ov.hasRtc ? 'green' : 'amber');
 
   const tb = document.getElementById('timeBadge');
   if (tb) {
@@ -1109,8 +1106,8 @@ function programEditForm(p, zones) {
 // ===== Labels de auditoria — contrato 3-vias com AuditLog.h (append-only; não reordenar) =====
 // AuditOrigin: SISTEMA=0,CRONOGRAMA=1,PAINEL=2,PORTAL_CAMPO=3,BOTAO_FISICO=4,ENTRADA_FISICA=5,INTERTRAVAMENTO=6,FAILSAFE_TIMER=7,SERVICO=8,GRUPO_HIDRAULICO=9,NIVEL=10
 const ORIGENS_LABEL = ['Sistema','Cronograma','Painel','Portal campo','Botão físico','Entrada física','Intertravamento','Failsafe timer','Serviço','Grupo hidráulico','Nível'];
-// AuditAction: ABRIR=0,FECHAR=1,PULSO=2,GPO_ON=3,GPO_OFF=4,PAREAR=5,FACTORY_RESET=6,CONFIG_EPOCH=7,SAFE_MODE_IN=8,SAFE_MODE_OUT=9,TAMPER=10,REBOOT=11,HIBERNA_IN=12,HIBERNA_OUT=13,CMD_REJEITADO=14
-const ACOES_LABEL = ['Abrir','Fechar','Pulso','GPO ligar','GPO desligar','Parear','Factory reset','Config epoch','Safe mode in','Safe mode out','Tamper','Reboot','Hibernar in','Hibernar out','Cmd rejeitado'];
+// AuditAction: ABRIR=0,FECHAR=1,PULSO=2,GPO_ON=3,GPO_OFF=4,PAREAR=5,FACTORY_RESET=6,CONFIG_EPOCH=7,SAFE_MODE_IN=8,SAFE_MODE_OUT=9,TAMPER=10,REBOOT=11,HIBERNA_IN=12,HIBERNA_OUT=13,CMD_REJEITADO=14,ESPELHO=15
+const ACOES_LABEL = ['Abrir','Fechar','Pulso','GPO ligar','GPO desligar','Parear','Factory reset','Config epoch','Safe mode in','Safe mode out','Tamper','Reboot','Hibernar in','Hibernar out','Cmd rejeitado','Espelho'];
 // AuditResult: OK=0,NACK=1,TIMEOUT=2
 const RESULTADOS_LABEL = ['OK','NACK','Timeout'];
 
@@ -2170,9 +2167,403 @@ async function renderCobertura() {
     });
 }
 
+// ===== Modo Espelhamento =====
+// Copia o estado das entradas físicas do gateway para as saídas de zona associadas nos nós.
+// Modelo de UI do mockup "Irrigacao Mobile.dc.html" linhas 815–970.
+// Estado do módulo: mrData cache do GET + mrUI da tela de edição.
+let mrData = { enabled: false, ports: [] };
+let mrUI = { screen: 'list', draft: null, errors: [], deleteConfirm: false };
+
+// Nomes fixos das 4 portas de entrada física do gateway.
+const MR_PORT_NAMES = ['Entrada 1', 'Entrada 2', 'Entrada 3', 'Entrada 4'];
+
+// Cor do ponto de estado (ativo/inativo).
+function mrDotColor(active) {
+  return active ? 'oklch(0.47 0.1 150)' : 'oklch(0.75 0.006 100)';
+}
+
+// Tela-lista (pura, não toca DOM).
+function mrListHtml() {
+  const { enabled, ports } = mrData;
+  const toggleBg = enabled ? 'oklch(0.47 0.1 150)' : 'oklch(0.85 0.006 100)';
+  const knobLeft = enabled ? '18px' : '2px';
+  const statusLabel = enabled ? 'Espelhamento ativo — entradas controlam saídas' : 'Desativado — cronograma e painel assumem o controle';
+
+  const bypassBanner = enabled
+    ? `<div style="background:oklch(0.65 0.15 75 / 0.1);border:1px solid oklch(0.65 0.15 75 / 0.4);border-radius:14px;padding:12px 14px;">
+        <div style="font-size:12.5px;font-weight:700;color:oklch(0.22 0.008 100);">Bypass ativo</div>
+        <div style="font-size:12px;color:oklch(0.22 0.008 100);margin-top:4px;line-height:1.5;">Cronogramas, grupos e intertravamentos são ignorados nas zonas associadas.</div>
+      </div>`
+    : '';
+
+  // Estado atual das portas (read-only)
+  const portRows = (Array.isArray(ports) ? ports : []).map((p) => {
+    const nome = esc(MR_PORT_NAMES[num(p.i)] || ('Entrada ' + (num(p.i) + 1)));
+    const active = !!p.active;
+    const dotColor = mrDotColor(active);
+    const label = active ? 'Ativa' : 'Inativa';
+    return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 0;border-bottom:1px solid oklch(0.94 0.004 100);">
+      <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+        <div style="width:9px;height:9px;border-radius:999px;background:${dotColor};flex-shrink:0;"></div>
+        <div style="font-size:13.5px;font-weight:600;color:oklch(0.22 0.008 100);">${nome}</div>
+      </div>
+      <div style="font-size:12px;font-weight:600;color:${dotColor};white-space:nowrap;">${label}</div>
+    </div>`;
+  }).join('');
+
+  // Associações: portas que têm zoneId associado
+  const mappings = (Array.isArray(ports) ? ports : []).filter((p) => p.zoneId != null && p.zoneId > 0);
+  const freePorts = (Array.isArray(ports) ? ports : []).filter((p) => !(p.zoneId != null && p.zoneId > 0));
+  const allUsed = freePorts.length === 0;
+  const hasFree = freePorts.length > 0;
+  const hasMappings = mappings.length > 0;
+
+  const newBtn = hasFree
+    ? `<button data-mrnew style="cursor:pointer;border:1.5px dashed oklch(0.47 0.1 150 / 0.5);background:transparent;color:oklch(0.47 0.1 150);font-size:13px;font-weight:700;padding:11px;border-radius:14px;width:100%;">+ Nova associação</button>`
+    : '';
+  const allUsedMsg = allUsed
+    ? `<div style="font-size:12px;color:oklch(0.52 0.006 100);background:oklch(0.97 0.003 100);border-radius:10px;padding:9px 12px;">Todas as portas de entrada já estão associadas.</div>`
+    : '';
+
+  const mappingCards = mappings.map((p) => {
+    const portaNome = esc(MR_PORT_NAMES[num(p.i)] || ('Entrada ' + (num(p.i) + 1)));
+    const zonaNome = esc(p.zoneName || ('Zona ' + num(p.zoneId)));
+    const invertido = !!p.invertido;
+    const habilitado = !!p.habilitado;
+    const driving = !!p.driving;
+    const invBadge = invertido ? ` <span style="font-size:10.5px;font-weight:700;color:oklch(0.65 0.15 75);">INV</span>` : '';
+    const habChip = habilitado
+      ? `<span style="font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:999px;background:oklch(0.47 0.1 150 / 0.12);color:oklch(0.47 0.1 150);white-space:nowrap;">Habilitada</span>`
+      : `<span style="font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:999px;background:oklch(0.9 0.006 100);color:oklch(0.52 0.006 100);white-space:nowrap;">Desativada</span>`;
+    const habBg = habilitado ? 'oklch(0.47 0.1 150)' : 'oklch(0.85 0.006 100)';
+    const habKnob = habilitado ? '16px' : '2px';
+    const inActive = !!p.active;
+    const inDotColor = mrDotColor(invertido ? !inActive : inActive);
+    const outDotColor = mrDotColor(driving);
+    const inLabel = inActive ? 'ativa' : 'inativa';
+    const rawHigh = invertido ? !inActive : inActive;
+    const inRawLabel = rawHigh ? 'nível alto' : 'nível baixo';
+    const outLabel = driving ? 'aberta' : 'fechada';
+    return `<div style="cursor:pointer;background:oklch(1 0 0);border:1px solid oklch(0.9 0.006 100);box-shadow:0 1px 3px rgba(0,0,0,0.05);border-radius:16px;padding:14px 16px;" data-mredit="${num(p.i)}">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+        <div style="font-size:14px;font-weight:600;color:oklch(0.22 0.008 100);min-width:0;">${portaNome} <span style="color:oklch(0.7 0.006 100);">→</span> ${zonaNome}${invBadge}</div>
+        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+          ${habChip}
+          <div data-mrtoghab="${num(p.i)}" style="cursor:pointer;width:34px;height:20px;border-radius:999px;background:${habBg};position:relative;">
+            <div style="position:absolute;top:2px;left:${habKnob};width:16px;height:16px;border-radius:999px;background:#fff;"></div>
+          </div>
+        </div>
+      </div>
+      <div style="font-size:12px;color:oklch(0.52 0.006 100);margin-top:6px;">Polaridade ${invertido ? 'invertida' : 'normal'}</div>
+      <div style="display:flex;align-items:center;gap:14px;margin-top:10px;">
+        <div style="display:flex;align-items:center;gap:6px;">
+          <div style="width:8px;height:8px;border-radius:999px;background:${inDotColor};"></div>
+          <div style="font-size:11.5px;color:oklch(0.52 0.006 100);">entrada ${inLabel} (${inRawLabel})</div>
+        </div>
+        <span style="color:oklch(0.75 0.006 100);font-size:13px;">→</span>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <div style="width:8px;height:8px;border-radius:999px;background:${outDotColor};"></div>
+          <div style="font-size:11.5px;color:oklch(0.52 0.006 100);">saída ${outLabel}</div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  const noMappingsMsg = !hasMappings
+    ? `<div style="font-size:12.5px;color:oklch(0.52 0.006 100);">Nenhuma associação configurada.</div>`
+    : '';
+
+  return `
+    <div style="font-size:18px;font-weight:700;color:oklch(0.22 0.008 100);">Modo Espelhamento</div>
+    <div style="font-size:12px;color:oklch(0.52 0.006 100);margin-top:-6px;">Copia o estado das entradas físicas do gateway direto para saídas associadas nos nós</div>
+
+    <div style="background:oklch(1 0 0);border:1px solid oklch(0.9 0.006 100);box-shadow:0 1px 3px rgba(0,0,0,0.05);border-radius:16px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;">
+      <div>
+        <div style="font-size:14px;font-weight:600;color:oklch(0.22 0.008 100);">Ativar espelhamento</div>
+        <div style="font-size:12px;color:oklch(0.52 0.006 100);margin-top:2px;">${esc(statusLabel)}</div>
+      </div>
+      <div data-mrtoggle style="cursor:pointer;width:38px;height:22px;border-radius:999px;background:${toggleBg};position:relative;flex-shrink:0;">
+        <div style="position:absolute;top:2px;left:${knobLeft};width:18px;height:18px;border-radius:999px;background:#fff;"></div>
+      </div>
+    </div>
+
+    ${bypassBanner}
+
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;">
+      <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;">Estado atual das portas</div>
+    </div>
+    <div style="background:oklch(1 0 0);border:1px solid oklch(0.9 0.006 100);box-shadow:0 1px 3px rgba(0,0,0,0.05);border-radius:16px;padding:6px 16px;display:flex;flex-direction:column;">
+      ${portRows || '<div style="padding:10px 0;font-size:12px;color:oklch(0.6 0.006 100);">Sem dados de portas.</div>'}
+    </div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;">
+      <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;">Associações porta → zona</div>
+    </div>
+    ${allUsedMsg}
+    ${newBtn}
+    ${mappingCards}
+    ${noMappingsMsg}
+  `;
+}
+
+// Tela-edição do espelhamento (pura, não toca DOM).
+function mrEditHtml() {
+  const d = mrUI.draft;
+  const { ports } = mrData;
+  const editing = d.isEditing;
+  const errors = mrUI.errors || [];
+  const errBox = errors.length
+    ? `<div style="background:oklch(0.55 0.16 30 / 0.08);border:1px solid oklch(0.55 0.16 30 / 0.3);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:4px;">
+        ${errors.map((e) => `<div style="font-size:12px;color:oklch(0.55 0.16 30);">${esc(e)}</div>`).join('')}
+      </div>`
+    : '';
+
+  // Portas livres (sem zona) + a porta atual em edição
+  const freePorts = (Array.isArray(ports) ? ports : []).filter(
+    (p) => !(p.zoneId != null && p.zoneId > 0) || num(p.i) === num(d.input)
+  );
+  const portPills = freePorts.map((p) => {
+    const nome = esc(MR_PORT_NAMES[num(p.i)] || ('Entrada ' + (num(p.i) + 1)));
+    const sel = num(p.i) === num(d.input);
+    const border = sel ? 'oklch(0.47 0.1 150)' : 'oklch(0.88 0.006 100)';
+    const bg = sel ? 'oklch(0.47 0.1 150)' : 'transparent';
+    const color = sel ? '#fff' : 'oklch(0.4 0.006 100)';
+    const shadow = sel ? '0 1px 4px oklch(0.47 0.1 150 / 0.3)' : 'none';
+    return `<button data-mrport="${num(p.i)}" style="cursor:pointer;border:1.5px solid ${border};padding:7px 12px;border-radius:999px;background:${bg};color:${color};font-size:12.5px;font-weight:600;box-shadow:${shadow};">${nome}</button>`;
+  }).join('');
+
+  // Zonas disponíveis (todas as zonas do mrData)
+  const zones = Array.isArray(mrData.zones) ? mrData.zones : [];
+  const zonePills = zones.map((z) => {
+    const nome = esc(z.name || ('Zona ' + num(z.id)));
+    const sel = num(z.id) === num(d.zoneId);
+    const border = sel ? 'oklch(0.47 0.1 150)' : 'oklch(0.88 0.006 100)';
+    const bg = sel ? 'oklch(0.47 0.1 150)' : 'transparent';
+    const color = sel ? '#fff' : 'oklch(0.4 0.006 100)';
+    const shadow = sel ? '0 1px 4px oklch(0.47 0.1 150 / 0.3)' : 'none';
+    return `<button data-mrzone="${num(z.id)}" style="cursor:pointer;border:1.5px solid ${border};padding:7px 12px;border-radius:999px;background:${bg};color:${color};font-size:12.5px;font-weight:600;box-shadow:${shadow};">${nome}</button>`;
+  }).join('');
+
+  const normalBorder = !d.invertido ? 'oklch(0.47 0.1 150)' : 'oklch(0.88 0.006 100)';
+  const normalBg = !d.invertido ? 'oklch(0.47 0.1 150 / 0.1)' : 'transparent';
+  const normalColor = !d.invertido ? 'oklch(0.47 0.1 150)' : 'oklch(0.4 0.006 100)';
+  const invBorder = d.invertido ? 'oklch(0.47 0.1 150)' : 'oklch(0.88 0.006 100)';
+  const invBg = d.invertido ? 'oklch(0.47 0.1 150 / 0.1)' : 'transparent';
+  const invColor = d.invertido ? 'oklch(0.47 0.1 150)' : 'oklch(0.4 0.006 100)';
+  const polaridadeLabel = d.invertido
+    ? 'Invertido: saída abre quando entrada estiver em 0 V.'
+    : 'Normal: saída abre quando entrada estiver em 1 (ativa).';
+
+  const habBg = d.habilitado ? 'oklch(0.47 0.1 150)' : 'oklch(0.85 0.006 100)';
+  const habKnob = d.habilitado ? '18px' : '2px';
+
+  let delBlock = '';
+  if (editing) {
+    if (mrUI.deleteConfirm) {
+      delBlock = `<div style="background:oklch(0.55 0.16 30 / 0.08);border:1px solid oklch(0.55 0.16 30 / 0.3);border-radius:12px;padding:12px 14px;">
+        <div style="font-size:12.5px;color:oklch(0.22 0.008 100);">Excluir esta associação?</div>
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <button data-mrdelcancel style="cursor:pointer;flex:1;border:1px solid oklch(0.9 0.006 100);padding:9px;border-radius:8px;background:transparent;color:oklch(0.4 0.006 100);font-size:12.5px;font-weight:600;">Cancelar</button>
+          <button data-mrdelconfirm style="cursor:pointer;flex:1;border:none;padding:9px;border-radius:8px;background:oklch(0.55 0.16 30);color:#fff;font-size:12.5px;font-weight:700;">Excluir</button>
+        </div>
+      </div>`;
+    }
+    delBlock += `<button data-mrdelreq style="cursor:pointer;border:1px solid oklch(0.55 0.16 30 / 0.4);padding:11px;border-radius:12px;background:transparent;color:oklch(0.55 0.16 30);font-size:13px;font-weight:700;width:100%;">Excluir associação</button>`;
+  }
+
+  return `
+    <div data-mrcancel style="cursor:pointer;font-size:13px;font-weight:600;color:oklch(0.47 0.1 150);">‹ Modo Espelhamento</div>
+    <div style="font-size:18px;font-weight:700;color:oklch(0.22 0.008 100);">${editing ? 'Editar associação' : 'Nova associação'}</div>
+
+    ${errBox}
+
+    <div style="background:oklch(1 0 0);border:1px solid oklch(0.9 0.006 100);border-radius:16px;padding:14px 16px;display:flex;flex-direction:column;gap:14px;">
+      <div>
+        <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;">Porta de entrada (gateway)</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${portPills || '<div style="font-size:12px;color:oklch(0.6 0.006 100);">Todas as portas em uso.</div>'}
+        </div>
+      </div>
+
+      <div>
+        <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;">Zona associada (saída no nó)</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${zonePills || '<div style="font-size:12px;color:oklch(0.6 0.006 100);">Nenhuma zona configurada.</div>'}
+        </div>
+      </div>
+
+      <div>
+        <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;">Polaridade da entrada</div>
+        <div style="font-size:12px;color:oklch(0.52 0.006 100);margin-bottom:8px;line-height:1.4;">Use "Invertido" quando o hardware reporta a entrada como ativa em 0 V (lógica invertida).</div>
+        <div style="display:flex;gap:8px;">
+          <button data-mrnormal style="cursor:pointer;flex:1;border:1.5px solid ${normalBorder};padding:9px;border-radius:8px;background:${normalBg};color:${normalColor};font-size:12.5px;font-weight:700;">Normal</button>
+          <button data-mrinvertido style="cursor:pointer;flex:1;border:1.5px solid ${invBorder};padding:9px;border-radius:8px;background:${invBg};color:${invColor};font-size:12.5px;font-weight:700;">Invertido</button>
+        </div>
+        <div style="font-size:12px;font-weight:600;color:oklch(0.47 0.1 150);margin-top:8px;">${esc(polaridadeLabel)}</div>
+      </div>
+
+      <div data-mrhab style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;background:oklch(0.97 0.003 100);border-radius:10px;padding:10px 12px;">
+        <div style="font-size:13px;font-weight:600;color:oklch(0.22 0.008 100);">Associação habilitada</div>
+        <div style="width:38px;height:22px;border-radius:999px;background:${habBg};position:relative;flex-shrink:0;">
+          <div style="position:absolute;top:2px;left:${habKnob};width:18px;height:18px;border-radius:999px;background:#fff;"></div>
+        </div>
+      </div>
+    </div>
+
+    <button data-mrsave style="cursor:pointer;border:none;padding:13px;border-radius:12px;background:oklch(0.47 0.1 150);color:#fff;font-size:15px;font-weight:700;width:100%;">Salvar associação</button>
+
+    ${delBlock}
+  `;
+}
+
+function mrRender() {
+  view.innerHTML = mrUI.screen === 'edit' ? mrEditHtml() : mrListHtml();
+  mrWire();
+}
+
+function mrWire() {
+  const q = (sel) => view.querySelector(sel);
+
+  if (mrUI.screen !== 'edit') {
+    // Toggle espelhamento ativo/inativo
+    const tog = q('[data-mrtoggle]');
+    if (tog) tog.addEventListener('click', async () => {
+      const r = await postJson('/mirror', { enabled: !mrData.enabled });
+      if (r.ok) renderEspelhamento().catch(() => {});
+    });
+
+    // Nova associação
+    const nb = q('[data-mrnew]');
+    if (nb) nb.addEventListener('click', () => mrOpenNew());
+
+    // Editar associação (click no card, não no toggle)
+    view.querySelectorAll('[data-mredit]').forEach((el) => {
+      el.addEventListener('click', (e) => {
+        // Não abrir edit se clicou no toggle de habilitado
+        if (e.target.closest('[data-mrtoghab]')) return;
+        mrOpenEdit(num(el.dataset.mredit));
+      });
+    });
+
+    // Toggle habilitado inline no card da lista
+    view.querySelectorAll('[data-mrtoghab]').forEach((el) => {
+      el.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const portIdx = num(el.dataset.mrtoghab);
+        const p = (mrData.ports || []).find((x) => num(x.i) === portIdx);
+        if (!p) return;
+        const r = await postJson('/mirror/mapping', {
+          input: portIdx,
+          zoneId: num(p.zoneId),
+          invertido: !!p.invertido,
+          habilitado: !p.habilitado,
+        });
+        if (r.ok) renderEspelhamento().catch(() => {});
+      });
+    });
+    return;
+  }
+
+  // Tela de edição
+  const cancel = q('[data-mrcancel]');
+  if (cancel) cancel.addEventListener('click', () => { mrUI = { screen: 'list', draft: null, errors: [], deleteConfirm: false }; mrRender(); });
+
+  view.querySelectorAll('[data-mrport]').forEach((b) =>
+    b.addEventListener('click', () => { mrUI.draft.input = num(b.dataset.mrport); mrRender(); }));
+  view.querySelectorAll('[data-mrzone]').forEach((b) =>
+    b.addEventListener('click', () => { mrUI.draft.zoneId = num(b.dataset.mrzone); mrRender(); }));
+
+  const norm = q('[data-mrnormal]');
+  if (norm) norm.addEventListener('click', () => { mrUI.draft.invertido = false; mrRender(); });
+  const inv = q('[data-mrinvertido]');
+  if (inv) inv.addEventListener('click', () => { mrUI.draft.invertido = true; mrRender(); });
+
+  const hab = q('[data-mrhab]');
+  if (hab) hab.addEventListener('click', () => { mrUI.draft.habilitado = !mrUI.draft.habilitado; mrRender(); });
+
+  const save = q('[data-mrsave]');
+  if (save) save.addEventListener('click', () => mrSave());
+
+  const delReq = q('[data-mrdelreq]');
+  if (delReq) delReq.addEventListener('click', () => { mrUI.deleteConfirm = true; mrRender(); });
+  const delCancel = q('[data-mrdelcancel]');
+  if (delCancel) delCancel.addEventListener('click', () => { mrUI.deleteConfirm = false; mrRender(); });
+  const delConfirm = q('[data-mrdelconfirm]');
+  if (delConfirm) delConfirm.addEventListener('click', () => mrDelete());
+}
+
+function mrOpenNew() {
+  const freePorts = (mrData.ports || []).filter((p) => !(p.zoneId != null && p.zoneId > 0));
+  if (!freePorts.length) return;
+  const firstPort = freePorts[0];
+  const firstZone = (Array.isArray(mrData.zones) && mrData.zones[0]) ? num(mrData.zones[0].id) : null;
+  mrUI = {
+    screen: 'edit', errors: [], deleteConfirm: false,
+    draft: { input: num(firstPort.i), zoneId: firstZone, invertido: false, habilitado: true, isEditing: false },
+  };
+  mrRender();
+}
+
+function mrOpenEdit(portIdx) {
+  const p = (mrData.ports || []).find((x) => num(x.i) === portIdx);
+  if (!p) return;
+  mrUI = {
+    screen: 'edit', errors: [], deleteConfirm: false,
+    draft: {
+      input: num(p.i),
+      zoneId: num(p.zoneId),
+      invertido: !!p.invertido,
+      habilitado: !!p.habilitado,
+      isEditing: true,
+    },
+  };
+  mrRender();
+}
+
+async function mrSave() {
+  const d = mrUI.draft;
+  const errors = [];
+  if (d.input == null || d.input < 0 || d.input > 3) errors.push('Selecione uma porta de entrada.');
+  if (!d.zoneId) errors.push('Selecione uma zona.');
+  if (errors.length) { mrUI.errors = errors; mrRender(); return; }
+  const r = await postJson('/mirror/mapping', {
+    input: num(d.input),
+    zoneId: num(d.zoneId),
+    invertido: !!d.invertido,
+    habilitado: !!d.habilitado,
+  });
+  if (r.ok) { mrUI = { screen: 'list', draft: null, errors: [], deleteConfirm: false }; renderEspelhamento().catch(() => {}); }
+  else { mrUI.errors = (r.body && Array.isArray(r.body.errors)) ? r.body.errors : ['Falha ao salvar.']; mrRender(); }
+}
+
+async function mrDelete() {
+  const r = await postJson('/mirror/mapping/delete', { input: num(mrUI.draft.input) });
+  if (r.ok) { mrUI = { screen: 'list', draft: null, errors: [], deleteConfirm: false }; renderEspelhamento().catch(() => {}); }
+  else { mrUI.deleteConfirm = false; mrUI.errors = ['Falha ao excluir.']; mrRender(); }
+}
+
+// Entrada do roteador: carrega GET /mirror e cacheia em mrData.
+async function renderEspelhamento() {
+  const [mirror, zones] = await Promise.all([
+    getJson('/mirror').catch(() => ({ enabled: false, ports: [] })),
+    getJson('/zones').catch(() => []),
+  ]);
+  mrData = {
+    enabled: !!mirror.enabled,
+    ports: Array.isArray(mirror.ports) ? mirror.ports : [],
+    zones: Array.isArray(zones) ? zones : [],
+  };
+  // Poll apenas actualiza o cache; não reconstrói o DOM da tela de edição
+  // (evita flicker e perda de estado do draft durante edição activa).
+  if (mrUI.screen === 'edit') return;
+  mrUI = { screen: 'list', draft: null, errors: [], deleteConfirm: false };
+  mrRender();
+}
+
 // ===== "Mais" (menu de telas secundárias) =====
 function renderMais() {
   const items = [
+    ['espelhamento', 'Modo Espelhamento', 'Entradas físicas do gateway → saídas dos nós'],
     ['grupos', 'Grupos hidráulicos', 'Sequenciamento de bomba e válvula mestre'],
     ['niveis', 'Controle de nível', 'Controle de bomba por boia flutuante'],
     ['intertravamentos', 'Intertravamentos', 'Regras de bloqueio por sensor / simultaneidade'],
@@ -2197,7 +2588,7 @@ function renderMais() {
   view.querySelectorAll('[data-sub]').forEach((c) => c.addEventListener('click', () => showSub(c.dataset.sub)));
 }
 
-// ===== Sistema (backup, chave da fazenda, PIN) =====
+// ===== Sistema (backup + restaurar) =====
 // Baixa o backup via fetch→Blob (robusto: dá feedback de erro e não depende do
 // comportamento de <a download> contra o webserver embarcado).
 async function downloadBackup(btn, statusEl) {
@@ -2226,6 +2617,35 @@ async function downloadBackup(btn, statusEl) {
   }
 }
 
+async function restoreBackup(btn, fileInput, statusEl) {
+  const file = fileInput.files[0];
+  if (!file) {
+    statusEl.textContent = 'Selecione um arquivo .json antes de restaurar.';
+    statusEl.className = 'sub err';
+    return;
+  }
+  btn.disabled = true;
+  statusEl.textContent = 'Enviando backup…';
+  statusEl.className = 'sub';
+  try {
+    const text = await file.text();
+    if (!text || text[0] !== '{') throw new Error('arquivo inválido (não é JSON)');
+    const r = await fetch(API + '/import', { method: 'POST', body: text });
+    const json = await r.json();
+    if (!r.ok) throw new Error(json.error || json.errors?.[0] || 'HTTP ' + r.status);
+    if (!json.ok) throw new Error(json.error || 'falha no servidor');
+    statusEl.textContent =
+      'Restaurado: ' + json.zonas + ' zonas, ' + json.programas + ' programas, ' +
+      json.intertravamentos + ' intertravamentos, ' + json.grupos + ' grupos.';
+    statusEl.className = 'sub';
+  } catch (e) {
+    statusEl.textContent = 'Falha ao restaurar (' + esc(e.message) + ').';
+    statusEl.className = 'sub err';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function renderSistema() {
   view.innerHTML =
     `<div class="card">
@@ -2235,17 +2655,21 @@ function renderSistema() {
        <div class="sub" id="dlStatus"></div>
      </div>
      <div class="card">
-       <div class="sens-hdr"><span class="name">Chave da fazenda</span></div>
-       <div class="sub">A PSK do canal (base64 + nome) é exportada apenas no dispositivo, por segurança: pressão longa no botão do gateway a despeja no console serial (§11.2). Necessária para cadastrar a fazenda no device de serviço.</div>
-     </div>
-     <div class="card">
-       <div class="sens-hdr"><span class="name">PIN de aplicação</span></div>
-       <div class="sub">O portal Wi-Fi exige WPA2 + PIN e o AP desliga após inatividade. O PIN é definido no provisionamento.</div>
+       <div class="sens-hdr"><span class="name">Restaurar</span></div>
+       <div class="sub maint-sub">Importa um backup e reaplica as tabelas de configuração (zonas, programas, intertravamentos, grupos). <b>Mantém a chave da rede</b> e não reinicia. As estações não são reconfiguradas (só metadados).</div>
+       <input type="file" id="restoreFile" accept=".json,application/json" class="sub">
+       <button class="btn solid big syslink" id="doRestore">⬆ Restaurar backup (.json)</button>
+       <div class="sub" id="restoreStatus"></div>
      </div>`;
 
   const btn = view.querySelector('#dlBackup');
   const status = view.querySelector('#dlStatus');
   btn.addEventListener('click', () => downloadBackup(btn, status));
+
+  const rBtn = view.querySelector('#doRestore');
+  const rFile = view.querySelector('#restoreFile');
+  const rStatus = view.querySelector('#restoreStatus');
+  rBtn.addEventListener('click', () => restoreBackup(rBtn, rFile, rStatus));
 }
 
 // ===== Malha / Enlace (SNR/RSSI/bateria por nó) =====
@@ -2651,6 +3075,16 @@ function fmtEpochLocal(epoch) {
   return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+// POSIX TZ → rótulo GMT±X. No POSIX o offset é positivo a oeste de UTC
+// (`<-03>3` = 3h a oeste), então o GMT real é o sinal invertido → GMT-3.
+function gmtFromPosix(posix) {
+  if (!posix || posix === 'GMT0') return 'GMT+0';
+  const m = posix.match(/>([+-]?\d{1,2})/);
+  if (!m) return '';
+  const off = -parseInt(m[1], 10);
+  return 'GMT' + (off >= 0 ? '+' : '') + off;
+}
+
 async function renderHorario() {
   const t = (await getJson('/time').catch(() => ({}))) || {};
   const stations = (await getJson('/stations').catch(() => [])) || [];
@@ -2664,7 +3098,7 @@ async function renderHorario() {
 
   const tzRows = TZ_PRESETS.map(
     ([label, posix]) =>
-      `<button class="tzrow${t.tz === posix ? ' sel' : ''}" data-tz="${esc(posix)}">${esc(label)}</button>`
+      `<button class="tzrow${t.tz === posix ? ' sel' : ''}" data-tz="${esc(posix)}"><span>${esc(label)}</span><span class="gmt">${gmtFromPosix(posix)}</span></button>`
   ).join('');
 
   const devRows =
@@ -2672,20 +3106,28 @@ async function renderHorario() {
       .map((s) => {
         const [cls, lbl] = stationSyncLabel(s.sync);
         const nm = s.name ? esc(s.name) : nodeHex(s.node);
-        return `<div class="fp-kv"><span class="k">${nm}</span><span class="chip ${cls}">${esc(lbl)}</span></div>`;
+        return `<div class="hr-dev">
+          <div class="hr-dev-main">
+            <div class="nm">${nm}</div>
+            <div class="mt">Estação · ${nodeHex(s.node)}</div>
+          </div>
+          <span class="chip ${cls}">${esc(lbl)}</span>
+        </div>`;
       })
       .join('') || '<div class="sub">Nenhuma estação conhecida.</div>';
 
   view.innerHTML = `
-    <div class="card">
-      <div class="sens-hdr"><span class="name">Relógio do gateway</span></div>
-      <div class="sub">Agora: ${fmtEpochLocal(t.nowEpoch)} · ${esc(t.tzLabel || '—')}</div>
-    </div>
     <div class="card stack">
-      <div class="fp-lbl">Fonte de hora</div>
-      <div class="fp-seg" id="srcSeg">
-        <button data-src="ntp" class="${isNtp ? 'sel' : ''}">NTP (automática)</button>
-        <button data-src="manual" class="${!isNtp ? 'sel' : ''}">Manual</button>
+      <div>
+        <div class="sens-hdr"><span class="name">Relógio do gateway</span></div>
+        <div class="sub">Agora: ${fmtEpochLocal(t.nowEpoch)} · ${esc(t.tzLabel || '—')} · ${gmtFromPosix(t.tz)}</div>
+      </div>
+      <div>
+        <div class="fp-lbl">Fonte de hora</div>
+        <div class="fp-seg" id="srcSeg">
+          <button data-src="ntp" class="${isNtp ? 'sel' : ''}">NTP (automática)</button>
+          <button data-src="manual" class="${!isNtp ? 'sel' : ''}">Manual</button>
+        </div>
       </div>
       <div id="srcBody"></div>
       <span id="timeMsg" class="sub"></span>
@@ -2696,8 +3138,8 @@ async function renderHorario() {
     </div>
     <div class="card">
       <div class="sens-hdr"><span class="name">Sincronização por dispositivo</span></div>
-      <div class="sub">Epoch de config de cada estação — reflete se recebeu o horário/config mais recente.</div>
-      ${devRows}
+      <div class="sub hr-sync-note">Epoch de config de cada estação — reflete se recebeu o horário/config mais recente.</div>
+      <div class="hr-devs">${devRows}</div>
     </div>`;
 
   const srcBody = view.querySelector('#srcBody');
@@ -2705,8 +3147,10 @@ async function renderHorario() {
   function paintSource(src) {
     if (src === 'ntp') {
       srcBody.innerHTML = `
-        <div class="fp-kv"><span class="k">Servidor</span><span class="v">${esc(t.ntpServer || '—')}</span></div>
-        <div class="fp-kv"><span class="k">Última sincronização</span><span class="v">${esc(lastSync)}</span></div>
+        <div class="hr-box">
+          <div class="fp-kv"><span class="k">Servidor</span><span class="v">${esc(t.ntpServer || '—')}</span></div>
+          <div class="fp-kv"><span class="k">Última sincronização</span><span class="v">${esc(lastSync)}</span></div>
+        </div>
         ${t.staUp ? '<button class="btn ghost sm" id="syncNow">Sincronizar agora</button>' : '<div class="sub">Sem WiFi — NTP indisponível.</div>'}`;
       const sn = srcBody.querySelector('#syncNow');
       if (sn)
@@ -2721,8 +3165,10 @@ async function renderHorario() {
       const dv = `${nowIso.getFullYear()}-${p(nowIso.getMonth() + 1)}-${p(nowIso.getDate())}`;
       const tv = `${p(nowIso.getHours())}:${p(nowIso.getMinutes())}`;
       srcBody.innerHTML = `
-        <label>Data <input type="date" id="mDate" value="${dv}"></label>
-        <label>Hora <input type="time" id="mTime" value="${tv}"></label>
+        <div class="hr-manual">
+          <label>Data<input type="date" id="mDate" value="${dv}"></label>
+          <label>Hora<input type="time" id="mTime" value="${tv}"></label>
+        </div>
         <button class="btn solid sm" id="mSet">Definir data e hora</button>`;
       srcBody.querySelector('#mSet').addEventListener('click', async () => {
         const d = srcBody.querySelector('#mDate').value;
@@ -2764,6 +3210,7 @@ const RENDER = {
   gpo: renderGpo,
   grupos: renderGrupos,
   niveis: renderNiveis,
+  espelhamento: renderEspelhamento,
   intertravamentos: renderIntertravamentos,
   auditlog: renderAuditLog,
   tamper: renderTamper,
@@ -2777,11 +3224,12 @@ const RENDER = {
 
 // Rótulo mostrado na barra de volta ao entrar numa tela secundária via "Mais".
 const SECTION_LABELS = {
-  grupos: 'Grupos', niveis: 'Nível', intertravamentos: 'Intertravamentos', sensores: 'Sensores',
-  gpo: 'Saídas (GPO)', tamper: 'Tamper', auditlog: 'Log', cobertura: 'Cobertura', malha: 'Malha', wifi: 'Rede Wi-Fi', horario: 'Horário', sistema: 'Sistema',
+  espelhamento: 'Espelhamento', grupos: 'Grupos', niveis: 'Nível', intertravamentos: 'Intertravamentos',
+  sensores: 'Sensores', gpo: 'Saídas (GPO)', tamper: 'Tamper', auditlog: 'Log', cobertura: 'Cobertura',
+  malha: 'Malha', wifi: 'Rede Wi-Fi', horario: 'Horário', sistema: 'Sistema',
 };
 // Telas que se auto-atualizam (poll 3 s) via re-render completo.
-const POLLED = { overview: 1, stations: 1, sensores: 1, cobertura: 1, malha: 1 };
+const POLLED = { overview: 1, stations: 1, sensores: 1, cobertura: 1, espelhamento: 1, malha: 1 };
 
 const subbar = document.getElementById('subbar');
 const subTitle = document.getElementById('subTitle');

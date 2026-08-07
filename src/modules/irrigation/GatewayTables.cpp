@@ -33,7 +33,9 @@ bool checkHeader(const uint8_t *buf, size_t n, uint32_t magic, size_t entrySize,
 } // namespace
 
 // ---- ZoneTable ----
-static constexpr size_t ZONE_ENTRY = 28;
+static constexpr size_t ZONE_ENTRY    = 29;          // v2: +1 byte fonteEnabled em off+28
+static constexpr size_t ZONE_ENTRY_V1 = 28;          // legado
+static constexpr uint32_t ZONE_MAGIC_V1 = 0x495A4E31; // "IZN1"
 
 bool ZoneTable::upsert(const Zone &z)
 {
@@ -122,6 +124,7 @@ size_t ZoneTable::serialize(uint8_t *buf, size_t cap) const
         memcpy(buf + off + 23, &z.maxMin, 2);
         memcpy(buf + off + 25, &z.padraoMin, 2);
         buf[off + 27] = (uint8_t)z.fonteInput;
+        buf[off + 28] = z.fonteEnabled;
         off += ZONE_ENTRY;
     }
     return need;
@@ -132,10 +135,15 @@ bool ZoneTable::deserialize(const uint8_t *buf, size_t n)
     for (auto &s : zones)
         s = Zone{};
     uint8_t cnt;
-    if (!checkHeader(buf, n, MAGIC, ZONE_ENTRY, MAX, cnt))
+    bool v2 = checkHeader(buf, n, MAGIC, ZONE_ENTRY, MAX, cnt);
+    bool v1 = false;
+    if (!v2)
+        v1 = checkHeader(buf, n, ZONE_MAGIC_V1, ZONE_ENTRY_V1, MAX, cnt);
+    if (!v2 && !v1)
         return false;
+    const size_t stride = v2 ? ZONE_ENTRY : ZONE_ENTRY_V1;
     size_t off = 6;
-    for (uint8_t i = 0; i < cnt; i++, off += ZONE_ENTRY) {
+    for (uint8_t i = 0; i < cnt; i++, off += stride) {
         Zone z;
         z.id = buf[off];
         memcpy(z.name, buf + off + 1, 16);
@@ -146,6 +154,7 @@ bool ZoneTable::deserialize(const uint8_t *buf, size_t n)
         memcpy(&z.maxMin, buf + off + 23, 2);
         memcpy(&z.padraoMin, buf + off + 25, 2);
         z.fonteInput = (int8_t)buf[off + 27];
+        z.fonteEnabled = v2 ? buf[off + 28] : 1; // legado → habilitada
         zones[i] = z;
     }
     return true;

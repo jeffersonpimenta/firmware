@@ -103,18 +103,31 @@ static void test_mirrorOwnsZoneOutput_predicate()
 {
     MirrorMode m;
     // desabilitado: nunca é dono
-    TEST_ASSERT_FALSE(mirrorOwnsZoneOutput(m, 0));
+    TEST_ASSERT_FALSE(mirrorOwnsZoneOutput(m, 0, true));
     m.setEnabled(true);
     // sem fonte (-1): não é dono
-    TEST_ASSERT_FALSE(mirrorOwnsZoneOutput(m, -1));
+    TEST_ASSERT_FALSE(mirrorOwnsZoneOutput(m, -1, true));
     // entrada 0 ativa (bitmap 0x01) após debounce
     uint32_t t = 1000;
     m.update(0x01, t);
     t += MirrorMode::DEBOUNCE_MS + 1;
     m.update(0x01, t); // estabiliza -> inputActive(0) true
     TEST_ASSERT_TRUE(m.inputActive(0));
-    TEST_ASSERT_TRUE(mirrorOwnsZoneOutput(m, 0));
-    TEST_ASSERT_FALSE(mirrorOwnsZoneOutput(m, 1)); // outra entrada, inativa
+    TEST_ASSERT_TRUE(mirrorOwnsZoneOutput(m, 0, true));
+    TEST_ASSERT_FALSE(mirrorOwnsZoneOutput(m, 1, true)); // outra entrada, inativa
+}
+
+static void test_mirror_owns_respects_fonteEnabled()
+{
+    MirrorMode m;
+    m.setEnabled(true);
+    uint8_t bmp = 0b0001;         // entrada 0 ativa
+    m.update(bmp, 1000);          // marca input 0 ativo (após debounce, se necessário chamar 2x)
+    m.update(bmp, 1000 + MirrorMode::DEBOUNCE_MS + 1);
+    // habilitada: possui a saída
+    TEST_ASSERT_TRUE(mirrorOwnsZoneOutput(m, 0, true));
+    // pausada: NÃO possui (scheduler controla)
+    TEST_ASSERT_FALSE(mirrorOwnsZoneOutput(m, 0, false));
 }
 
 void setup()
@@ -122,6 +135,7 @@ void setup()
     initializeTestEnvironment();
     UNITY_BEGIN();
     RUN_TEST(test_mirrorOwnsZoneOutput_predicate);
+    RUN_TEST(test_mirror_owns_respects_fonteEnabled);
     RUN_TEST(test_riseOpensFallCloses);
     RUN_TEST(test_renewalEvery60s);
     RUN_TEST(test_glitchIgnored);

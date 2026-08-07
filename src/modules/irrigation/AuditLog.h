@@ -17,6 +17,7 @@ enum class AuditAction : uint8_t {
     CONFIG_EPOCH, SAFE_MODE_IN, SAFE_MODE_OUT, TAMPER, REBOOT,
     HIBERNA_IN, HIBERNA_OUT,
     CMD_REJEITADO, // comando NACKado antes do despacho (motivo em target = NackReason)
+    ESPELHO,       // toggle/mapeamento do modo espelho (bypass de painel — safety-relevant)
 };
 enum class AuditResult : uint8_t { OK = 0, NACK, TIMEOUT };
 

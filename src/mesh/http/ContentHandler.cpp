@@ -46,9 +46,11 @@
 using namespace httpsserver;
 
 #include "mesh/http/ContentHandler.h"
-#include "modules/irrigation/IrrigationWebEndpoints.h"
+#if !MESHTASTIC_EXCLUDE_IRRIGATION
 #include "modules/irrigation/IrrigationPortalEndpoints.h"
+#include "modules/irrigation/IrrigationWebEndpoints.h"
 #include "modules/irrigation/ServicePortalEndpoints.h"
+#endif
 
 #define DEST_FS_USES_LITTLEFS
 
@@ -118,12 +120,14 @@ void registerHandlers(HTTPServer *insecureServer, HTTPSServer *secureServer)
     //    secureServer->registerNode(nodeAdminFs);
     //    secureServer->registerNode(nodeAdminSettings);
     //    secureServer->registerNode(nodeAdminSettingsApply);
+#if !MESHTASTIC_EXCLUDE_IRRIGATION
     // Rotas do painel de irrigação — antes do catch-all nodeRoot ("/*", GET) para não serem sombreadas.
     registerIrrigationHandlers(secureServer);
     // Portal de campo (Fase 5b): role-agnóstico — /api/portal/* respondem em qualquer papel (não gateado por gwIsGateway).
     registerIrrigationPortalHandlers(secureServer);
     // Portal do device SERVICO (Fase 8c): /api/portal/service/* respondem só quando role==SERVICO.
     registerIrrigationServicePortalHandlers(secureServer);
+#endif
     secureServer->registerNode(nodeRoot); // This has to be last
 
     // Insecure nodes
@@ -145,6 +149,7 @@ void registerHandlers(HTTPServer *insecureServer, HTTPSServer *secureServer)
     //    insecureServer->registerNode(nodeAdminFs);
     //    insecureServer->registerNode(nodeAdminSettings);
     //    insecureServer->registerNode(nodeAdminSettingsApply);
+#if !MESHTASTIC_EXCLUDE_IRRIGATION
     // Rotas do painel de irrigação — antes do catch-all nodeRoot ("/*", GET) para não serem sombreadas.
     // Os próprios handlers do painel respondem 404 quando irrigationModule->gwIsGateway() é falso.
     registerIrrigationHandlers(insecureServer);
@@ -152,6 +157,7 @@ void registerHandlers(HTTPServer *insecureServer, HTTPSServer *secureServer)
     registerIrrigationPortalHandlers(insecureServer);
     // Portal do device SERVICO (Fase 8c): /api/portal/service/* respondem só quando role==SERVICO.
     registerIrrigationServicePortalHandlers(insecureServer);
+#endif
     insecureServer->registerNode(nodeRoot); // This has to be last
 }
 

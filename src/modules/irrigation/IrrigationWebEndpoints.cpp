@@ -1,6 +1,7 @@
 #include "modules/irrigation/IrrigationWebEndpoints.h"
 #if !MESHTASTIC_EXCLUDE_WEBSERVER
 
+#include "modules/irrigation/IrrigationEndpointHelpers.h" // sendJson/sendParseErrors/readBody
 #include "modules/irrigation/IrrigationModule.h"
 #include "modules/irrigation/IrrigationSettings.h" // migrateIrrigationSettings (hStations lê o blob)
 #include "modules/irrigation/IrrigationWebApi.h"
@@ -12,8 +13,6 @@
 // Mesma sequência de include do esp32_https_server usada por ContentHandler.cpp:
 // "#undef str" antes dos headers do servidor (workaround gcc bug 57824).
 #undef str
-#include <HTTPRequest.hpp>
-#include <HTTPResponse.hpp>
 #include <ResourceNode.hpp>
 
 using namespace httpsserver;
@@ -26,47 +25,6 @@ using namespace IrrigationWeb;
 static bool gwReady()
 {
     return irrigationModule && irrigationModule->gwIsGateway();
-}
-
-static void sendJson(HTTPResponse *res, const char *body, int status = 200)
-{
-    res->setStatusCode(status);
-    res->setHeader("Content-Type", "application/json");
-    res->setHeader("Access-Control-Allow-Origin", "*");
-    res->print(body);
-}
-
-// Responde 400 com {"errors":[...]} a partir de um ParseResult que falhou.
-static void sendParseErrors(HTTPResponse *res, const ParseResult &pr)
-{
-    char err[256];
-    JsonWriter w(err, sizeof(err));
-    w.beginObject();
-    w.key("errors");
-    w.beginArray();
-    for (uint8_t i = 0; i < pr.errorCount; i++)
-        w.str(pr.errors[i].msg);
-    w.endArray();
-    w.endObject();
-    if (w.done() == 0) {
-        // fallback caso o buffer estoure
-        sendJson(res, "{\"errors\":[\"erro\"]}", 400);
-        return;
-    }
-    sendJson(res, err, 400);
-}
-
-// Lê o corpo da requisição. esp32_https_server expõe HTTPRequest::readBytes(byte*, size_t)
-// que devolve o número de bytes lidos (mesmo idioma de handleAPIv1ToRadio em ContentHandler.cpp).
-static size_t readBody(HTTPRequest *req, char *buf, size_t cap)
-{
-    if (cap == 0)
-        return 0;
-    size_t n = req->readBytes(reinterpret_cast<byte *>(buf), cap - 1);
-    if (n >= cap)
-        n = cap - 1;
-    buf[n] = '\0';
-    return n;
 }
 
 // ---------------------------------------------------------------------------
@@ -824,6 +782,142 @@ static void hLevelsDelete(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, out);
 }
 
+// ---------------------------------------------------------------------------
+// Modo Espelhamento UI (Fase X): 4 endpoints CI-only.
+// ---------------------------------------------------------------------------
+
+// GET /api/irrigation/mirror — estado ao vivo do modo espelho
+static void hMirror(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!gwReady()) {
+        res->setStatusCode(404);
+        return;
+    }
+    char buf[1024];
+    size_t n = irrigationModule->gwBuildMirror(buf, sizeof(buf));
+    if (!n) {
+        res->setStatusCode(500);
+        return;
+    }
+    sendJson(res, buf);
+}
+
+// POST /api/irrigation/mirror — habilita/desabilita o modo espelho  {enabled:bool}
+static void hMirrorToggle(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!gwReady()) {
+        res->setStatusCode(404);
+        return;
+    }
+    char body[128];
+    size_t nb = readBody(req, body, sizeof(body));
+    bool en = false;
+    ParseResult pr = parseMirrorToggle(body, nb, en);
+    if (!pr.ok) {
+        sendParseErrors(res, pr);
+        return;
+    }
+    irrigationModule->gwSetMirrorEnabled(en);
+    char buf[1024];
+    size_t n = irrigationModule->gwBuildMirror(buf, sizeof(buf));
+    if (!n) {
+        res->setStatusCode(500);
+        return;
+    }
+    sendJson(res, buf);
+}
+
+// POST /api/irrigation/mirror/mapping — associa porta→zona  {input,zoneId,invertido?,habilitado?}
+static void hMirrorMapping(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!gwReady()) {
+        res->setStatusCode(404);
+        return;
+    }
+    char body[256];
+    size_t nb = readBody(req, body, sizeof(body));
+    int8_t in = 0;
+    uint8_t zid = 0;
+    bool inv = false, hab = true;
+    ParseResult pr = parseMirrorMapping(body, nb, in, zid, inv, hab);
+    if (!pr.ok) {
+        sendParseErrors(res, pr);
+        return;
+    }
+    char err[48] = {0};
+    if (!irrigationModule->gwApplyMirrorMapping(in, zid, inv, hab, err, sizeof(err))) {
+        char out[128];
+        JsonWriter w(out, sizeof(out));
+        w.beginObject();
+        w.key("errors");
+        w.beginArray();
+        w.str(err[0] ? err : "erro");
+        w.endArray();
+        w.endObject();
+        w.done();
+        sendJson(res, out, 400);
+        return;
+    }
+    char buf[1024];
+    size_t n = irrigationModule->gwBuildMirror(buf, sizeof(buf));
+    if (!n) {
+        res->setStatusCode(500);
+        return;
+    }
+    sendJson(res, buf);
+}
+
+// POST /api/irrigation/mirror/mapping/delete — remove mapeamento de uma porta  {input:0..3}
+static void hMirrorMappingDelete(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!gwReady()) {
+        res->setStatusCode(404);
+        return;
+    }
+    char body[128];
+    size_t nb = readBody(req, body, sizeof(body));
+    // Só precisa de "input": usa o JsonReader diretamente (parseMirrorMapping exige zoneId também).
+    JsonReader rd(body, nb);
+    int64_t in = -1;
+    if (!rd.getInt("input", in) || in < 0 || in > 3) {
+        sendJson(res, "{\"errors\":[\"input fora de 0..3\"]}", 400);
+        return;
+    }
+    if (!irrigationModule->gwDeleteMirrorMapping((int8_t)in)) {
+        sendJson(res, "{\"errors\":[\"porta sem zona associada\"]}", 400);
+        return;
+    }
+    char buf[1024];
+    size_t n = irrigationModule->gwBuildMirror(buf, sizeof(buf));
+    if (!n) {
+        res->setStatusCode(500);
+        return;
+    }
+    sendJson(res, buf);
+}
+
+// POST /api/irrigation/import — restaura as 4 tabelas de config de um envelope de backup (§5.5).
+// NÃO toca PSK/canal; NÃO reinicializa; NÃO bumpa epoch das estações. CI-only.
+static void hImport(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!gwReady()) {
+        res->setStatusCode(404);
+        return;
+    }
+    const size_t cap = 8192; // mesma capacidade que hExport/gwBuildBackup
+    char *body = (char *)malloc(cap);
+    if (!body) {
+        res->setStatusCode(500);
+        return;
+    }
+    size_t nb = readBody(req, body, cap);
+    char resp[128];
+    bool ok = irrigationModule->gwImportTables(body, nb, resp, sizeof(resp));
+    free(body);
+    sendJson(res, resp, ok ? 200 : 400);
+}
+
 // GET /api/irrigation/export — backup §5.5 completo (PSK + tabelas) num envelope
 // multi-cliente, para o cofre do device SERVICO (Fase 8b §11.7).
 static void hExport(HTTPRequest *req, HTTPResponse *res)
@@ -1009,6 +1103,13 @@ void registerIrrigationHandlers(HTTPServer *server)
     server->registerNode(new ResourceNode("/api/irrigation/levels", "GET", &hLevelsGet));
     server->registerNode(new ResourceNode("/api/irrigation/levels", "POST", &hLevelsPost));
     server->registerNode(new ResourceNode("/api/irrigation/levels/delete", "POST", &hLevelsDelete));
+    // Modo Espelhamento UI (Fase X): estado/toggle/mapeamento/delete
+    server->registerNode(new ResourceNode("/api/irrigation/mirror", "GET", &hMirror));
+    server->registerNode(new ResourceNode("/api/irrigation/mirror", "POST", &hMirrorToggle));
+    server->registerNode(new ResourceNode("/api/irrigation/mirror/mapping", "POST", &hMirrorMapping));
+    server->registerNode(new ResourceNode("/api/irrigation/mirror/mapping/delete", "POST", &hMirrorMappingDelete));
+    // Sistema restore: importa tabelas de config de um envelope de backup (NÃO toca PSK). CI-only.
+    server->registerNode(new ResourceNode("/api/irrigation/import", "POST", &hImport));
     // Fase 8b: export §5.5 completo (PSK + tabelas) p/ o cofre do device SERVICO
     server->registerNode(new ResourceNode("/api/irrigation/export", "GET", &hExport));
     // Fase 8d: site survey (§8.5)

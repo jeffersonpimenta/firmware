@@ -1,4 +1,5 @@
 #include "HydraulicGroupTable.h"
+#include "modules/irrigation/IrrigationProtocol.h" // crc32 compartilhado
 #include <string.h>
 
 namespace
@@ -7,16 +8,7 @@ namespace
 //   +transicao(1)+overlapS(2)+startAfterOpenS(2)+stopBeforeCloseS(2)+minRunMin(2)+maxStartsHour(1) = 39 B
 constexpr size_t ENTRY = 1 + 16 + 1 + 8 + 1 + 1 + 1 + 1 + 2 + 2 + 2 + 2 + 1;
 
-uint32_t crc32(const uint8_t *p, size_t n)
-{
-    uint32_t c = 0xFFFFFFFFu;
-    for (size_t i = 0; i < n; i++) {
-        c ^= p[i];
-        for (int k = 0; k < 8; k++)
-            c = (c >> 1) ^ (0xEDB88320u & (uint32_t)(-(int32_t)(c & 1)));
-    }
-    return ~c;
-}
+using IrrigationProto::crc32;
 } // namespace
 
 bool HydraulicGroupTable::zoneUsedByOther(uint8_t zoneId, uint8_t exceptId) const

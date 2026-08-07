@@ -39,7 +39,7 @@ Mostra status em tempo real:
 │ Estações: 3        Em execução: 1  │
 │ Zona 1 · 25 min    Alertas: 0     │
 │                                     │
-│ [com relógio] [⬇ Backup]           │
+│ [08:42] [⬇ Backup]                 │
 └─────────────────────────────────────┘
 ```
 

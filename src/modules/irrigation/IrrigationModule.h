@@ -124,8 +124,19 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     // Fase 8b: backup §5.5 completo (PSK + tabelas) num envelope de 1 cliente, p/ o cofre
     // do device SERVICO / botão de export do painel. GATEWAY-only. → bytes escritos (0 se falhou).
     size_t gwBuildBackup(char *buf, size_t cap);
+    // Sistema restore: importa as 4 tabelas de config de um envelope de backup (NÃO toca PSK/estações/epoch).
+    // Sucesso: persiste, audita, escreve JSON {ok,zonas,programas,intertravamentos,grupos} em resp, retorna true.
+    // Falha: escreve {ok:false,err:"..."} em resp, retorna false. CI-only (gateado pelo endpoint).
+    bool gwImportTables(const char *json, size_t len, char *resp, size_t respCap);
     // Alertas não reconhecidos (§8.1–§8.3) p/ a Visão Geral do painel. Vazio ("[]") fora do gateway.
     size_t gwBuildAlerts(char *buf, size_t cap);
+    // Modo Espelhamento UI (Fase X): habilita/desabilita o espelho; edita/remove mapeamento porta→zona;
+    // serializa o estado ao vivo. Chamados pelos endpoints CI-only /api/irrigation/mirror/*.
+    void gwSetMirrorEnabled(bool enabled);
+    bool gwApplyMirrorMapping(int8_t input, uint8_t zoneId, bool invertido, bool habilitado,
+                              char *err, size_t errCap);
+    bool gwDeleteMirrorMapping(int8_t input);
+    size_t gwBuildMirror(char *buf, size_t cap);
 
     // Fase 8b: página Horário. gwBuildTimeStatus monta o TimeStatusCtx + serializa.
     size_t gwBuildTimeStatus(char *buf, size_t cap);

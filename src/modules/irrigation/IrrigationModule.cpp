@@ -12,6 +12,7 @@
 #include "Throttle.h"
 #include "configuration.h"
 #include "gps/RTC.h"
+#include "modules/irrigation/IrrigationBoardDefaults.h"
 #include "main.h"
 #include "mesh/Channels.h"
 #include "mesh/wifi/WiFiAPClient.h" // Fase 8b: triggerNtpUpdate/ntpLastRunMs (free functions)
@@ -85,7 +86,8 @@ ArduinoSensorReader sensorReader;
 static IrrigationSettings loadIrrigationSettingsOrDefault()
 {
     IrrigationSettings s;
-    loadIrrigationSettings(s);
+    if (!loadIrrigationSettings(s))      // sem blob persistido = 1º boot (nenhum blob jamais gravado)
+        applyBoardIrrigationDefaults(s); // aplica o mapa de pinos da board (no-op sem variant custom)
     if (s.pulseMs > 1000)
         s.pulseMs = 1000;
     return s;
@@ -1863,7 +1865,7 @@ bool IrrigationModule::saveAuditLog()
 // Staged-write genérico: serializa com fn, grava em tmp, rename.
 // Tamanho máximo dos buffers:
 //   stations: MAGIC(4)+ver(1)+count(1)+16*87 = 1398 bytes → 1400
-//   zones:    MAGIC(4)+ver(1)+count(1)+24*32 = 774  bytes → 800
+//   zones:    MAGIC(4)+ver(1)+count(1)+24*29 = 702 bytes (buffer = 6 + MAX*29)
 //   programs: MAGIC(4)+ver(1)+count(1)+8*... = ~600 bytes → 700
 //   mirror:   MAGIC(4)+ver(1)+1             = 6    bytes → 16
 
@@ -1923,7 +1925,7 @@ bool IrrigationModule::loadGatewayState()
     }
     // Zones
     {
-        uint8_t buf[6 + ZoneTable::MAX * 32];
+        uint8_t buf[6 + ZoneTable::MAX * 29];
         if (stagedRead(GW_ZONES_PATH, buf, sizeof(buf), n))
             ok &= gateway.zones.deserialize(buf, n);
     }
@@ -1953,7 +1955,7 @@ bool IrrigationModule::saveGatewayState()
     }
     // Zones
     {
-        uint8_t buf[6 + ZoneTable::MAX * 32];
+        uint8_t buf[6 + ZoneTable::MAX * 29];
         size_t n = gateway.zones.serialize(buf, sizeof(buf));
         ok &= stagedWrite(GW_ZONES_TMP, GW_ZONES_PATH, buf, n);
     }
@@ -2814,6 +2816,116 @@ size_t IrrigationModule::gwBuildAlerts(char *buf, size_t cap)
     return IrrigationWeb::buildAlerts(gateway.alerts, millis(), lastAckAllMs, buf, cap);
 }
 
+// ---------------------------------------------------------------------------
+// Modo Espelhamento UI (Fase X): glue methods para os endpoints CI-only.
+// ---------------------------------------------------------------------------
+
+void IrrigationModule::gwSetMirrorEnabled(bool enabled)
+{
+    gateway.mirror.setEnabled(enabled);
+    saveGatewayState();
+    auditEvent(AuditOrigin::PAINEL, AuditAction::ESPELHO, 0, AuditResult::OK);
+}
+
+bool IrrigationModule::gwApplyMirrorMapping(int8_t input, uint8_t zoneId, bool invertido,
+                                            bool habilitado, char *err, size_t errCap)
+{
+    const Zone *zc = gateway.zones.byId(zoneId);
+    if (!zc) {
+        snprintf(err, errCap, "zona %u inexistente", zoneId);
+        return false;
+    }
+    // Limpa a porta em qualquer outra zona (1 zona por porta).
+    const Zone *other = gateway.zones.byFonte(input);
+    if (other && other->id != zoneId) {
+        Zone upd = *other;
+        upd.fonteInput = -1;
+        gateway.zones.upsert(upd);
+    }
+    Zone z = *zc;
+    z.fonteInput = input;
+    z.fonteEnabled = habilitado ? 1 : 0;
+    if (!gateway.zones.upsert(z)) {
+        snprintf(err, errCap, "tabela de zonas cheia");
+        return false;
+    }
+    // Se a associação está sendo pausada (habilitado=false) e o mirror está ativo com
+    // esta porta activa, fecha a válvula imediatamente (evita aguardar o fail-safe de 120 s).
+    if (!habilitado && gateway.mirror.enabled() && gateway.mirror.inputActive((uint8_t)input)) {
+        gwSendValveCmd(z.node, z.index, z.tipo, 0, 0, z.id, 1);
+    }
+    // Polaridade: bit `input` de digitalInActiveLow nos settings do gateway.
+    if (invertido)
+        settings.digitalInActiveLow |= (uint8_t)(1u << input);
+    else
+        settings.digitalInActiveLow &= (uint8_t)~(1u << input);
+    saveIrrigationSettings(settings);
+    saveGatewayState();
+    auditEvent(AuditOrigin::PAINEL, AuditAction::ESPELHO, zoneId, AuditResult::OK);
+    return true;
+}
+
+bool IrrigationModule::gwDeleteMirrorMapping(int8_t input)
+{
+    const Zone *z = gateway.zones.byFonte(input);
+    if (!z)
+        return false;
+    uint8_t savedId = z->id;
+    // Captura os campos necessários antes de limpar a associação.
+    uint32_t savedNode  = z->node;
+    uint8_t  savedIndex = z->index;
+    uint8_t  savedTipo  = z->tipo;
+    int8_t   oldFonteInput = z->fonteInput;
+    Zone upd = *z;
+    upd.fonteInput = -1;
+    gateway.zones.upsert(upd);
+    // Se o mirror estava activo com esta porta activa, fecha a válvula imediatamente
+    // (evita aguardar o fail-safe de 120 s após a remoção da associação).
+    if (gateway.mirror.enabled() && gateway.mirror.inputActive((uint8_t)oldFonteInput)) {
+        gwSendValveCmd(savedNode, savedIndex, savedTipo, 0, 0, savedId, 1);
+    }
+    saveGatewayState();
+    auditEvent(AuditOrigin::PAINEL, AuditAction::ESPELHO, savedId, AuditResult::OK);
+    return true;
+}
+
+size_t IrrigationModule::gwBuildMirror(char *buf, size_t cap)
+{
+    bool live[4] = {false, false, false, false};
+    for (uint8_t i = 0; i < 4 && i < IrrigationSettings::MAX_DIGITAL_IN; i++)
+        live[i] = gateway.mirror.inputActive(i);
+    return IrrigationWeb::buildMirror(buf, cap, gateway.mirror.enabled(), gateway.zones,
+                                      settings.digitalInActiveLow, live);
+}
+
+// ---------------------------------------------------------------------------
+// Sistema restore — importa tabelas de config de um envelope de backup (§5.5).
+// NÃO toca PSK/canal, NÃO reinicializa, NÃO bump de epoch de estação.
+// ---------------------------------------------------------------------------
+
+bool IrrigationModule::gwImportTables(const char *json, size_t len, char *resp, size_t respCap)
+{
+    IrrigationWeb::ImportCounts c;
+    char err[48];
+    if (!IrrigationWeb::importConfigTablesFromBackup(json, len, gateway.zones, gateway.scheduler,
+                                                     gateway.interlocks, gateway.groups,
+                                                     c, err, sizeof(err))) {
+        snprintf(resp, respCap, "{\"ok\":false,\"err\":\"%s\"}", err);
+        return false;
+    }
+    // Persiste as quatro tabelas recém-importadas.
+    saveGatewayState();  // zonas + programas (+ stations + mirror — inofensivo, não foram tocados)
+    saveInterlocks();    // tabela de intertravamentos (arquivo separado)
+    saveGroups();        // tabela de grupos hidráulicos (arquivo separado)
+    // §8.9: audita importação de configuração — CONFIG_EPOCH é a ação existente mais próxima
+    // de "substituição em bloco das tabelas de config via painel".
+    auditEvent(AuditOrigin::PAINEL, AuditAction::CONFIG_EPOCH, 0, AuditResult::OK);
+    snprintf(resp, respCap,
+             "{\"ok\":true,\"zonas\":%u,\"programas\":%u,\"intertravamentos\":%u,\"grupos\":%u}",
+             c.zonas, c.programas, c.intertravamentos, c.grupos);
+    return true;
+}
+
 bool IrrigationModule::portalPulse(const IrrigationWeb::PortalPulseReq &p)
 {
     // Teste de pulso local: abre a válvula com fechamento automático pelo timer fail-safe.
@@ -3058,7 +3170,7 @@ void IrrigationModule::gwTick()
             }
             if (a.type == SchedAction::Type::OPEN) {
                 // Bypass: se o espelho é dono desta zona, ele manda — suprime o OPEN.
-                if (mirrorOwnsZoneOutput(gateway.mirror, z->fonteInput)) {
+                if (mirrorOwnsZoneOutput(gateway.mirror, z->fonteInput, z->fonteEnabled)) {
                     LOG_DEBUG("Irrigation GW: scheduler OPEN zone=%u suprimido (espelho dono)", a.zoneId);
                     continue;
                 }
@@ -3081,7 +3193,7 @@ void IrrigationModule::gwTick()
                 // HOLD: enfileirado com dur clampeado; dreno abaixo libera quando houver capacidade.
             } else { // CLOSE
                 // Mesma proteção: não feche o que o espelho mantém aberto (carryover F4 #1).
-                if (mirrorOwnsZoneOutput(gateway.mirror, z->fonteInput)) {
+                if (mirrorOwnsZoneOutput(gateway.mirror, z->fonteInput, z->fonteEnabled)) {
                     LOG_DEBUG("Irrigation GW: scheduler CLOSE zone=%u suprimido (espelho dono)", a.zoneId);
                     continue;
                 }
@@ -3163,6 +3275,8 @@ void IrrigationModule::gwTick()
             LOG_DEBUG("Irrigation GW: mirror input %u has no zone mapped — ignored", ma.input);
             continue;
         }
+        if (!z->fonteEnabled)
+            continue; // associação pausada: espelho não comanda; scheduler controla
         if (ma.t == MirrorMode::Action::T::OPEN) {
             // bypass total: sem clamp de maxMin (estação clampa no teto compilado)
             const StationEntry *stEntry = gateway.stations.byNode(z->node);

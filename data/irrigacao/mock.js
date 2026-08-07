@@ -265,6 +265,12 @@ const MOCK_DATA = {
       idadeS: 120,
     },
   ],
+  // Modo Espelhamento — espelha entradas físicas do gateway para saídas de zona nos nós.
+  // enabled: flag global. Cada zona com fonteInput >= 0 tem uma associação (porta → zona).
+  // ports[i].active: estado simulado da entrada física (lido pelo firmware via GPIO).
+  mirrorEnabled: false,
+  mirrorPortsActive: [false, false, false, false], // estado ao vivo simulado das 4 portas
+
   // Alertas não-reconhecidos (§8.1–§8.3). type = AlertType (StationMonitor.h).
   alerts: [
     { type: 5, node: 0xe5f6a7b8, arg: 0, atMs: 1000, ageS: 2400 }, // Estação silenciosa
@@ -322,6 +328,43 @@ let wifiState = {
   connectSsid: null,
 };
 
+// Estado do relógio do gateway — endpoints /time, /timezone, /time/sync (página Horário).
+// posix → rótulo (espelha tzLabelFor do backend: nome IANA, 'Personalizado' se desconhecido).
+const TZ_LABELS = {
+  '<-03>3': 'America/Sao_Paulo',
+  '<-04>4': 'America/Manaus',
+  '<-05>5': 'America/Rio_Branco',
+  '<-02>2': 'America/Noronha',
+  'GMT0': 'UTC',
+};
+let timeState = {
+  tz: '<-03>3',
+  source: 'ntp', // ntp | manual
+  ntpServer: 'pool.ntp.org',
+  lastSyncS: 0, // segundos desde o último NTP (0 = agora); só usado quando source==ntp
+  manualEpoch: null,
+  manualSetAtMs: null,
+};
+
+// Espelha buildTimeStatus() do backend (IrrigationWebApi.cpp).
+function mockTimeStatus() {
+  const nowEpoch =
+    timeState.source === 'manual' && timeState.manualEpoch
+      ? timeState.manualEpoch + Math.floor((Date.now() - timeState.manualSetAtMs) / 1000)
+      : Math.floor(Date.now() / 1000);
+  return {
+    nowEpoch,
+    hasRtc: true,
+    source: timeState.source,
+    quality: timeState.source === 'ntp' ? 4 : 2,
+    ntpServer: timeState.ntpServer,
+    lastSyncS: timeState.source === 'ntp' ? timeState.lastSyncS : -1,
+    tz: timeState.tz,
+    tzLabel: TZ_LABELS[timeState.tz] || 'Personalizado',
+    staUp: !!wifiState.connectedSsid,
+  };
+}
+
 // Substitui fetch global
 const origFetch = window.fetch;
 window.fetch = async function (url, opts) {
@@ -344,7 +387,8 @@ window.fetch = async function (url, opts) {
         if (body.enabled) wifiState.scanInProgress = true;
         return mockResponse({ ok: true });
       }
-      return mockResponse({ ok: true });
+      // Demais POSTs (/wifi/scan, /wifi/connect, /wifi/forget) caem nos handlers
+      // dedicados abaixo, que tratam método — não retornar aqui.
     }
     if (ppath.startsWith('/node')) return mockResponse(STATE.portalNode);
     if (ppath.startsWith('/sensors')) return mockResponse(STATE.portalSensors);
@@ -414,6 +458,7 @@ window.fetch = async function (url, opts) {
   }
 
   // GET
+  if (path.startsWith('/time')) return mockResponse(mockTimeStatus());
   if (path.startsWith('/zones')) return mockResponse(STATE.zones);
   if (path.startsWith('/stations')) return mockResponse(STATE.stations);
   if (path.startsWith('/overview')) return mockResponse(STATE.overview);
@@ -454,6 +499,22 @@ window.fetch = async function (url, opts) {
     });
   if (path.startsWith('/survey')) return mockResponse(STATE.survey);
   if (path.startsWith('/levels')) return mockResponse(STATE.levels);
+  if (path.startsWith('/mirror')) {
+    // Constrói a resposta a partir de STATE.zones (fonteInput >= 0 → associação ativa).
+    const ports = [0, 1, 2, 3].map((i) => {
+      const zone = STATE.zones.find((z) => z.fonteInput === i);
+      const active = STATE.mirrorPortsActive[i] || false;
+      if (zone) {
+        const invertido = !!zone.fonteInvertido;
+        const habilitado = zone.fonteEnabled !== false; // default true
+        // Se invertido, o driving é o inverso de active; senão direto.
+        const driving = habilitado && (invertido ? !active : active);
+        return { i, active, invertido, zoneId: zone.id, zoneName: zone.name || ('Zona ' + zone.id), habilitado, driving };
+      }
+      return { i, active, invertido: false, zoneId: null, zoneName: null, habilitado: false, driving: false };
+    });
+    return mockResponse({ enabled: STATE.mirrorEnabled, ports });
+  }
 
   // Fallback API real
   return origFetch(url, opts);
@@ -467,6 +528,25 @@ function mockResponse(data, status = 200) {
 }
 
 function handlePost(path, body) {
+  // Horário (relógio do gateway) — espelha hTimeSet/hTimezone/hTimeSync do backend.
+  if (path === '/time/sync') {
+    if (!wifiState.connectedSsid) return mockResponse({ ok: false, reason: 'sem WiFi' }, 409);
+    timeState.source = 'ntp';
+    timeState.lastSyncS = 0;
+    return mockResponse({ ok: true });
+  }
+  if (path === '/time') {
+    if (!body.epoch || body.epoch < 1600000000) return mockResponse({ ok: false, reason: 'epoch inválido' }, 400);
+    timeState.source = 'manual';
+    timeState.manualEpoch = body.epoch;
+    timeState.manualSetAtMs = Date.now();
+    return mockResponse(mockTimeStatus()); // backend devolve o status completo no sucesso
+  }
+  if (path === '/timezone') {
+    if (!TZ_LABELS[body.tz]) return mockResponse({ ok: false, reason: 'fuso desconhecido' }, 400);
+    timeState.tz = body.tz;
+    return mockResponse({ ok: true });
+  }
   // Zonas
   if (path === '/zones') {
     if (!body.name || !body.name.trim()) return mockResponse({ errors: ['Nome obrigatório.'] }, 400);
@@ -657,6 +737,70 @@ function handlePost(path, body) {
   if (path === '/survey/clear') {
     STATE.survey = [];
     return mockResponse({ ok: true });
+  }
+
+  // Modo Espelhamento
+  if (path === '/mirror') {
+    // Toggle do flag global enabled.
+    if (body.enabled !== undefined) STATE.mirrorEnabled = !!body.enabled;
+    return mockResponse({ ok: true });
+  }
+  if (path === '/mirror/mapping') {
+    // Valida: input 0..3, zoneId existente.
+    const input = Number(body.input);
+    const zoneId = Number(body.zoneId);
+    if (input < 0 || input > 3 || !Number.isInteger(input))
+      return mockResponse({ errors: ['Porta inválida (0..3).'] }, 400);
+    const zone = STATE.zones.find((z) => z.id === zoneId);
+    if (!zone) return mockResponse({ errors: ['Zona não encontrada.'] }, 400);
+    // Limpa qualquer associação anterior nesta mesma zona ou porta.
+    STATE.zones.forEach((z) => {
+      if (z.fonteInput === input && z.id !== zoneId) {
+        z.fonteInput = -1;
+        z.fonteInvertido = false;
+        z.fonteEnabled = false;
+      }
+    });
+    zone.fonteInput = input;
+    zone.fonteInvertido = !!body.invertido;
+    zone.fonteEnabled = body.habilitado !== false;
+    return mockResponse({ ok: true });
+  }
+  if (path === '/mirror/mapping/delete') {
+    const input = Number(body.input);
+    const zone = STATE.zones.find((z) => z.fonteInput === input);
+    if (zone) {
+      zone.fonteInput = -1;
+      zone.fonteInvertido = false;
+      zone.fonteEnabled = false;
+    }
+    return mockResponse({ ok: true });
+  }
+
+  // Importar backup (restaurar)
+  if (path === '/import') {
+    // body já é o objeto parseado (o fetch intercept faz JSON.parse(opts.body))
+    const clients = Array.isArray(body.clients) ? body.clients : [];
+    const client = clients[0] || {};
+    // Backups reais aninham os arrays sob client.config (como buildClientBackup gera).
+    // Mantém fallback para client direto caso config esteja ausente (formato legado).
+    const cfg = (client.config && typeof client.config === 'object') ? client.config : client;
+    const zonas = Array.isArray(cfg.zonas) ? cfg.zonas : [];
+    const programas = Array.isArray(cfg.programas) ? cfg.programas : [];
+    const interlocks = Array.isArray(cfg.intertravamentos) ? cfg.intertravamentos : [];
+    const grupos = Array.isArray(cfg.grupos) ? cfg.grupos : [];
+    // Aplica ao STATE para que os painéis reflitam o import
+    if (zonas.length) STATE.zones = zonas;
+    if (programas.length) STATE.programs = programas;
+    if (interlocks.length) STATE.interlocks = interlocks;
+    if (grupos.length) STATE.groups = grupos;
+    return mockResponse({
+      ok: true,
+      zonas: zonas.length,
+      programas: programas.length,
+      intertravamentos: interlocks.length,
+      grupos: grupos.length,
+    });
   }
 
   // Fallback 404

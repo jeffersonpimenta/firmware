@@ -43,4 +43,5 @@ class MirrorMode
 
 // Helper puro: o espelho é "dono" da saída desta zona? (bypass do scheduler nos dois
 // sentidos — OPEN e CLOSE). fonteInput = Zone::fonteInput (-1 = zona não espelhada).
-bool mirrorOwnsZoneOutput(const MirrorMode &m, int8_t fonteInput);
+// fonteEnabled = Zone::fonteEnabled (false = associação pausada → scheduler controla).
+bool mirrorOwnsZoneOutput(const MirrorMode &m, int8_t fonteInput, bool fonteEnabled);

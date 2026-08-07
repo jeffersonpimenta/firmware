@@ -1137,6 +1137,129 @@ static void test_parseStationPulse_rejects_bad_tipo()
     TEST_ASSERT_FALSE(pr.ok);
 }
 
+// ── Modo Espelhamento UI — Task 3 ────────────────────────────────────────────
+
+static void test_parseMirrorToggle_ok()
+{
+    bool en = false;
+    const char *j = "{\"enabled\":true}";
+    ParseResult r = parseMirrorToggle(j, strlen(j), en);
+    TEST_ASSERT_TRUE(r.ok);
+    TEST_ASSERT_TRUE(en);
+}
+
+static void test_parseMirrorMapping_validates_input_range()
+{
+    int8_t in; uint8_t zid; bool inv, hab;
+    const char *bad = "{\"input\":5,\"zoneId\":1,\"invertido\":false,\"habilitado\":true}";
+    ParseResult r = parseMirrorMapping(bad, strlen(bad), in, zid, inv, hab);
+    TEST_ASSERT_FALSE(r.ok); // input fora de 0..3
+}
+
+static void test_parseMirrorMapping_ok()
+{
+    int8_t in; uint8_t zid; bool inv, hab;
+    const char *j = "{\"input\":2,\"zoneId\":7,\"invertido\":true,\"habilitado\":false}";
+    ParseResult r = parseMirrorMapping(j, strlen(j), in, zid, inv, hab);
+    TEST_ASSERT_TRUE(r.ok);
+    TEST_ASSERT_EQUAL_INT8(2, in);
+    TEST_ASSERT_EQUAL_UINT8(7, zid);
+    TEST_ASSERT_TRUE(inv);
+    TEST_ASSERT_FALSE(hab);
+}
+
+static void test_buildMirror_shape()
+{
+    ZoneTable z;
+    Zone a{}; a.id = 1; a.node = 0x10; a.fonteInput = 0; a.fonteEnabled = 1;
+    strncpy(a.name, "Horta", sizeof(a.name) - 1); z.upsert(a);
+    bool live[4] = {true, false, false, false};
+    char buf[1024];
+    size_t n = buildMirror(buf, sizeof(buf), true, z, 0x01 /*in0 activeLow*/, live);
+    TEST_ASSERT_TRUE(n > 0);
+    buf[n] = '\0';
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"enabled\":true"));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"zoneId\":1"));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"invertido\":true"));  // in0 activeLow
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"active\":true"));      // live[0]
+    // Porta sem associação deve emitir zoneId:0 (ramo no-zone).
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"zoneId\":0"));
+}
+
+// ── Sistema restore — importConfigTablesFromBackup ────────────────────────────
+
+static void test_import_config_tables_ok()
+{
+    // Envelope §5.5 mínimo com sub-objeto "config" (como buildClientBackup gera).
+    // parseZoneUpsert requer: id(1..255), name(não vazio), node(inteiro!=0),
+    //   tipo(0|1), index(0..7), maxMin(1..120), padraoMin(1..maxMin).
+    // parseGroupUpsert requer: id(0..8), zonas([inteiros]!=vazio), minOpen>=1,
+    //   maxOpen==0 ou >=minOpen.
+    const char *env =
+        "{\"fmt\":\"irrig-vault\",\"version\":1,\"clients\":[{"
+        "\"id\":\"faz1\",\"gateway\":\"!a1b2c3d4\","
+        "\"canal\":{\"psk_b64\":\"AAAA\"},"
+        "\"config\":{"
+          "\"zonas\":[{\"id\":3,\"name\":\"Horta\",\"node\":16,\"tipo\":0,\"index\":0,\"maxMin\":120,\"padraoMin\":20}],"
+          "\"programas\":[],"
+          "\"intertravamentos\":[],"
+          "\"grupos\":[{\"id\":1,\"nome\":\"G1\",\"zonas\":[3],\"minOpen\":1,\"maxOpen\":1}]"
+        "}"
+        "}]}";
+    ZoneTable z; ProgramScheduler s; InterlockTable il; HydraulicGroupTable g;
+    ImportCounts c; char err[48] = {0};
+    bool ok = importConfigTablesFromBackup(env, strlen(env), z, s, il, g, c, err, sizeof(err));
+    TEST_ASSERT_TRUE_MESSAGE(ok, err);
+    TEST_ASSERT_EQUAL_UINT8(1, c.zonas);
+    TEST_ASSERT_EQUAL_UINT8(0, c.programas);
+    TEST_ASSERT_EQUAL_UINT8(0, c.intertravamentos);
+    TEST_ASSERT_EQUAL_UINT8(1, c.grupos);
+    TEST_ASSERT_NOT_NULL(z.byId(3));
+}
+
+static void test_import_rejects_bad_envelope()
+{
+    const char *bad = "{\"fmt\":\"nope\"}";
+    ZoneTable z; ProgramScheduler s; InterlockTable il; HydraulicGroupTable g;
+    ImportCounts c; char err[48] = {0};
+    bool ok = importConfigTablesFromBackup(bad, strlen(bad), z, s, il, g, c, err, sizeof(err));
+    TEST_ASSERT_FALSE(ok);
+    TEST_ASSERT_EQUAL_size_t(0, z.count()); // tabela intacta
+}
+
+// Dois elementos de zona no mesmo array: cada um deve ser parseado com seu próprio
+// slice NUL-terminado, sem vazar o node de um elemento para o vizinho.
+static void test_import_two_zones_isolated()
+{
+    // Zona 1: node=0x0010 (16)  Zona 2: node=0x0020 (32) — valores distintos.
+    const char *env =
+        "{\"fmt\":\"irrig-vault\",\"version\":1,\"clients\":[{"
+        "\"id\":\"faz1\",\"gateway\":\"!a1b2c3d4\","
+        "\"canal\":{\"psk_b64\":\"AAAA\"},"
+        "\"config\":{"
+          "\"zonas\":["
+            "{\"id\":1,\"name\":\"Horta\",\"node\":16,\"tipo\":0,\"index\":0,\"maxMin\":60,\"padraoMin\":20},"
+            "{\"id\":2,\"name\":\"Pomar\",\"node\":32,\"tipo\":0,\"index\":1,\"maxMin\":60,\"padraoMin\":20}"
+          "],"
+          "\"programas\":[],"
+          "\"intertravamentos\":[],"
+          "\"grupos\":[]"
+        "}"
+        "}]}";
+    ZoneTable z; ProgramScheduler s; InterlockTable il; HydraulicGroupTable g;
+    ImportCounts c; char err[48] = {0};
+    bool ok = importConfigTablesFromBackup(env, strlen(env), z, s, il, g, c, err, sizeof(err));
+    TEST_ASSERT_TRUE_MESSAGE(ok, err);
+    TEST_ASSERT_EQUAL_UINT8(2, c.zonas);
+    // Cada zona deve existir com o seu próprio node — sem contaminação cruzada de slice.
+    const Zone *z1 = z.byId(1);
+    const Zone *z2 = z.byId(2);
+    TEST_ASSERT_NOT_NULL(z1);
+    TEST_ASSERT_NOT_NULL(z2);
+    TEST_ASSERT_EQUAL_HEX32(16u, z1->node);  // 0x10
+    TEST_ASSERT_EQUAL_HEX32(32u, z2->node);  // 0x20 — não deve ter "herdado" node da zona 1
+}
+
 static void test_buildTimeStatus_ntp()
 {
     TimeStatusCtx c = {};
@@ -1307,6 +1430,16 @@ void setup()
     RUN_TEST(test_parseStationDelete_rejects_zero);
     RUN_TEST(test_parseStationPulse_ok);
     RUN_TEST(test_parseStationPulse_rejects_bad_tipo);
+    // Modo Espelhamento UI — Task 3
+    RUN_TEST(test_parseMirrorToggle_ok);
+    RUN_TEST(test_parseMirrorMapping_validates_input_range);
+    RUN_TEST(test_parseMirrorMapping_ok);
+    RUN_TEST(test_buildMirror_shape);
+    // Sistema restore — Task 1
+    RUN_TEST(test_import_config_tables_ok);
+    RUN_TEST(test_import_rejects_bad_envelope);
+    // Sistema restore — Task 3 (review fix: element isolation via NUL-terminated buffer)
+    RUN_TEST(test_import_two_zones_isolated);
     // Fase 8b — Horário
     RUN_TEST(test_buildTimeStatus_ntp);
     RUN_TEST(test_buildTimeStatus_manual_and_none);

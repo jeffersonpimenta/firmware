@@ -12,12 +12,13 @@ struct Zone {
     uint16_t maxMin = 120;
     uint16_t padraoMin = 20;
     int8_t fonteInput = -1;  // 0-3 = entrada espelho do gateway; -1 = nenhuma
+    uint8_t fonteEnabled = 1; // 1 = associação de espelho ativa; 0 = pausada (fonteInput preservado)
 };
 
 class ZoneTable {
   public:
     static constexpr size_t MAX = 24;
-    static constexpr uint32_t MAGIC = 0x495A4E31; // "IZN1"
+    static constexpr uint32_t MAGIC = 0x495A4E32; // "IZN2"
     bool upsert(const Zone &z);          // por id (1..255); false = cheia
     bool removeById(uint8_t id);
     const Zone *byId(uint8_t id) const;  // nullptr = ausente

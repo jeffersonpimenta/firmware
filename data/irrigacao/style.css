@@ -1476,5 +1476,30 @@ body {
 .hdr-right { display: flex; align-items: center; gap: 8px; }
 .timebadge { cursor: pointer; }
 .tzlist { display: flex; flex-direction: column; gap: 6px; }
-.tzrow { text-align: left; border: 1px solid var(--border, #ddd); background: #fff; padding: 10px 12px; border-radius: 10px; font-weight: 600; cursor: pointer; }
+.tzrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; text-align: left; border: 1px solid var(--border, #ddd); background: #fff; padding: 10px 12px; border-radius: 10px; font-weight: 600; cursor: pointer; }
 .tzrow.sel { border-color: var(--green, #2e7d5b); color: var(--green, #2e7d5b); background: rgba(46, 125, 91, 0.08); }
+.tzrow .gmt { color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; }
+.tzrow.sel .gmt { color: var(--green, #2e7d5b); }
+
+/* Controles da página Horário. As classes fp-* originais vivem em .field-portal
+   (portal do nó) e não vazam pro painel; reaplicamos os mesmos tokens do mockup
+   escopados em .view (gateway). */
+.view .stack { display: flex; flex-direction: column; gap: 12px; }
+.view #srcBody { display: flex; flex-direction: column; gap: 10px; }
+.view .fp-lbl { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
+.view .fp-seg { display: flex; gap: 8px; }
+.view .fp-seg button { flex: 1; font-family: inherit; border: 1.5px solid var(--border); padding: 10px; border-radius: 10px; background: transparent; color: var(--muted); font-size: 13px; font-weight: 700; cursor: pointer; }
+.view .fp-seg button.sel { border-color: var(--green); color: var(--green); background: oklch(0.47 0.1 150 / 0.1); }
+.view .fp-kv { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+.view .fp-kv .k { color: var(--muted); }
+.view .fp-kv .v { font-weight: 600; color: var(--text); }
+.view .hr-box { background: oklch(0.97 0.003 100); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
+.view .hr-manual { display: flex; gap: 10px; }
+.view .hr-manual label { flex: 1; display: block; font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.view .hr-manual input { display: block; margin-top: 6px; width: 100%; box-sizing: border-box; border: 1px solid var(--border); border-radius: 8px; padding: 9px 10px; font-size: 13px; font-family: inherit; background: oklch(0.97 0.003 100); color: var(--text); }
+.hr-sync-note { margin-bottom: 10px; line-height: 1.4; }
+.hr-devs { display: flex; flex-direction: column; gap: 8px; }
+.hr-dev { display: flex; align-items: center; justify-content: space-between; gap: 8px; border-radius: 12px; background: oklch(0.97 0.003 100); padding: 10px 12px; }
+.hr-dev-main { min-width: 0; }
+.hr-dev-main .nm { font-size: 13px; font-weight: 600; color: var(--text); }
+.hr-dev-main .mt { font-size: 11px; color: var(--muted); margin-top: 2px; }
