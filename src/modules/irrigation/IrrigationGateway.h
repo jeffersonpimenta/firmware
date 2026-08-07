@@ -17,6 +17,9 @@
 #include "modules/irrigation/SensorNameTable.h"
 #include "modules/irrigation/StationMonitor.h"
 #include "modules/irrigation/StationTelemetryCache.h"
+#include "modules/irrigation/WeatherConfig.h"
+#include "modules/irrigation/WeatherForecast.h"
+#include "modules/irrigation/WeatherRuleTable.h"
 
 struct IrrigationGateway {
     ZoneTable zones;
@@ -39,4 +42,8 @@ struct IrrigationGateway {
     // Controle de nível por boia (enchimento automático).
     LevelControlTable levels;
     LevelControlEngine levelEngine;
+    // Supressão por previsão meteorológica (Open-Meteo).
+    WeatherConfig weatherConfig;
+    WeatherRuleTable weatherRules;
+    WeatherCache weatherCache; // RAM; preenchido pelo WeatherClient
 };
