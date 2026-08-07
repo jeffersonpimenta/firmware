@@ -401,7 +401,7 @@ static bool httpsGet(const char *host, const String &path, String &body)
     client.setTimeout(6);   // segundos
 
     if (!client.connect(host, 443)) {
-        LOG_WARN("Weather", "connect fail");
+        LOG_WARN("Weather: connect fail");
         return false;
     }
 
@@ -458,14 +458,14 @@ bool WeatherClient::pollNow(const WeatherConfig &cfg, uint32_t nowEpoch, Weather
 
     String body;
     if (!httpsGet(OM_HOST, path, body)) {
-        LOG_WARN("Weather", "httpsGet falhou");
+        LOG_WARN("Weather: httpsGet falhou");
         out.isMock = true;
         return false;
     }
 
     WeatherCache parsed;
     if (!parseWeather(body, parsed)) {
-        LOG_WARN("Weather", "parseWeather falhou");
+        LOG_WARN("Weather: parseWeather falhou");
         out.isMock = true;
         return false;
     }
