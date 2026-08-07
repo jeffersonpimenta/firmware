@@ -2560,12 +2560,489 @@ async function renderEspelhamento() {
   mrRender();
 }
 
+// ===== Meteorologia (supressão por previsão de chuva — Open-Meteo) =====
+
+// Estado local (screen: 'list' | 'edit', draft, errors, deleteConfirm).
+let mtData = { weather: null, zones: [], groups: [] };
+let mtUI = { screen: 'list', draft: null, errors: [], deleteConfirm: false };
+
+// Formata quantos segundos/min/horas atrás foi 'epochSecs' (epoch UTC em segundos).
+function fmtAgo(epochSecs) {
+  epochSecs = num(epochSecs);
+  if (!epochSecs) return '—';
+  const diffS = Math.max(0, Math.floor(Date.now() / 1000) - epochSecs);
+  if (diffS < 60) return 'há ' + diffS + ' s';
+  if (diffS < 3600) return 'há ' + Math.floor(diffS / 60) + ' min';
+  return 'há ' + Math.floor(diffS / 3600) + ' h';
+}
+
+// Converte valor em centi-unidades para display com 1 casa decimal, fallback '—'.
+function centi(v, unit) {
+  if (v == null || v === '' || !Number.isFinite(Number(v))) return '—';
+  return (num(v) / 100).toFixed(1) + unit;
+}
+
+// Resolve o nome de uma zona ou grupo pelo id, com fallback.
+function mtZoneName(id) {
+  const z = (Array.isArray(mtData.zones) ? mtData.zones : []).find((x) => x && num(x.id) === num(id));
+  return z ? (z.name || z.nome || ('Zona ' + num(id))) : ('Zona ' + num(id));
+}
+function mtGroupName(id) {
+  const g = (Array.isArray(mtData.groups) ? mtData.groups : []).find((x) => x && num(x.id) === num(id));
+  return g ? (g.name || g.nome || ('Grupo ' + num(id))) : ('Grupo ' + num(id));
+}
+
+// ---- Tela lista (pure HTML string) ----
+function mtListHtml() {
+  const w = mtData.weather || {};
+  const m = w.metrics || {};
+  const rules = Array.isArray(w.rules) ? w.rules : [];
+
+  const location = esc(w.location || '—');
+  const updatedLabel = fmtAgo(w.updatedEpoch);
+  const isMock = !!w.isMock;
+  const mockNote = isMock ? ' · estimativa offline' : '';
+  const errorBox = isMock
+    ? `<div style="font-size:11.5px;color:oklch(0.55 0.16 30);">Dados simulados — sem conexão com Open-Meteo.</div>`
+    : '';
+
+  const tempAtual = (m.tempAtualCenti != null && Number.isFinite(num(m.tempAtualCenti)))
+    ? (num(m.tempAtualCenti) / 100).toFixed(1) + '°C' : '—';
+  const umidadeRel = (m.umidadeRel != null && Number.isFinite(num(m.umidadeRel)))
+    ? num(m.umidadeRel) + '%' : '—';
+
+  const metrics = [
+    { label: 'Chuva prevista (12h)', valueLabel: centi(m.chuvaPrevista12hCenti, 'mm') },
+    { label: 'Probabilidade de chuva', valueLabel: (m.probChuva != null ? num(m.probChuva) + '%' : '—') },
+    { label: 'Chuva acumulada (24h)', valueLabel: centi(m.chuvaAcum24hCenti, 'mm') },
+    { label: 'Umidade do solo', valueLabel: (m.umidadeSolo != null ? num(m.umidadeSolo) + '%' : '—') },
+    { label: 'Temperatura mínima', valueLabel: centi(m.tempMinCenti, '°C') },
+    { label: 'Temperatura máxima', valueLabel: centi(m.tempMaxCenti, '°C') },
+    { label: 'Vento (rajada)', valueLabel: centi(m.ventoRajadaCenti, 'km/h') },
+    { label: 'Evapotranspiração (ET0)', valueLabel: centi(m.et0Centi, 'mm') },
+  ];
+
+  const metricGrid = metrics.map((mt) => `
+    <div style="background:oklch(0.97 0.003 100);border-radius:10px;padding:9px 11px;">
+      <div style="font-size:10.5px;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.03em;">${esc(mt.label)}</div>
+      <div style="font-size:14px;font-weight:700;color:oklch(0.22 0.008 100);margin-top:2px;">${esc(mt.valueLabel)}</div>
+    </div>`).join('');
+
+  // Status strip
+  const anySuppressed = !!w.anySuppressed;
+  let suppressedNames = '';
+  if (anySuppressed) {
+    const names = [];
+    rules.filter((r) => r && r.triggered).forEach((r) => {
+      (Array.isArray(r.grupoIds) ? r.grupoIds : []).forEach((gid) => {
+        const n = mtGroupName(gid); if (!names.includes(n)) names.push(n);
+      });
+      (Array.isArray(r.zonaIds) ? r.zonaIds : []).forEach((zid) => {
+        const n = mtZoneName(zid); if (!names.includes(n)) names.push(n);
+      });
+    });
+    suppressedNames = names.join(', ') || '—';
+  }
+  const statusLabel = anySuppressed ? ('Suprimindo: ' + suppressedNames) : 'Sem restrição meteorológica no momento';
+  const statusColor = anySuppressed ? 'oklch(0.55 0.14 230)' : 'oklch(0.52 0.006 100)';
+  const statusBg = anySuppressed ? 'oklch(0.55 0.14 230 / 0.08)' : 'oklch(0.97 0.003 100)';
+  const statusBorder = anySuppressed ? 'oklch(0.55 0.14 230 / 0.3)' : 'oklch(0.9 0.006 100)';
+
+  // Rule cards
+  const ruleCards = rules.map((r) => {
+    r = r || {};
+    const habBg = r.enabled ? 'oklch(0.47 0.1 150)' : 'oklch(0.85 0.006 100)';
+    const habKnob = r.enabled ? '16px' : '2px';
+    const activeBadge = r.triggered
+      ? `<span style="font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:999px;background:oklch(0.55 0.14 230 / 0.14);color:oklch(0.55 0.14 230);white-space:nowrap;">Suprimindo</span>`
+      : '';
+    const limiarMm = (num(r.limiarMmCenti) / 100).toFixed(1);
+    const detalhe = `Chuva prevista (12h) > ${limiarMm}mm E probabilidade > ${num(r.limiarPct)}%`;
+    const zNomes = (Array.isArray(r.zonaIds) ? r.zonaIds : []).map((id) => mtZoneName(id));
+    const gNomes = (Array.isArray(r.grupoIds) ? r.grupoIds : []).map((id) => mtGroupName(id));
+    const alvosParts = [];
+    if (zNomes.length) alvosParts.push('Zonas: ' + zNomes.join(', '));
+    if (gNomes.length) alvosParts.push('Grupos: ' + gNomes.join(', '));
+    const alvosLabel = alvosParts.join(' · ') || 'Nenhum alvo selecionado';
+    const chuvaAtualStr = (r.chuvaAtualCenti != null && Number.isFinite(num(r.chuvaAtualCenti)))
+      ? (num(r.chuvaAtualCenti) / 100).toFixed(1) + 'mm' : '—';
+    const probAtualStr = (r.probAtual != null) ? num(r.probAtual) + '%' : '—';
+    const valorAtualLabel = chuvaAtualStr + ' · ' + probAtualStr;
+    return `<div style="cursor:pointer;background:oklch(1 0 0);border:1px solid oklch(0.9 0.006 100);box-shadow:0 1px 3px rgba(0,0,0,0.05);border-radius:16px;padding:14px 16px;" data-mtedit="${num(r.id)}">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+        <div style="font-size:14px;font-weight:600;color:oklch(0.22 0.008 100);min-width:0;">${esc(r.nome || '')}</div>
+        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+          ${activeBadge}
+          <div data-mttog="${num(r.id)}" style="cursor:pointer;width:34px;height:20px;border-radius:999px;background:${habBg};position:relative;">
+            <div style="position:absolute;top:2px;left:${habKnob};width:16px;height:16px;border-radius:999px;background:#fff;"></div>
+          </div>
+        </div>
+      </div>
+      <div style="font-size:12px;color:oklch(0.52 0.006 100);margin-top:6px;line-height:1.5;">${esc(detalhe)}</div>
+      <div style="font-size:11.5px;color:oklch(0.6 0.006 100);margin-top:4px;">${esc(alvosLabel)}</div>
+      <div style="font-size:11.5px;color:oklch(0.6 0.006 100);margin-top:2px;">Leitura atual: ${esc(valorAtualLabel)}</div>
+    </div>`;
+  }).join('');
+
+  const emptyRules = !rules.length
+    ? `<div style="font-size:12.5px;color:oklch(0.52 0.006 100);">Nenhuma regra meteorológica.</div>`
+    : '';
+
+  return `
+    <div style="font-size:18px;font-weight:700;color:oklch(0.22 0.008 100);">Meteorologia</div>
+    <div style="font-size:12px;color:oklch(0.52 0.006 100);margin-top:-6px;">Dados da Open-Meteo — suprime programas de zonas e grupos quando a chuva prevista e a probabilidade ultrapassam os limiares da regra</div>
+
+    <div style="background:oklch(1 0 0);border:1px solid oklch(0.9 0.006 100);box-shadow:0 1px 3px rgba(0,0,0,0.05);border-radius:16px;padding:14px 16px;display:flex;flex-direction:column;gap:10px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+        <div style="min-width:0;">
+          <div style="font-size:14px;font-weight:600;color:oklch(0.22 0.008 100);">${location}</div>
+          <div style="font-size:11.5px;color:oklch(0.52 0.006 100);margin-top:2px;">Atualizado ${esc(updatedLabel)}${esc(mockNote)}</div>
+        </div>
+        <button id="mt-refresh" style="cursor:pointer;font-size:11px;font-weight:600;color:oklch(0.47 0.1 150);border:1px solid oklch(0.47 0.1 150 / 0.4);border-radius:999px;padding:4px 10px;white-space:nowrap;flex-shrink:0;background:transparent;">Atualizar</button>
+      </div>
+      ${errorBox}
+      <div style="display:flex;gap:14px;">
+        <div><div style="font-size:22px;font-weight:700;color:oklch(0.22 0.008 100);">${esc(tempAtual)}</div><div style="font-size:11px;color:oklch(0.52 0.006 100);">agora</div></div>
+        <div><div style="font-size:22px;font-weight:700;color:oklch(0.22 0.008 100);">${esc(umidadeRel)}</div><div style="font-size:11px;color:oklch(0.52 0.006 100);">umidade relativa</div></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        ${metricGrid}
+      </div>
+    </div>
+
+    <div id="mt-refresh-msg" style="font-size:12px;color:oklch(0.55 0.16 30);display:none;"></div>
+
+    <div style="background:${statusBg};border:1px solid ${statusBorder};border-radius:14px;padding:12px 14px;">
+      <div style="font-size:12.5px;font-weight:700;color:${statusColor};">${esc(statusLabel)}</div>
+    </div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;">
+      <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;">Regras</div>
+    </div>
+    <button id="mt-new" style="cursor:pointer;border:1.5px dashed oklch(0.47 0.1 150 / 0.5);background:transparent;color:oklch(0.47 0.1 150);font-size:13px;font-weight:700;padding:11px;border-radius:14px;width:100%;">+ Nova regra</button>
+    ${ruleCards}
+    ${emptyRules}
+  `;
+}
+
+// ---- Tela edição (pure HTML string) ----
+function mtEditHtml() {
+  const d = mtUI.draft || {};
+  const errors = mtUI.errors || [];
+  const isNew = !d.id;
+  const title = isNew ? 'Nova regra meteorológica' : 'Editar regra';
+
+  const errBox = errors.length
+    ? `<div style="background:oklch(0.55 0.16 30 / 0.08);border:1px solid oklch(0.55 0.16 30 / 0.3);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:4px;">
+        ${errors.map((e) => `<div style="font-size:12px;color:oklch(0.55 0.16 30);">${esc(e)}</div>`).join('')}
+      </div>`
+    : '';
+
+  const zonePills = (Array.isArray(mtData.zones) ? mtData.zones : []).map((z) => {
+    const zid = num(z.id);
+    const sel = (Array.isArray(d.zonaIds) ? d.zonaIds : []).indexOf(zid) !== -1;
+    const nome = esc(z.name || z.nome || ('Zona ' + zid));
+    const border = sel ? 'oklch(0.47 0.1 150)' : 'oklch(0.88 0.006 100)';
+    const bg = sel ? 'oklch(0.47 0.1 150)' : 'transparent';
+    const color = sel ? '#fff' : 'oklch(0.4 0.006 100)';
+    const shadow = sel ? '0 1px 4px oklch(0.47 0.1 150 / 0.3)' : 'none';
+    return `<button data-mtzchip="${zid}" style="cursor:pointer;border:1.5px solid ${border};padding:7px 12px;border-radius:999px;background:${bg};color:${color};font-size:12.5px;font-weight:600;box-shadow:${shadow};">${nome}</button>`;
+  }).join('');
+
+  const groupPills = (Array.isArray(mtData.groups) ? mtData.groups : []).map((g) => {
+    const gid = num(g.id);
+    const sel = (Array.isArray(d.grupoIds) ? d.grupoIds : []).indexOf(gid) !== -1;
+    const nome = esc(g.name || g.nome || ('Grupo ' + gid));
+    const border = sel ? 'oklch(0.47 0.1 150)' : 'oklch(0.88 0.006 100)';
+    const bg = sel ? 'oklch(0.47 0.1 150)' : 'transparent';
+    const color = sel ? '#fff' : 'oklch(0.4 0.006 100)';
+    const shadow = sel ? '0 1px 4px oklch(0.47 0.1 150 / 0.3)' : 'none';
+    return `<button data-mtgchip="${gid}" style="cursor:pointer;border:1.5px solid ${border};padding:7px 12px;border-radius:999px;background:${bg};color:${color};font-size:12.5px;font-weight:600;box-shadow:${shadow};">${nome}</button>`;
+  }).join('');
+
+  const habBg = d.enabled ? 'oklch(0.47 0.1 150)' : 'oklch(0.85 0.006 100)';
+  const habKnob = d.enabled ? '18px' : '2px';
+
+  const deleteSection = !isNew
+    ? (mtUI.deleteConfirm
+      ? `<div style="background:oklch(0.55 0.16 30 / 0.08);border:1px solid oklch(0.55 0.16 30 / 0.3);border-radius:12px;padding:12px 14px;">
+          <div style="font-size:12.5px;color:oklch(0.22 0.008 100);">Excluir esta regra meteorológica?</div>
+          <div style="display:flex;gap:8px;margin-top:8px;">
+            <button id="mt-delcancel" style="cursor:pointer;flex:1;border:1px solid oklch(0.9 0.006 100);padding:9px;border-radius:8px;background:transparent;color:oklch(0.52 0.006 100);font-size:12.5px;font-weight:600;">Cancelar</button>
+            <button id="mt-delconfirm" style="cursor:pointer;flex:1;border:none;padding:9px;border-radius:8px;background:oklch(0.55 0.16 30);color:#fff;font-size:12.5px;font-weight:700;">Excluir</button>
+          </div>
+        </div>`
+      : '')
+    + `<button id="mt-delrequest" style="cursor:pointer;border:1px solid oklch(0.55 0.16 30 / 0.4);padding:11px;border-radius:12px;background:transparent;color:oklch(0.55 0.16 30);font-size:13.5px;font-weight:700;width:100%;">Excluir regra</button>`
+    : '';
+
+  return `
+    <div id="mt-back" style="cursor:pointer;display:flex;align-items:center;gap:6px;margin-bottom:2px;">
+      <span style="font-size:16px;color:oklch(0.47 0.1 150);">‹</span>
+      <span style="font-size:13px;font-weight:600;color:oklch(0.47 0.1 150);">Meteorologia</span>
+    </div>
+    <div style="font-size:18px;font-weight:700;color:oklch(0.22 0.008 100);">${esc(title)}</div>
+
+    ${errBox}
+
+    <div style="background:oklch(1 0 0);border:1px solid oklch(0.9 0.006 100);border-radius:16px;padding:14px 16px;display:flex;flex-direction:column;gap:12px;">
+      <div>
+        <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;">Nome da regra</div>
+        <input id="mt-nome" value="${esc(d.nome || '')}" placeholder="Ex.: Chuva forte prevista" style="width:100%;box-sizing:border-box;border:1px solid oklch(0.9 0.006 100);border-radius:8px;padding:9px 10px;font-size:14px;background:oklch(0.97 0.003 100);color:oklch(0.22 0.008 100);">
+      </div>
+      <div style="display:flex;gap:10px;">
+        <div style="flex:1;">
+          <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;">Chuva prevista em 12h &gt; (mm)</div>
+          <input id="mt-chuva" type="number" value="${esc(String(d.limiarMm != null ? d.limiarMm : ''))}" style="width:100%;box-sizing:border-box;border:1px solid oklch(0.9 0.006 100);border-radius:8px;padding:9px 10px;font-size:14px;background:oklch(0.97 0.003 100);color:oklch(0.22 0.008 100);">
+        </div>
+        <div style="flex:1;">
+          <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;">Probabilidade de chuva &gt; (%)</div>
+          <input id="mt-prob" type="number" value="${esc(String(d.limiarPct != null ? d.limiarPct : ''))}" style="width:100%;box-sizing:border-box;border:1px solid oklch(0.9 0.006 100);border-radius:8px;padding:9px 10px;font-size:14px;background:oklch(0.97 0.003 100);color:oklch(0.22 0.008 100);">
+        </div>
+      </div>
+      <div style="font-size:11px;color:oklch(0.52 0.006 100);">Suprime quando <strong>ambas</strong> as condições forem satisfeitas na consulta (2 consultas diárias à Open-Meteo).</div>
+      <div>
+        <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;">Zonas afetadas</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${zonePills || '<div style="font-size:12px;color:oklch(0.6 0.006 100);">Nenhuma zona disponível.</div>'}
+        </div>
+      </div>
+      <div>
+        <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;">Grupos hidráulicos afetados</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${groupPills || '<div style="font-size:12px;color:oklch(0.6 0.006 100);">Nenhum grupo disponível.</div>'}
+        </div>
+      </div>
+      <div>
+        <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;">Mensagem de alerta</div>
+        <input id="mt-msg" value="${esc(d.mensagem || '')}" placeholder="Ex.: Chuva prevista para as próximas horas" style="width:100%;box-sizing:border-box;border:1px solid oklch(0.9 0.006 100);border-radius:8px;padding:9px 10px;font-size:14px;background:oklch(0.97 0.003 100);color:oklch(0.22 0.008 100);">
+      </div>
+      <div id="mt-habrow" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;background:oklch(0.97 0.003 100);border-radius:10px;padding:10px 12px;">
+        <div style="font-size:13px;font-weight:600;color:oklch(0.22 0.008 100);">Regra habilitada</div>
+        <div style="width:38px;height:22px;border-radius:999px;background:${habBg};position:relative;flex-shrink:0;">
+          <div style="position:absolute;top:2px;left:${habKnob};width:18px;height:18px;border-radius:999px;background:#fff;"></div>
+        </div>
+      </div>
+    </div>
+
+    <button id="mt-save" style="cursor:pointer;border:none;padding:13px;border-radius:12px;background:oklch(0.47 0.1 150);color:#fff;font-size:15px;font-weight:700;width:100%;">Salvar regra</button>
+
+    ${deleteSection}
+  `;
+}
+
+// ---- Wiring (liga eventos ao DOM depois de cada render) ----
+function mtWire() {
+  const q = (sel) => view.querySelector(sel);
+
+  if (mtUI.screen !== 'edit') {
+    // Lista
+    const nb = q('#mt-new');
+    if (nb) nb.addEventListener('click', () => mtOpenNew());
+
+    const ref = q('#mt-refresh');
+    if (ref) ref.addEventListener('click', async () => {
+      const r = await postJson('/weather/refresh', {});
+      if (r.ok) {
+        renderMeteo().catch(() => {});
+      } else {
+        const msg = q('#mt-refresh-msg');
+        if (msg) { msg.textContent = 'Falha: ' + (r.body && r.body.reason ? r.body.reason : 'sem WiFi'); msg.style.display = ''; }
+      }
+    });
+
+    view.querySelectorAll('[data-mtedit]').forEach((c) => {
+      c.addEventListener('click', (e) => {
+        // Impede que o clique no toggle dispare a abertura do formulário
+        if (e.target.closest('[data-mttog]')) return;
+        const id = num(c.dataset.mtedit);
+        const rule = (Array.isArray(mtData.weather && mtData.weather.rules) ? mtData.weather.rules : [])
+          .find((x) => x && num(x.id) === id);
+        if (rule) mtOpenEdit(rule);
+      });
+    });
+
+    view.querySelectorAll('[data-mttog]').forEach((b) => {
+      b.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const id = num(b.dataset.mttog);
+        const rule = (Array.isArray(mtData.weather && mtData.weather.rules) ? mtData.weather.rules : [])
+          .find((x) => x && num(x.id) === id);
+        if (!rule) return;
+        const body = {
+          id: id,
+          nome: rule.nome,
+          limiarMm: num(rule.limiarMmCenti) / 100,
+          limiarPct: num(rule.limiarPct),
+          zonaIds: Array.isArray(rule.zonaIds) ? rule.zonaIds : [],
+          grupoIds: Array.isArray(rule.grupoIds) ? rule.grupoIds : [],
+          enabled: !rule.enabled,
+          mensagem: rule.mensagem || '',
+        };
+        await postJson('/weather/rule', body);
+        renderMeteo().catch(() => {});
+      });
+    });
+    return;
+  }
+
+  // Edição
+  const back = q('#mt-back');
+  if (back) back.addEventListener('click', () => mtCancel());
+
+  const habRow = q('#mt-habrow');
+  if (habRow) habRow.addEventListener('click', () => {
+    mtSyncInputs();
+    mtUI.draft.enabled = !mtUI.draft.enabled;
+    mtRender();
+  });
+
+  view.querySelectorAll('[data-mtzchip]').forEach((b) => {
+    b.addEventListener('click', () => {
+      mtSyncInputs();
+      const zid = num(b.dataset.mtzchip);
+      const idx = mtUI.draft.zonaIds.indexOf(zid);
+      if (idx >= 0) mtUI.draft.zonaIds.splice(idx, 1); else mtUI.draft.zonaIds.push(zid);
+      mtRender();
+    });
+  });
+
+  view.querySelectorAll('[data-mtgchip]').forEach((b) => {
+    b.addEventListener('click', () => {
+      mtSyncInputs();
+      const gid = num(b.dataset.mtgchip);
+      const idx = mtUI.draft.grupoIds.indexOf(gid);
+      if (idx >= 0) mtUI.draft.grupoIds.splice(idx, 1); else mtUI.draft.grupoIds.push(gid);
+      mtRender();
+    });
+  });
+
+  const save = q('#mt-save');
+  if (save) save.addEventListener('click', () => mtSave());
+
+  const delReq = q('#mt-delrequest');
+  if (delReq) delReq.addEventListener('click', () => { mtSyncInputs(); mtUI.deleteConfirm = true; mtRender(); });
+  const delCancel = q('#mt-delcancel');
+  if (delCancel) delCancel.addEventListener('click', () => { mtUI.deleteConfirm = false; mtRender(); });
+  const delConfirm = q('#mt-delconfirm');
+  if (delConfirm) delConfirm.addEventListener('click', () => mtDelete());
+}
+
+// Copia inputs de texto do DOM para o draft (antes de re-renders por chip/toggle).
+function mtSyncInputs() {
+  const d = mtUI.draft;
+  if (!d) return;
+  const q = (sel) => view.querySelector(sel);
+  const ni = q('#mt-nome'); if (ni) d.nome = ni.value;
+  const ci = q('#mt-chuva'); if (ci) d.limiarMm = ci.value;
+  const pi = q('#mt-prob'); if (pi) d.limiarPct = pi.value;
+  const mi = q('#mt-msg'); if (mi) d.mensagem = mi.value;
+}
+
+function mtRender() {
+  view.innerHTML = mtUI.screen === 'edit' ? mtEditHtml() : mtListHtml();
+  mtWire();
+}
+
+function mtOpenNew() {
+  mtUI = {
+    screen: 'edit', errors: [], deleteConfirm: false,
+    draft: { id: null, nome: '', limiarMm: 5, limiarPct: 60, zonaIds: [], grupoIds: [], enabled: true, mensagem: '' },
+  };
+  mtRender();
+}
+
+function mtOpenEdit(rule) {
+  mtUI = {
+    screen: 'edit', errors: [], deleteConfirm: false,
+    draft: {
+      id: num(rule.id),
+      nome: rule.nome || '',
+      limiarMm: (num(rule.limiarMmCenti) / 100),
+      limiarPct: num(rule.limiarPct),
+      zonaIds: Array.isArray(rule.zonaIds) ? rule.zonaIds.slice() : [],
+      grupoIds: Array.isArray(rule.grupoIds) ? rule.grupoIds.slice() : [],
+      enabled: !!rule.enabled,
+      mensagem: rule.mensagem || '',
+    },
+  };
+  mtRender();
+}
+
+function mtCancel() {
+  mtUI = { screen: 'list', draft: null, errors: [], deleteConfirm: false };
+  mtRender();
+}
+
+async function mtSave() {
+  mtSyncInputs();
+  const d = mtUI.draft;
+  const errors = [];
+  if (!d.nome || !String(d.nome).trim()) errors.push('Dê um nome à regra.');
+  const limiarMmNum = Number(d.limiarMm);
+  if (d.limiarMm === '' || d.limiarMm === null || !Number.isFinite(limiarMmNum)) errors.push('Informe o limiar de chuva prevista (mm).');
+  const limiarPctNum = Number(d.limiarPct);
+  if (d.limiarPct === '' || d.limiarPct === null || !Number.isFinite(limiarPctNum)) errors.push('Informe o limiar de probabilidade (%).');
+  if ((!Array.isArray(d.zonaIds) || !d.zonaIds.length) && (!Array.isArray(d.grupoIds) || !d.grupoIds.length)) errors.push('Selecione ao menos uma zona ou grupo.');
+  if (errors.length) { mtUI.errors = errors; mtRender(); return; }
+  const body = {
+    nome: String(d.nome).trim(),
+    limiarMm: limiarMmNum,
+    limiarPct: limiarPctNum,
+    zonaIds: d.zonaIds || [],
+    grupoIds: d.grupoIds || [],
+    enabled: !!d.enabled,
+    mensagem: String(d.mensagem || '').trim(),
+  };
+  if (d.id != null) body.id = num(d.id);
+  const r = await postJson('/weather/rule', body);
+  if (r.ok) {
+    mtUI = { screen: 'list', draft: null, errors: [], deleteConfirm: false };
+    renderMeteo().catch(() => {});
+  } else {
+    mtUI.errors = (r.body && Array.isArray(r.body.errors)) ? r.body.errors : ['Falha ao salvar.'];
+    mtRender();
+  }
+}
+
+async function mtDelete() {
+  const id = num(mtUI.draft && mtUI.draft.id);
+  const r = await postJson('/weather/rule/delete', { id });
+  if (r.ok) {
+    mtUI = { screen: 'list', draft: null, errors: [], deleteConfirm: false };
+    renderMeteo().catch(() => {});
+  } else {
+    mtUI.deleteConfirm = false;
+    mtUI.errors = ['Falha ao excluir.'];
+    mtRender();
+  }
+}
+
+// Ponto de entrada do roteador: carrega dados e mostra a lista.
+async function renderMeteo() {
+  const [weather, zones, groups] = await Promise.all([
+    getJson('/weather').catch(() => null),
+    getJson('/zones').catch(() => []),
+    getJson('/groups').catch(() => []),
+  ]);
+  mtData = {
+    weather: weather || {},
+    zones: Array.isArray(zones) ? zones : [],
+    groups: Array.isArray(groups) ? groups : [],
+  };
+  // Se estiver na tela de edição, não reseta o estado da edição (evita perda de draft em poll).
+  if (mtUI.screen === 'edit') return;
+  mtUI = { screen: 'list', draft: null, errors: [], deleteConfirm: false };
+  mtRender();
+}
+
 // ===== "Mais" (menu de telas secundárias) =====
 function renderMais() {
   const items = [
     ['espelhamento', 'Modo Espelhamento', 'Entradas físicas do gateway → saídas dos nós'],
     ['grupos', 'Grupos hidráulicos', 'Sequenciamento de bomba e válvula mestre'],
     ['niveis', 'Controle de nível', 'Controle de bomba por boia flutuante'],
+    ['meteo', 'Meteorologia', 'Supressão por previsão de chuva (Open-Meteo)'],
     ['intertravamentos', 'Intertravamentos', 'Regras de bloqueio por sensor / simultaneidade'],
     ['sensores', 'Sensores', 'Leituras e nomes por estação'],
     ['gpo', 'Saídas (GPO)', 'Relés/MOSFET: portão, bomba auxiliar, luz, sirene'],
@@ -3218,6 +3695,7 @@ const RENDER = {
   malha: renderMalha,
   wifi: renderWifi,
   horario: renderHorario,
+  meteo: renderMeteo,
   mais: renderMais,
   sistema: renderSistema,
 };
@@ -3226,10 +3704,10 @@ const RENDER = {
 const SECTION_LABELS = {
   espelhamento: 'Espelhamento', grupos: 'Grupos', niveis: 'Nível', intertravamentos: 'Intertravamentos',
   sensores: 'Sensores', gpo: 'Saídas (GPO)', tamper: 'Tamper', auditlog: 'Log', cobertura: 'Cobertura',
-  malha: 'Malha', wifi: 'Rede Wi-Fi', horario: 'Horário', sistema: 'Sistema',
+  malha: 'Malha', wifi: 'Rede Wi-Fi', horario: 'Horário', meteo: 'Meteorologia', sistema: 'Sistema',
 };
 // Telas que se auto-atualizam (poll 3 s) via re-render completo.
-const POLLED = { overview: 1, stations: 1, sensores: 1, cobertura: 1, espelhamento: 1, malha: 1 };
+const POLLED = { overview: 1, stations: 1, sensores: 1, cobertura: 1, espelhamento: 1, malha: 1, meteo: 1 };
 
 const subbar = document.getElementById('subbar');
 const subTitle = document.getElementById('subTitle');
