@@ -15,6 +15,13 @@ struct Zone {
     uint8_t fonteEnabled = 1; // 1 = associação de espelho ativa; 0 = pausada (fonteInput preservado)
 };
 
+// Uma zona cujo node é o próprio nó do gateway aciona a saída LOCAL (sem rádio).
+// node==0 (slot vazio / broadcast) nunca conta como local.
+inline bool isLocalTarget(uint32_t node, uint32_t selfNode)
+{
+    return node != 0 && node == selfNode;
+}
+
 class ZoneTable {
   public:
     static constexpr size_t MAX = 24;

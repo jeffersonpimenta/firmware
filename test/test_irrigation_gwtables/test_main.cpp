@@ -239,10 +239,19 @@ static void test_zone_legacy_v1_migrates_enabled()
     TEST_ASSERT_EQUAL_UINT8(1, r->fonteEnabled); // migração default = habilitada
 }
 
+static void test_is_local_target()
+{
+    TEST_ASSERT_TRUE(isLocalTarget(0x1234abcd, 0x1234abcd)); // próprio nó
+    TEST_ASSERT_FALSE(isLocalTarget(0x1234abcd, 0x0000beef)); // outro nó
+    TEST_ASSERT_FALSE(isLocalTarget(0, 0));                    // node==0 nunca é local
+    TEST_ASSERT_FALSE(isLocalTarget(0, 0x1234abcd));           // slot vazio
+}
+
 void setup()
 {
     initializeTestEnvironment();
     UNITY_BEGIN();
+    RUN_TEST(test_is_local_target);
     RUN_TEST(test_zones_upsertByIdAndLookup);
     RUN_TEST(test_zones_fullRejects_andIdZeroRejected);
     RUN_TEST(test_zones_serializeRoundTrip);
