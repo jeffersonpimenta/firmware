@@ -49,6 +49,11 @@ static const char *GW_GRUPOS_TMP = "/prefs/irrigation_grupos.tmp";
 // controle de nível por boia (enchimento automático).
 static const char *GW_NIVEIS_PATH = "/prefs/irrigation_niveis.dat";
 static const char *GW_NIVEIS_TMP = "/prefs/irrigation_niveis.tmp";
+// Supressão climática Open-Meteo (config + regras, arquivo separado por blob).
+static const char *GW_WEATHERCFG_PATH = "/prefs/irrigation_weathercfg.dat";
+static const char *GW_WEATHERCFG_TMP  = "/prefs/irrigation_weathercfg.tmp";
+static const char *GW_WEATHERRULES_PATH = "/prefs/irrigation_weatherrules.dat";
+static const char *GW_WEATHERRULES_TMP  = "/prefs/irrigation_weatherrules.tmp";
 
 // Cooldown de reconciliação de epoch por nó (30 s)
 static constexpr uint32_t EPOCH_COOLDOWN_MS = 30000;
@@ -259,6 +264,7 @@ IrrigationModule::IrrigationModule()
         loadSensorNames();           // Fase 6b Task 18: carrega nomes de sensores salvos
         loadGroups();                // Fase 7a: carrega grupos hidráulicos salvos
         loadLevels();                // controle de nível: carrega regras salvas
+        loadWeather();               // config + regras de supressão climática
         gwRebuildLocalInterlocks();  // Fase 6b Task 14b: monta réplicas locais v5 e empurra via epoch
         // Fase 6b Task 16: inicializa o log de auditoria persistente em flash do gateway.
         auditFlashStore.ensureAllocated();
@@ -2051,6 +2057,38 @@ bool IrrigationModule::saveLevels()
     uint8_t buf[6 + LevelControlTable::MAX * sizeof(LevelRule) + 4];
     size_t n = gateway.levels.serialize(buf, sizeof(buf));
     return stagedWrite(GW_NIVEIS_TMP, GW_NIVEIS_PATH, buf, n);
+}
+
+// Persistência de clima (config + regras). Espelha loadLevels/saveLevels.
+bool IrrigationModule::loadWeather()
+{
+    bool ok = true;
+    size_t n = 0;
+    {
+        uint8_t buf[WeatherConfig::SERIALIZED];
+        if (stagedRead(GW_WEATHERCFG_PATH, buf, sizeof(buf), n))
+            ok &= gateway.weatherConfig.deserialize(buf, n);
+    }
+    {
+        uint8_t buf[4 + 2 + WeatherRuleTable::MAX * sizeof(WeatherRule) + 4];
+        if (stagedRead(GW_WEATHERRULES_PATH, buf, sizeof(buf), n))
+            ok &= gateway.weatherRules.deserialize(buf, n);
+    }
+    return ok;
+}
+
+bool IrrigationModule::saveWeatherConfig()
+{
+    uint8_t buf[WeatherConfig::SERIALIZED];
+    size_t n = gateway.weatherConfig.serialize(buf, sizeof(buf));
+    return stagedWrite(GW_WEATHERCFG_TMP, GW_WEATHERCFG_PATH, buf, n);
+}
+
+bool IrrigationModule::saveWeatherRules()
+{
+    uint8_t buf[4 + 2 + WeatherRuleTable::MAX * sizeof(WeatherRule) + 4];
+    size_t n = gateway.weatherRules.serialize(buf, sizeof(buf));
+    return stagedWrite(GW_WEATHERRULES_TMP, GW_WEATHERRULES_PATH, buf, n);
 }
 
 // ---------------------------------------------------------------------------

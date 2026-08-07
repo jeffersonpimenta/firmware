@@ -267,6 +267,9 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     bool saveGroups();          // Fase 7a: persiste tabela de grupos hidráulicos (staged-write)
     bool loadLevels();          // controle de nível: carrega tabela do flash
     bool saveLevels();          // controle de nível: persiste tabela (staged-write)
+    bool loadWeather();         // carrega config + regras de supressão climática
+    bool saveWeatherConfig();   // persiste WeatherConfig (staged-write)
+    bool saveWeatherRules();    // persiste WeatherRuleTable (staged-write)
     IrrigationSettings mergeRemoteConfig(const IrrigationSettings &fresh, uint32_t newEpoch) const;
     void activateSettings(const IrrigationSettings &merged);
     void sendAck(uint32_t to, uint32_t ackedSeq, uint8_t status, uint8_t reason);
