@@ -1,5 +1,6 @@
 #include "modules/irrigation/IrrigationWebApi.h"
 #include "modules/irrigation/ServiceBackup.h"
+#include "modules/irrigation/WeatherEngine.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -1265,6 +1266,329 @@ bool importConfigTablesFromBackup(const char *json, size_t len, ZoneTable &zones
     importArray(config.p, config.n, "intertravamentos", &ic, applyInterlock);
     importArray(config.p, config.n, "grupos",           &gc, applyGroup);
     return true;
+}
+
+// ── Supressão meteorológica — builders e parsers (fase 11) ───────────────────
+
+// Serializa um decimal com 1 casa fracionária (ex.: -235 → "-23.5").
+// Usado para converter latE7/lonE7 divididos por 1e6 em graus com 1 decimal.
+// Nota: para lat/lon já em E7 precisamos dividir por 1e7; mas como JsonWriter
+// só emite int64, emitimos a representação textual via raw().
+static void fmtE7ToDecimal(char *out, size_t cap, int32_t e7)
+{
+    // ex.: e7=-235000000 → "-23.5000000"
+    // Emitimos com 4 casas (precisão suficiente para UI; task 13 usa o valor).
+    int32_t intPart = e7 / 10000000;
+    int32_t fracPart = e7 % 10000000;
+    if (fracPart < 0) fracPart = -fracPart;
+    snprintf(out, cap, "%d.%07d", intPart, fracPart);
+}
+
+size_t buildWeatherStatus(const WeatherStatusCtx &ctx, char *buf, size_t cap)
+{
+    if (!ctx.cfg || !ctx.cache || !ctx.rules) return 0;
+    const WeatherCache &c = *ctx.cache;
+    const WeatherConfig &cfg = *ctx.cfg;
+    bool fresh = WeatherEngine::cacheFresh(c, ctx.nowEpoch, cfg.staleTtlH);
+
+    JsonWriter w(buf, cap);
+    w.beginObject();
+    w.keyBool("enabled", cfg.enabled != 0);
+    // lat/lon: emite como número decimal (raw) para não quebrar JS parseFloat
+    { char t[20]; fmtE7ToDecimal(t, sizeof(t), cfg.latE7); w.key("lat"); w.raw(t); }
+    { char t[20]; fmtE7ToDecimal(t, sizeof(t), cfg.lonE7); w.key("lon"); w.raw(t); }
+    w.keyNum("updatedEpoch", (int64_t)c.fetchEpoch);
+    w.keyBool("isMock", c.isMock);
+    w.keyBool("staUp", ctx.staUp);
+    w.keyStr("location", ctx.location ? ctx.location : "");
+    // metrics — espelha card do mockup
+    w.key("metrics");
+    w.beginObject();
+    w.keyNum("chuvaPrevista12hCenti", c.chuvaPrevista12hCenti);
+    w.keyNum("probChuva", c.probChuvaPct);
+    w.keyNum("chuvaAcum24hCenti", c.chuvaAcum24hCenti);
+    w.keyNum("umidadeSolo", c.umidadeSoloPct);
+    w.keyNum("tempMinCenti", c.tempMinCenti);
+    w.keyNum("tempMaxCenti", c.tempMaxCenti);
+    w.keyNum("ventoRajadaCenti", c.ventoRajadaCenti);
+    w.keyNum("et0Centi", c.et0Centi);
+    w.keyNum("tempAtualCenti", c.tempAtualCenti);
+    w.keyNum("umidadeRel", c.umidadeRelPct);
+    w.endObject();
+    // regras — inclui veredito ao vivo para o badge "Suprimindo"
+    bool anySup = false;
+    w.key("rules");
+    w.beginArray();
+    for (size_t i = 0; i < ctx.rules->count(); i++) {
+        const WeatherRule *r = ctx.rules->ruleAt(i);
+        if (!r) break;
+        bool trig = WeatherEngine::ruleTriggered(*r, c, ctx.nowEpoch, cfg.staleTtlH);
+        if (trig) anySup = true;
+        w.beginObject();
+        w.keyNum("id", r->id);
+        w.keyStr("nome", r->nome);
+        w.keyBool("enabled", r->enabled != 0);
+        w.keyNum("limiarMmCenti", r->limiarMmCenti);
+        w.keyNum("limiarPct", r->limiarPct);
+        w.keyStr("mensagem", r->mensagem);
+        w.key("zonaIds");
+        w.beginArray();
+        for (uint8_t z : r->zonaIds) if (z) w.num(z);
+        w.endArray();
+        w.key("grupoIds");
+        w.beginArray();
+        for (uint8_t g : r->grupoIds) if (g) w.num(g);
+        w.endArray();
+        w.keyBool("triggered", trig);
+        w.keyBool("fresh", fresh);
+        w.keyNum("chuvaAtualCenti", c.chuvaPrevista12hCenti);
+        w.keyNum("probAtual", c.probChuvaPct);
+        w.endObject();
+    }
+    w.endArray();
+    w.keyBool("anySuppressed", anySup);
+    w.endObject();
+    return w.done();
+}
+
+// Scanner local de número decimal (positivo ou negativo) sem usar strtod.
+// Retorna true e define *out (em centi: valor×100 arredondado) se encontrou
+// o valor da chave key no JSON plano body[0..n).
+// Suporta: inteiros (ex.: 3) e decimais (ex.: 3.5, -23.5000000).
+static bool scanDecimalCenti(const char *body, size_t n, const char *key, int32_t &out)
+{
+    // Reutiliza JsonReader::findValue indiretamente: monta o padrão "key":
+    char pat[48];
+    int pn = snprintf(pat, sizeof(pat), "\"%s\"", key);
+    if (pn <= 0) return false;
+    size_t patLen = (size_t)pn;
+    const char *end = body + n;
+    const char *p = body;
+    while (p + patLen <= end) {
+        if (memcmp(p, pat, patLen) != 0) { p++; continue; }
+        const char *q = p + patLen;
+        while (q < end && (*q == ' ' || *q == '\t')) q++;
+        if (q >= end || *q != ':') { p = q; continue; }
+        q++;
+        while (q < end && (*q == ' ' || *q == '\t')) q++;
+        if (q >= end) return false;
+        // lê sinal
+        bool neg = false;
+        if (*q == '-') { neg = true; q++; }
+        else if (*q == '+') { q++; }
+        // parte inteira
+        int64_t intPart = 0;
+        bool anyDigit = false;
+        while (q < end && *q >= '0' && *q <= '9') { intPart = intPart * 10 + (*q - '0'); q++; anyDigit = true; }
+        if (!anyDigit) return false;
+        // parte fracionária (até 2 dígitos para centi)
+        int64_t fracCenti = 0;
+        if (q < end && *q == '.') {
+            q++;
+            int places = 0;
+            while (q < end && *q >= '0' && *q <= '9' && places < 2) {
+                fracCenti = fracCenti * 10 + (*q - '0');
+                q++; places++;
+            }
+            // se só 1 dígito decimal, multiplicar por 10 (ex.: ".5" → 50 centésimos)
+            if (places == 1) fracCenti *= 10;
+            // ignorar dígitos extras além da 2ª casa
+            while (q < end && *q >= '0' && *q <= '9') q++;
+        }
+        int64_t centi = intPart * 100 + fracCenti;
+        out = (int32_t)(neg ? -centi : centi);
+        return true;
+    }
+    return false;
+}
+
+// Scanner de número decimal para E7 (para lat/lon).
+static bool scanDecimalE7(const char *body, size_t n, const char *key, int32_t &out)
+{
+    char pat[48];
+    int pn = snprintf(pat, sizeof(pat), "\"%s\"", key);
+    if (pn <= 0) return false;
+    size_t patLen = (size_t)pn;
+    const char *end = body + n;
+    const char *p = body;
+    while (p + patLen <= end) {
+        if (memcmp(p, pat, patLen) != 0) { p++; continue; }
+        const char *q = p + patLen;
+        while (q < end && (*q == ' ' || *q == '\t')) q++;
+        if (q >= end || *q != ':') { p = q; continue; }
+        q++;
+        while (q < end && (*q == ' ' || *q == '\t')) q++;
+        if (q >= end) return false;
+        bool neg = false;
+        if (*q == '-') { neg = true; q++; }
+        else if (*q == '+') { q++; }
+        int64_t intPart = 0;
+        bool anyDigit = false;
+        while (q < end && *q >= '0' && *q <= '9') { intPart = intPart * 10 + (*q - '0'); q++; anyDigit = true; }
+        if (!anyDigit) return false;
+        // parte fracionária (até 7 dígitos para E7)
+        int64_t fracE7 = 0;
+        int fracPlaces = 0;
+        if (q < end && *q == '.') {
+            q++;
+            while (q < end && *q >= '0' && *q <= '9' && fracPlaces < 7) {
+                fracE7 = fracE7 * 10 + (*q - '0');
+                q++; fracPlaces++;
+            }
+            // preenche zeros à direita até 7 casas
+            while (fracPlaces < 7) { fracE7 *= 10; fracPlaces++; }
+            // ignora dígitos extras
+            while (q < end && *q >= '0' && *q <= '9') q++;
+        } else {
+            fracE7 = 0;
+        }
+        int64_t e7 = intPart * 10000000LL + fracE7;
+        // arredondamento: ½ ULP
+        out = (int32_t)(neg ? -e7 : e7);
+        return true;
+    }
+    return false;
+}
+
+// Scanner de array de inteiros (uint8). Localiza "key":[ e extrai os números.
+// Reutiliza a mesma técnica de parseInterlockUpsert / parseGroupUpsert.
+static uint8_t scanUint8Array(const char *body, size_t n, const char *key,
+                              uint8_t *out, uint8_t cap)
+{
+    char keyStr[48];
+    snprintf(keyStr, sizeof(keyStr), "\"%s\"", key);
+    const char *sp = strstr(body, keyStr);
+    if (!sp) return 0;
+    // acha '[' após a chave (pode ser "key": [)
+    const char *arr = strchr(sp + strlen(keyStr), '[');
+    if (!arr || arr >= body + n) return 0;
+    const char *arrEnd = strchr(arr, ']');
+    if (!arrEnd || arrEnd >= body + n) return 0;
+    uint8_t count = 0;
+    const char *o = arr + 1;
+    while (o < arrEnd && count < cap) {
+        while (o < arrEnd && (*o < '0' || *o > '9')) o++;
+        if (o >= arrEnd) break;
+        char tok[8]; size_t ti = 0; const char *p2 = o; bool anyD = false;
+        while (p2 < arrEnd && *p2 >= '0' && *p2 <= '9' && ti + 1 < sizeof(tok)) {
+            tok[ti++] = *p2++; anyD = true;
+        }
+        if (anyD) {
+            tok[ti] = '\0';
+            char *tend = nullptr;
+            long long zid = strtoll(tok, &tend, 10);
+            if (tend != tok && zid > 0) out[count++] = (uint8_t)zid;
+        }
+        o = p2;
+        while (o < arrEnd && *o != ',') o++;
+        if (o < arrEnd) o++;
+    }
+    return count;
+}
+
+WeatherRuleParse parseWeatherRule(const char *body, size_t n)
+{
+    WeatherRuleParse result;
+    if (!body || n == 0) { result.err = "corpo vazio"; return result; }
+
+    JsonReader rd(body, n);
+
+    // nome (obrigatório, não-vazio)
+    char nome[WeatherRule::NOME_LEN] = {0};
+    if (!rd.getStr("nome", nome, sizeof(nome)) || nome[0] == '\0') {
+        result.err = "nome vazio/ausente";
+        return result;
+    }
+
+    // limiarMm (decimal → centi-mm)
+    int32_t limiarMmCenti = 0;
+    if (!scanDecimalCenti(body, n, "limiarMm", limiarMmCenti)) {
+        result.err = "limiarMm ausente/invalido";
+        return result;
+    }
+
+    // limiarPct (inteiro)
+    int64_t limiarPct = 0;
+    rd.getInt("limiarPct", limiarPct);
+
+    // enabled (opcional, default true)
+    bool enabled = true;
+    rd.getBool("enabled", enabled);
+
+    // mensagem (opcional)
+    char mensagem[WeatherRule::MSG_LEN] = {0};
+    rd.getStr("mensagem", mensagem, sizeof(mensagem));
+
+    // zonaIds e grupoIds (arrays de uint8)
+    uint8_t zonaIds[WeatherRule::MAX_ZONE_TARGETS] = {0};
+    uint8_t grupoIds[WeatherRule::MAX_GROUP_TARGETS] = {0};
+    uint8_t zCount = scanUint8Array(body, n, "zonaIds", zonaIds, WeatherRule::MAX_ZONE_TARGETS);
+    uint8_t gCount = scanUint8Array(body, n, "grupoIds", grupoIds, WeatherRule::MAX_GROUP_TARGETS);
+
+    // validação: precisa de ao menos um alvo
+    if (zCount == 0 && gCount == 0) {
+        result.err = "pelo menos uma zona ou grupo obrigatorio";
+        return result;
+    }
+
+    // preenche a regra
+    WeatherRule &r = result.rule;
+    r = WeatherRule{};
+    strncpy(r.nome, nome, WeatherRule::NOME_LEN - 1);
+    strncpy(r.mensagem, mensagem, WeatherRule::MSG_LEN - 1);
+    r.limiarMmCenti = (uint16_t)(limiarMmCenti < 0 ? 0 : limiarMmCenti);
+    r.limiarPct = (uint8_t)(limiarPct < 0 ? 0 : (limiarPct > 100 ? 100 : limiarPct));
+    r.enabled = enabled ? 1 : 0;
+    for (uint8_t i = 0; i < WeatherRule::MAX_ZONE_TARGETS; i++)
+        r.zonaIds[i] = i < zCount ? zonaIds[i] : 0;
+    for (uint8_t i = 0; i < WeatherRule::MAX_GROUP_TARGETS; i++)
+        r.grupoIds[i] = i < gCount ? grupoIds[i] : 0;
+
+    result.ok = true;
+    return result;
+}
+
+WeatherConfigParse parseWeatherConfig(const char *body, size_t n)
+{
+    WeatherConfigParse result;
+    if (!body || n == 0) { result.err = "corpo vazio"; return result; }
+
+    JsonReader rd(body, n);
+
+    // enabled (bool)
+    bool enabled = false;
+    bool hasEnabled = rd.getBool("enabled", enabled);
+    if (!hasEnabled) {
+        // tenta como inteiro (ex.: "enabled":1)
+        int64_t en = 0;
+        if (rd.getInt("enabled", en)) { enabled = (en != 0); hasEnabled = true; }
+    }
+
+    // lat e lon (decimais → E7)
+    int32_t latE7 = 0, lonE7 = 0;
+    bool hasLat = scanDecimalE7(body, n, "lat", latE7);
+    bool hasLon = scanDecimalE7(body, n, "lon", lonE7);
+
+    if (!hasLat || !hasLon) {
+        result.err = "lat/lon ausentes";
+        return result;
+    }
+
+    // validação de faixa
+    if (latE7 < -900000000 || latE7 > 900000000) {
+        result.err = "lat fora de -90..90";
+        return result;
+    }
+    if (lonE7 < -1800000000 || lonE7 > 1800000000) {
+        result.err = "lon fora de -180..180";
+        return result;
+    }
+
+    result.enabled = enabled ? 1 : 0;
+    result.latE7 = latE7;
+    result.lonE7 = lonE7;
+    result.ok = true;
+    return result;
 }
 
 } // namespace IrrigationWeb

@@ -7,6 +7,9 @@
 #include "modules/irrigation/ProgramScheduler.h"
 #include "modules/irrigation/StationMonitor.h" // AlertCenter/Alert p/ buildAlerts
 #include "modules/irrigation/SurveyLog.h"
+#include "modules/irrigation/WeatherConfig.h"
+#include "modules/irrigation/WeatherForecast.h"
+#include "modules/irrigation/WeatherRuleTable.h"
 #include <cstddef>
 #include <cstdint>
 
@@ -292,6 +295,36 @@ bool importConfigTablesFromBackup(const char *json, size_t len, ZoneTable &zones
                                   ProgramScheduler &sched, InterlockTable &interlocks,
                                   HydraulicGroupTable &groups, ImportCounts &out,
                                   char *err, size_t errCap);
+
+// ── Supressão meteorológica (fase 11) ────────────────────────────────────────
+
+// Contexto de status agregado da página Meteorologia.
+struct WeatherStatusCtx {
+    const WeatherConfig *cfg = nullptr;
+    const WeatherCache *cache = nullptr;
+    const WeatherRuleTable *rules = nullptr;
+    uint32_t nowEpoch = 0;
+    bool staUp = false;
+    const char *location = ""; // rótulo (nome do nó / "Gateway")
+};
+size_t buildWeatherStatus(const WeatherStatusCtx &ctx, char *buf, size_t cap);
+
+// Parse do POST de regra. Espelha saveWeatherRule() do mockup.
+struct WeatherRuleParse {
+    bool ok = false;
+    WeatherRule rule;
+    const char *err = "";
+};
+WeatherRuleParse parseWeatherRule(const char *body, size_t n);
+
+struct WeatherConfigParse {
+    bool ok = false;
+    uint8_t enabled = 0;
+    int32_t latE7 = 0;
+    int32_t lonE7 = 0;
+    const char *err = "";
+};
+WeatherConfigParse parseWeatherConfig(const char *body, size_t n);
 
 // ── Modo Espelhamento UI — web helpers ────────────────────────────────────────
 
