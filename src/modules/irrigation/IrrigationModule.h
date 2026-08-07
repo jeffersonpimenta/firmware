@@ -270,6 +270,8 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     bool loadWeather();         // carrega config + regras de supressão climática
     bool saveWeatherConfig();   // persiste WeatherConfig (staged-write)
     bool saveWeatherRules();    // persiste WeatherRuleTable (staged-write)
+    // Veredito de supressão climática para a zona (resolve grupo-dono via OR).
+    WeatherVerdict weatherVerdictForZone(uint8_t zoneId);
     IrrigationSettings mergeRemoteConfig(const IrrigationSettings &fresh, uint32_t newEpoch) const;
     void activateSettings(const IrrigationSettings &merged);
     void sendAck(uint32_t to, uint32_t ackedSeq, uint8_t status, uint8_t reason);

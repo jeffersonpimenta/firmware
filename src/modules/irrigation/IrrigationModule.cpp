@@ -1,6 +1,7 @@
 #include "modules/irrigation/IrrigationModule.h"
 #include "FSCommon.h"
 #include "modules/irrigation/IrrigationWebApi.h"
+#include "modules/irrigation/WeatherEngine.h"
 #include "modules/irrigation/PortalApi.h"
 #if defined(ARCH_ESP32) && !MESHTASTIC_EXCLUDE_WEBSERVER
 #include "modules/irrigation/PortalAp.h"
@@ -2091,6 +2092,32 @@ bool IrrigationModule::saveWeatherRules()
     return stagedWrite(GW_WEATHERRULES_TMP, GW_WEATHERRULES_PATH, buf, n);
 }
 
+// Gate de supressão climática: retorna veredito para a zona (OR zona-direta + grupo-dono).
+// Fail-open: sem config habilitada, sem RTC ou cache velho → WeatherVerdict{} (suppress=false).
+WeatherVerdict IrrigationModule::weatherVerdictForZone(uint8_t zoneId)
+{
+    if (!gateway.weatherConfig.enabled)
+        return WeatherVerdict{};
+    uint32_t nowLocal = 0;
+    computeLocalSecs(nowLocal);
+    const WeatherCache &cache = gateway.weatherCache;
+    const WeatherRuleTable &rules = gateway.weatherRules;
+    const uint16_t ttl = gateway.weatherConfig.staleTtlH;
+    // 1) veredito direto por zona
+    WeatherVerdict v = WeatherEngine::zoneVerdict(zoneId, cache, rules, nowLocal, ttl);
+    if (v.suppress)
+        return v;
+    // 2) veredito pelo grupo-dono (se a zona for membro de algum grupo hidráulico).
+    //    Usa gateway.groups.byZone() — mesmo acesso que routeZoneToGroup.
+    const HydraulicGroup *hg = gateway.groups.byZone(zoneId);
+    if (hg) {
+        WeatherVerdict gv = WeatherEngine::groupVerdict(hg->id, cache, rules, nowLocal, ttl);
+        if (gv.suppress)
+            return gv;
+    }
+    return WeatherVerdict{};
+}
+
 // ---------------------------------------------------------------------------
 // Task 5: controle de nível por boia — executor de zona, tick, apply-helpers.
 // ---------------------------------------------------------------------------
@@ -3194,6 +3221,15 @@ void IrrigationModule::gwTick()
             if (!z) {
                 LOG_WARN("Irrigation GW: scheduler zone %u not found", a.zoneId);
                 continue;
+            }
+            // --- Gate de supressão climática (Open-Meteo) — fail-open por design ---
+            if (a.type == SchedAction::Type::OPEN) {
+                WeatherVerdict wv = weatherVerdictForZone(a.zoneId);
+                if (wv.suppress) {
+                    LOG_INFO("Irrigation GW: OPEN zona=%u suprimido por clima (regra %u)", a.zoneId, wv.ruleId);
+                    auditEvent(AuditOrigin::CLIMA, AuditAction::CMD_SUPRIMIDO, a.zoneId, AuditResult::OK, z->node);
+                    continue; // não abre; próximo tick reavalia (fail-open embutido)
+                }
             }
             // --- Fase 7a/7b: zonas de grupo são orquestradas pelo motor (roteamento único) ---
             if (a.type == SchedAction::Type::OPEN) {
