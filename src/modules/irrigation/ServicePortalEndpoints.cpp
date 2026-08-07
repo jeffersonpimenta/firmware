@@ -12,6 +12,7 @@
 #include <cstring>
 
 #undef str
+#include <HTTPServer.hpp> // tipo completo p/ server->registerNode() (ResourceNode.hpp só faz fwd-decl)
 #include <ResourceNode.hpp>
 
 using namespace httpsserver;

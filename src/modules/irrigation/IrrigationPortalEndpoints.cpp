@@ -9,6 +9,7 @@
 #include <cstdlib> // malloc/free explícitos (hLog aloca ~10 KB no heap)
 
 #undef str
+#include <HTTPServer.hpp> // tipo completo p/ server->registerNode() (ResourceNode.hpp só faz fwd-decl)
 #include <ResourceNode.hpp>
 
 using namespace httpsserver;
