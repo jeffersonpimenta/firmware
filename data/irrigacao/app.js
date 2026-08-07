@@ -595,14 +595,33 @@ function stationName(stations, node) {
 }
 
 async function renderZones() {
-  const [zones, stations] = await Promise.all([getJson('/zones'), getJson('/stations').catch(() => [])]);
+  const [zones, stations, weather] = await Promise.all([
+    getJson('/zones'),
+    getJson('/stations').catch(() => []),
+    getJson('/weather').catch(() => null),
+  ]);
   const rows = Array.isArray(zones) ? zones : [];
+  // Build zoneId → mensagem map from currently-triggered weather rules.
+  const zoneSupMap = {};
+  if (weather && Array.isArray(weather.rules)) {
+    weather.rules.filter((r) => r && r.triggered).forEach((r) => {
+      if (Array.isArray(r.zonaIds)) {
+        r.zonaIds.forEach((zid) => {
+          if (!(zid in zoneSupMap)) zoneSupMap[zid] = r.mensagem || r.nome || '';
+        });
+      }
+    });
+  }
 
   const cards = rows
     .map((z) => {
       z = z || {};
       const meta =
         stationName(stations, z.node) + ' · saída ' + num(z.index) + ' · ' + (TIPO_LABEL[num(z.tipo)] || '—');
+      const supMsg = zoneSupMap[num(z.id)];
+      const supLine = supMsg != null
+        ? `<div style="font-size:12px;color:oklch(0.55 0.14 230);margin-top:8px;">Suprimida por meteorologia — ${esc(supMsg)}</div>`
+        : '';
       return `<div class="card zone">
       <div class="zrow">
         <div class="zinfo">
@@ -615,7 +634,7 @@ async function renderZones() {
           <button class="btn solid sm" data-zclose="${num(z.id)}">Fechar</button>
         </div>
       </div>
-    </div>`;
+      ${supLine}</div>`;
     })
     .join('');
 
@@ -1654,14 +1673,26 @@ function groupStatusById(list, id) {
 }
 
 async function renderGrupos() {
-  const [groups, status, zones] = await Promise.all([
+  const [groups, status, zones, weather] = await Promise.all([
     getJson('/groups'),
     getJson('/groups/status').catch(() => []),
     getJson('/zones').catch(() => []),
+    getJson('/weather').catch(() => null),
   ]);
   const rows = Array.isArray(groups) ? groups : [];
   const st = Array.isArray(status) ? status : [];
   const zs = Array.isArray(zones) ? zones : [];
+  // Build groupId → mensagem map from currently-triggered weather rules.
+  const groupSupMap = {};
+  if (weather && Array.isArray(weather.rules)) {
+    weather.rules.filter((r) => r && r.triggered).forEach((r) => {
+      if (Array.isArray(r.grupoIds)) {
+        r.grupoIds.forEach((gid) => {
+          if (!(gid in groupSupMap)) groupSupMap[gid] = r.mensagem || r.nome || '';
+        });
+      }
+    });
+  }
 
   const cards = rows.map((g) => {
     g = g || {};
@@ -1670,6 +1701,10 @@ async function renderGrupos() {
     const cls = GROUP_STATE_CLASS[estado] || 'gray';
     const bomba = s.bomba ? '<span class="chip green">bomba on</span>' : '<span class="chip gray">bomba off</span>';
     const membros = Array.isArray(g.zonas) ? g.zonas.join(', ') : '';
+    const supMsg = groupSupMap[num(g.id)];
+    const supLine = supMsg != null
+      ? `<div style="font-size:12px;color:oklch(0.55 0.14 230);margin-top:8px;">Suprimido por meteorologia — ${esc(supMsg)}</div>`
+      : '';
     return `<div class="card">
       <div class="itl-row">
         <div class="itl-info">
@@ -1685,7 +1720,7 @@ async function renderGrupos() {
           <button class="btn dangerline sm" data-gdel="${num(g.id)}">Excluir</button>
         </div>
       </div>
-    </div>`;
+      ${supLine}</div>`;
   }).join('');
 
   view.innerHTML =
