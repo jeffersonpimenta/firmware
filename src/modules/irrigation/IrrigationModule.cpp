@@ -2478,6 +2478,50 @@ bool IrrigationModule::gwSyncNtpNow()
 #endif
 }
 
+// --- Supressão meteorológica (Task 10) ---
+bool IrrigationModule::gwWeatherSetConfig(uint8_t enabled, int32_t latE7, int32_t lonE7)
+{
+    gateway.weatherConfig.enabled = enabled ? 1 : 0;
+    gateway.weatherConfig.latE7 = latE7;
+    gateway.weatherConfig.lonE7 = lonE7;
+    return saveWeatherConfig();
+}
+
+uint8_t IrrigationModule::gwWeatherUpsertRule(const WeatherRule &rIn)
+{
+    WeatherRule r = rIn;
+    if (!r.id) {
+        r.id = gateway.weatherRules.nextFreeId();
+        if (!r.id)
+            return 0; // tabela cheia
+    }
+    if (!gateway.weatherRules.upsert(r))
+        return 0;
+    if (!saveWeatherRules())
+        return 0;
+    return r.id;
+}
+
+bool IrrigationModule::gwWeatherDeleteRule(uint8_t id)
+{
+    if (!gateway.weatherRules.removeById(id))
+        return false;
+    return saveWeatherRules();
+}
+
+bool IrrigationModule::gwWeatherRefresh()
+{
+#if defined(ARCH_ESP32)
+    if (!WiFi.isConnected())
+        return false;
+    uint32_t nowLocal = 0;
+    computeLocalSecs(nowLocal);
+    return weatherClient.pollNow(gateway.weatherConfig, nowLocal, gateway.weatherCache);
+#else
+    return false;
+#endif
+}
+
 // --- Serviço do painel web (gateway). Ponte entre a cola HTTP (Task 10) e o estado do gateway. ---
 bool IrrigationModule::gwIsGateway() const
 {
@@ -3275,6 +3319,18 @@ void IrrigationModule::gwTick()
                 gwSendValveCmd(z->node, z->index, z->tipo, 0, 0, a.zoneId, 1);
             }
         }
+    }
+
+    // --- Supressão meteorológica: tick do client (2×/dia + seed pós-boot) ---
+    {
+#if defined(ARCH_ESP32)
+        bool staUp = WiFi.isConnected();
+#else
+        bool staUp = false;
+#endif
+        if (weatherClient.tick(gateway.weatherConfig, epochLocal, staUp, gateway.weatherCache))
+            LOG_INFO("Weather: cache atualizado (12h=%u cmm, prob=%u%%)",
+                     gateway.weatherCache.chuvaPrevista12hCenti, gateway.weatherCache.probChuvaPct);
     }
 
     // --- Fase 6b: drena a fila de simultaneidade enquanto houver capacidade ---

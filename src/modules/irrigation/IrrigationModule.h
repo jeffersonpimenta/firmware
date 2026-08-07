@@ -23,6 +23,7 @@
 #include "modules/irrigation/ServiceController.h"
 #include "modules/irrigation/ServicePortalApi.h" // Fase 8c: tipos/builders do portal SERVICO
 #include "modules/irrigation/LittleFsProfileStore.h"
+#include "modules/irrigation/WeatherClient.h"
 
 // Forward-decl da cola web (definida em IrrigationWebApi.h, incluída só no .cpp).
 namespace IrrigationWeb
@@ -143,6 +144,15 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     bool gwSetManualTime(uint32_t epoch);  // perhapsSetRTC(Device, force) — true se aplicou
     bool gwSetTimezone(const char *posix); // grava config.device.tzdef + setenv + persiste
     bool gwSyncNtpNow();                   // dispara NTP; false se WiFi STA down
+
+    // Supressão meteorológica (Open-Meteo) — Task 10.
+    bool gwWeatherSetConfig(uint8_t enabled, int32_t latE7, int32_t lonE7);
+    uint8_t gwWeatherUpsertRule(const WeatherRule &r); // retorna id atribuído (0=falha/sem espaço)
+    bool gwWeatherDeleteRule(uint8_t id);
+    bool gwWeatherRefresh(); // poll imediato; false se sem WiFi ou config desabilitada
+    const WeatherConfig    &gwWeatherConfig() const { return gateway.weatherConfig; }
+    const WeatherRuleTable &gwWeatherRules()  const { return gateway.weatherRules;  }
+    const WeatherCache     &gwWeatherCache()  const { return gateway.weatherCache;  }
 
     // --- Serviço do portal de campo (todos os papéis). Chamados pela cola HTTP (IrrigationPortalEndpoints). ---
     void portalFillNodeState(IrrigationWeb::NodeStateCtx &out) const;
@@ -296,6 +306,8 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     PortalSession portal; // ciclo de vida do AP do captive portal (Fase 5b)
     // Gateway aggregate — only meaningful when role == GATEWAY (Task 6, decisão §1).
     IrrigationGateway gateway;
+    // Fase supressão meteorológica: cliente de rede (ARCH_ESP32 only; no-op no nativo).
+    WeatherClient weatherClient;
     // Fase 6b: bitmask de zonas já fechadas por intertravamento (borda de subida).
     // Indexado por zoneId (0..255); usa array compacto de 32 bytes (256 bits).
     uint8_t interlockClosedMask[32] = {0};
