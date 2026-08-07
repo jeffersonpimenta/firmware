@@ -586,7 +586,7 @@ function wireStationSheet(s) {
 }
 
 // ===== Zonas =====
-const TIPO_LABEL = { 0: 'Válvula', 1: 'GPO' };
+const TIPO_LABEL = { 0: 'Válvula', 1: 'Motor/GPO' };
 
 // Nome amigável de uma estação a partir do nó (usa /stations; fallback hex).
 function stationName(stations, node) {
@@ -595,12 +595,14 @@ function stationName(stations, node) {
 }
 
 async function renderZones() {
-  const [zones, stations, weather] = await Promise.all([
+  const [zones, stations, weather, ov] = await Promise.all([
     getJson('/zones'),
     getJson('/stations').catch(() => []),
     getJson('/weather').catch(() => null),
+    getJson('/overview').catch(() => ({})),
   ]);
   const rows = Array.isArray(zones) ? zones : [];
+  const selfNode = num(ov && ov.selfNode) || 0;
   // Build zoneId → mensagem map from currently-triggered weather rules.
   const zoneSupMap = {};
   if (weather && Array.isArray(weather.rules)) {
@@ -642,11 +644,11 @@ async function renderZones() {
     `<button class="btn dashed" data-znew>+ Nova zona</button>` +
     (cards || '<div class="empty">Nenhuma zona configurada.</div>');
 
-  view.querySelector('[data-znew]').addEventListener('click', () => zoneEditForm(null, rows, stations));
+  view.querySelector('[data-znew]').addEventListener('click', () => zoneEditForm(null, rows, stations, selfNode));
   view.querySelectorAll('[data-zedit]').forEach((b) => {
     b.addEventListener('click', () => {
       const z = rows.find((x) => x && num(x.id) === num(b.dataset.zedit));
-      zoneEditForm(z || null, rows, stations);
+      zoneEditForm(z || null, rows, stations, selfNode);
     });
   });
   view.querySelectorAll('[data-zopen]').forEach((b) => {
@@ -666,7 +668,7 @@ async function renderZones() {
 }
 
 // Formulário nova/editar zona. z=null → nova. rows/stations reaproveitados da lista.
-function zoneEditForm(z, rows, stations) {
+function zoneEditForm(z, rows, stations, selfNode) {
   const editing = !!z;
   // Estado local do formulário (defaults para nova zona).
   const st = {
@@ -680,6 +682,10 @@ function zoneEditForm(z, rows, stations) {
     fonteInput: editing ? (z.fonteInput == null ? -1 : num(z.fonteInput)) : -1,
   };
   const sts = Array.isArray(stations) ? stations : [];
+  // Alvo local do gateway no topo: irriga sem depender de estação (motor na placa do gateway).
+  const targets = selfNode
+    ? [{ node: selfNode, name: 'Gateway (local)' }, ...sts]
+    : sts.slice();
   let errors = [];
   let confirmDel = false;
 
@@ -688,8 +694,8 @@ function zoneEditForm(z, rows, stations) {
       ? `<div class="card redbox">${errors.map((e) => `<div>${esc(e)}</div>`).join('')}</div>`
       : '';
 
-    const stationChips = sts.length
-      ? sts
+    const stationChips = targets.length
+      ? targets
           .map((s) => {
             s = s || {};
             const active = num(s.node) === st.node ? ' active' : '';
@@ -743,7 +749,7 @@ function zoneEditForm(z, rows, stations) {
            <span class="flbl">Tipo de saída</span>
            <div class="segrow">
              <button class="seg wide${st.tipo === 0 ? ' active' : ''}" data-tipo="0">Válvula</button>
-             <button class="seg wide${st.tipo === 1 ? ' active' : ''}" data-tipo="1">GPO biestável</button>
+             <button class="seg wide${st.tipo === 1 ? ' active' : ''}" data-tipo="1">Motor / GPO</button>
            </div>
          </div>
          <div class="fld">

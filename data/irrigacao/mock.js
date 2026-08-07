@@ -13,6 +13,7 @@ const MOCK_DATA = {
     pairingPending: true,
     pairingNodeId: 0xc0ffee01,
     pairingSecondsLeft: 90,
+    selfNode: 0x0a0a0a0a, // "Gateway (local)" — saída na própria placa do gateway
   },
   stations: [
     {
@@ -77,6 +78,16 @@ const MOCK_DATA = {
     },
   ],
   zones: [
+    {
+      id: 9,
+      name: 'Motor terreno',
+      node: 0x0a0a0a0a, // Gateway (local) — motor irriga todo o terreno, sem válvula
+      tipo: 1,
+      index: 0,
+      maxMin: 120,
+      padraoMin: 30,
+      fonteInput: -1,
+    },
     {
       id: 1,
       name: 'Horta',
