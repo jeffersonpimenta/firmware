@@ -959,6 +959,17 @@ int32_t IrrigationModule::runOnce()
     if (surveyBeacon.tick(millis()))
         emitSurveyBeacon();
 
+    // --- Drive físico dos LEDs remotos — roda em TODOS os papéis (Task 7) ---
+    // Gateway: onPress() acionado no Task 6 coloca _remoteLed em BLINK; precisa renderizar aqui.
+    // Estação: recebe ACK do gateway e pisca confirmação ao operador.
+    for (uint8_t slot = 0; slot <= 1; slot++) {
+        if (settings.pinsRemoteLed[slot] < 0)
+            continue;
+#ifndef ARCH_PORTDUINO
+        digitalWrite(settings.pinsRemoteLed[slot], _remoteLed[slot].ledOn(millis()) ? HIGH : LOW);
+#endif
+    }
+
     if ((IrrigationRole)settings.role != IrrigationRole::ESTACAO) {
         if ((IrrigationRole)settings.role == IrrigationRole::GATEWAY)
             gwTick(); // Task 6, decisão §2: loop principal do gateway 1×/s
@@ -1042,15 +1053,6 @@ int32_t IrrigationModule::runOnce()
                     packetPool.release(p);
             }
         }
-    }
-
-    // --- Drive físico dos LEDs remotos da estação (Modo Remoto Task 7) ---
-    for (uint8_t slot = 0; slot <= 1; slot++) {
-        if (settings.pinsRemoteLed[slot] < 0)
-            continue;
-#ifndef ARCH_PORTDUINO
-        digitalWrite(settings.pinsRemoteLed[slot], _remoteLed[slot].ledOn(millis()) ? HIGH : LOW);
-#endif
     }
 
     refreshLedMode();
