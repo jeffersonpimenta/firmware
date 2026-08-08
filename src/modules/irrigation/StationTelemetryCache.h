@@ -17,6 +17,10 @@ struct StationTelemetry {
     uint8_t sensorCount = 0;
     IrrigationProto::SensorReading sensors[IrrigationProto::HB_MAX_SENSORS] = {};
     bool tamper = false; // HB_FLAG_TAMPER extraído
+    // Modo Remoto (Task 6): estado real das saídas reportado pelo nó (HB + ACK).
+    // Alimenta gwZoneIsOpen para zonas remotas.
+    uint8_t valveStates = 0; // bit i = válvula i aberta
+    uint8_t gpoStates = 0;   // bit i = GPO i ligado
 };
 
 // Último heartbeat por estação (só RAM; não persiste — reconstrói ao ouvir de novo).

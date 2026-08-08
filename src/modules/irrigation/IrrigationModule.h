@@ -409,7 +409,7 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     // Handlers de botoeira remota.
     void handleRemoteTrigger(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
     void gwFireRemote(uint32_t node, uint8_t inputIdx);
-    void gwPushRemoteLed(uint8_t targetZoneId);
+    void gwPushRemoteLed();
     void applyLocalRemoteLeds(uint8_t states);
     // Apply-helpers chamados pelo CRUD de associações (endpoints Task 8).
     uint8_t gwAllocRemoteId() const;

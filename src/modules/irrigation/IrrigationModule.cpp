@@ -3701,7 +3701,7 @@ void IrrigationModule::confirmCommand(uint32_t node, uint32_t seq, uint8_t reaso
         gateway.groupEngine.onAck(node, seq);
         // Modo Remoto: atualiza LED de feedback quando o estado de zona muda por qualquer origem.
         if (hadPending && ackZoneId != 0 && gateway.remoteButtons.count() > 0)
-            gwPushRemoteLed(ackZoneId);
+            gwPushRemoteLed();
     }
 }
 
@@ -3717,6 +3717,17 @@ void IrrigationModule::handleGwAck(const meshtastic_MeshPacket &mp, const Header
 
     // Reconciliação de epoch (mesma regra do HB — decisão §3).
     gwReconcileEpoch(mp.from, ack.configEpoch);
+
+    // Modo Remoto (Task 6 fix): ACK traz o estado pós-comando das saídas — atualiza cache
+    // para que gwZoneIsOpen reflita o estado real logo após o comando ser executado.
+    {
+        const StationTelemetry *existing = gateway.telemetry.byNode(mp.from);
+        StationTelemetry tel = existing ? *existing : StationTelemetry{};
+        tel.node = mp.from;
+        tel.valveStates = ack.valveStates;
+        tel.gpoStates = ack.gpoStates;
+        gateway.telemetry.update(tel);
+    }
 }
 
 // Decisão §3: MSG_HEARTBEAT recebido pelo gateway.
@@ -3753,6 +3764,9 @@ void IrrigationModule::handleGwHeartbeat(const meshtastic_MeshPacket &mp, const 
     for (uint8_t i = 0; i < hb.sensorCount && i < IrrigationProto::HB_MAX_SENSORS; i++)
         tel.sensors[i] = hb.sensors[i];
     tel.tamper = (hb.flags & IrrigationProto::HB_FLAG_TAMPER) != 0;
+    // Modo Remoto (Task 6 fix): estado real das saídas — alimenta gwZoneIsOpen para zonas remotas.
+    tel.valveStates = hb.valveStates;
+    tel.gpoStates = hb.gpoStates;
     gateway.telemetry.update(tel);
 
     // Fase 7a: reporta o estado real das saídas (bitmaps do HB) ao motor de grupos.
@@ -3931,25 +3945,41 @@ bool IrrigationModule::saveRemoteButtons()
 }
 
 // ---------------------------------------------------------------------------
-// Modo Remoto (Task 6): estado autoritativo de zona aberta.
-// Fontes: openGate (zonas livres) + groupEngine.currentZone (zonas de grupo).
+// Modo Remoto (Task 6 fix): estado autoritativo de zona aberta.
+// Fontes:
+//   - Zona local (node == selfNode): driver local — valves.isOpen / gpos.isOn.
+//   - Zona de grupo:               groupEngine.currentZone + stateOf (motor hidráulico).
+//   - Zona remota livre:           StationTelemetryCache — bits valveStates/gpoStates
+//                                  populados pelo último HB ou ACK da estação.
 // ---------------------------------------------------------------------------
 
 bool IrrigationModule::gwZoneIsOpen(uint8_t zoneId) const
 {
-    // Fonte 1: openGate rastreia zonas livres (não em grupo).
-    if (gateway.openGate.isOpen(zoneId))
-        return true;
-    // Fonte 2: groupEngine — verifica se esta é a zona corrente aberta em algum grupo.
-    for (size_t gi = 0; gi < gateway.groups.count(); gi++) {
-        const HydraulicGroup *hg = gateway.groups.groupAt(gi);
-        if (!hg)
-            break;
-        if (gateway.groupEngine.currentZone(hg->id) == zoneId &&
-            gateway.groupEngine.stateOf(hg->id) == HydraulicGroupEngine::State::RUNNING)
-            return true;
+    const Zone *z = gateway.zones.byId(zoneId);
+    if (!z)
+        return false;
+
+    // Zona local: lê o driver diretamente (estado 100% autoritativo).
+    if (isLocalTarget(z->node, nodeDB->getNodeNum())) {
+        if (z->tipo == 1)
+            return gpos.isOn(z->index);
+        return valves.isOpen(z->index);
     }
-    return false;
+
+    // Zona de grupo hidráulico: motor é a fonte de verdade.
+    const HydraulicGroup *hg = gateway.groups.byZone(zoneId);
+    if (hg) {
+        return gateway.groupEngine.currentZone(hg->id) == zoneId &&
+               gateway.groupEngine.stateOf(hg->id) == HydraulicGroupEngine::State::RUNNING;
+    }
+
+    // Zona remota livre: estado reportado pelo nó via HB ou ACK.
+    const StationTelemetry *tel = gateway.telemetry.byNode(z->node);
+    if (!tel)
+        return false;
+    if (z->tipo == 1)
+        return (tel->gpoStates >> z->index) & 1u;
+    return (tel->valveStates >> z->index) & 1u;
 }
 
 // ---------------------------------------------------------------------------
@@ -4022,7 +4052,7 @@ void IrrigationModule::gwFireRemote(uint32_t node, uint8_t inputIdx)
             gwRunCommandOpen(a->targetZoneId);
         else
             gwRunCommandClose(a->targetZoneId);
-        gwPushRemoteLed(a->targetZoneId);
+        gwPushRemoteLed();
     }
 }
 
@@ -4066,7 +4096,7 @@ void IrrigationModule::applyLocalRemoteLeds(uint8_t states)
     }
 }
 
-void IrrigationModule::gwPushRemoteLed(uint8_t targetZoneId)
+void IrrigationModule::gwPushRemoteLed()
 {
     // Acumula, por nó-gatilho, o estado de LED consolidado de TODAS as associações.
     struct NodeLed {
@@ -4215,7 +4245,7 @@ bool IrrigationModule::gwApplyRemoteUpsert(const IrrigationWeb::RemoteUpsertReq 
         return false;
     saveRemoteButtons();
     gwPushStationBtnConfig(a);
-    gwPushRemoteLed(a.targetZoneId);
+    gwPushRemoteLed();
     return true;
 }
 
@@ -4236,6 +4266,8 @@ bool IrrigationModule::gwApplyRemoteDelete(uint8_t id)
         if (affectedNodes[ti] != 0)
             gwRecomputeNodeBtnConfig(affectedNodes[ti]);
     }
+    // Finding 3: atualiza LEDs dos nós cuja associação foi removida.
+    gwPushRemoteLed();
     return true;
 }
 
@@ -4248,6 +4280,6 @@ bool IrrigationModule::gwRunRemoteCommand(uint8_t targetZoneId)
         gwRunCommandOpen(targetZoneId);
     else
         gwRunCommandClose(targetZoneId);
-    gwPushRemoteLed(targetZoneId);
+    gwPushRemoteLed();
     return true;
 }
