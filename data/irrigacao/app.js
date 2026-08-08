@@ -1275,69 +1275,9 @@ async function renderGpo() {
 }
 
 // ===== Intertravamentos =====
-async function renderIntertravamentos() {
-  const [rules, stations, zones] = await Promise.all([
-    getJson('/interlocks'),
-    getJson('/stations').catch(() => []),
-    getJson('/zones').catch(() => []),
-  ]);
-  const rows = Array.isArray(rules) ? rules : [];
-  const sts = Array.isArray(stations) ? stations : [];
-  const zs = Array.isArray(zones) ? zones : [];
-
-  const ruleCards = rows.map((r) => {
-    r = r || {};
-    const tipo = INTERLOCK_TIPO_LABEL[num(r.tipo)] || ('tipo ' + num(r.tipo));
-    const acao = INTERLOCK_ACAO_LABEL[num(r.acao)] || ('ação ' + num(r.acao));
-    let desc = '';
-    if (num(r.tipo) === 0) {
-      const cond = INTERLOCK_COND_LABEL[num(r.condicao)] || ('cond ' + num(r.condicao));
-      desc = `${stationName(sts, r.node)} · sensor ${num(r.sensor)} · ${cond}`;
-      if (num(r.condicao) >= 2) desc += ` ${(num(r.valor) / 100).toFixed(2)} (hist. ${(num(r.histerese) / 100).toFixed(2)})`;
-    } else {
-      desc = `máx. ${num(r.maxAbertas)} abertas`;
-    }
-    const zonasStr = r.todas ? 'Todas as zonas' : ('Zonas: ' + (Array.isArray(r.zonas) ? r.zonas.join(', ') : ''));
-    return `<div class="card itl-card">
-      <div class="itl-row">
-        <div class="itl-info">
-          <div class="name">${esc(r.mensagem || tipo)}</div>
-          <div class="sub">${esc(desc)} · ${esc(acao)}</div>
-          <div class="sub">${esc(zonasStr)}</div>
-        </div>
-        <div class="zbtns">
-          <button class="btn ghost sm" data-itledit="${num(r.id)}">Editar</button>
-          <button class="btn dangerline sm" data-itldel="${num(r.id)}">Excluir</button>
-        </div>
-      </div>
-    </div>`;
-  }).join('');
-
-  view.innerHTML =
-    `<button class="btn dashed" data-itlnew>+ Nova regra</button>` +
-    (ruleCards || '<div class="empty">Nenhuma regra de intertravamento.</div>');
-
-  view.querySelector('[data-itlnew]').addEventListener('click', () => interlockForm(null, sts, zs, rows));
-
-  view.querySelectorAll('[data-itledit]').forEach((b) => {
-    b.addEventListener('click', () => {
-      const rule = rows.find((x) => x && num(x.id) === num(b.dataset.itledit));
-      interlockForm(rule || null, sts, zs, rows);
-    });
-  });
-
-  view.querySelectorAll('[data-itldel]').forEach((b) => {
-    b.addEventListener('click', async () => {
-      if (!confirm('Excluir esta regra?')) return;
-      const r = await postJson('/interlocks/delete', { id: num(b.dataset.itldel) });
-      if (r.ok) {
-        renderIntertravamentos().catch(() => {});
-      } else {
-        alert('Falha ao excluir: ' + (Array.isArray(r.body && r.body.errors) ? r.body.errors.join(', ') : 'erro'));
-      }
-    });
-  });
-}
+// A lista de intertravamentos é renderizada em conjunto com os grupos hidráulicos
+// na tela combinada `renderGruposInterlocks` (modelo do mockup "Grupos & Intertravamentos").
+// Aqui ficam só o formulário de edição e o helper de id.
 
 // Menor id livre em 1..255 (backend exige id != 0; regras novas não têm id).
 function nextInterlockId(allRules) {
@@ -1346,10 +1286,20 @@ function nextInterlockId(allRules) {
   return 0; // tabela cheia
 }
 
-function interlockForm(rule, stations, zones, allRules) {
+// Sensores (com nome) de uma estação a partir do endpoint /sensors.
+function stationSensors(sensors, node) {
+  const s = (Array.isArray(sensors) ? sensors : []).find((x) => x && num(x.node) === num(node));
+  return s && Array.isArray(s.sensores) ? s.sensores : [];
+}
+
+// Formulário de intertravamento — layout do mockup "Grupos & Intertravamentos"
+// (classes lvl-*). Seleção por pills/botões (estação, sensor, condição, ação,
+// zonas) em vez de campos numéricos; nomes em vez de índices onde possível.
+function interlockForm(rule, stations, zones, sensors, allRules) {
   const editing = !!rule;
   const sts = Array.isArray(stations) ? stations : [];
   const zs = Array.isArray(zones) ? zones : [];
+  const sens = Array.isArray(sensors) ? sensors : [];
   const st = {
     id: editing ? num(rule.id) : nextInterlockId(allRules),
     tipo: editing ? num(rule.tipo) : 0,
@@ -1365,127 +1315,111 @@ function interlockForm(rule, stations, zones, allRules) {
     maxAbertas: editing ? num(rule.maxAbertas) : 1,
   };
   let errors = [];
+  let deleteConfirm = false;
 
   function render() {
     const errBox = errors.length
-      ? `<div class="card redbox">${errors.map((e) => `<div>${esc(e)}</div>`).join('')}</div>`
+      ? `<div class="lvl-errbox">${errors.map((e) => `<div>${esc(e)}</div>`).join('')}</div>`
       : '';
 
-    const stationChips = sts.length
-      ? sts.map((s) => {
-          s = s || {};
-          const active = num(s.node) === st.node ? ' active' : '';
-          return `<button class="pill${active}" data-inode="${num(s.node)}">${s.name ? esc(s.name) : nodeHex(s.node)}</button>`;
-        }).join('')
-      : '<div class="empty">Nenhuma estação.</div>';
-
-    const tipoSegs = [0, 1].map((t) =>
-      `<button class="seg wide${st.tipo === t ? ' active' : ''}" data-itipo="${t}">${INTERLOCK_TIPO_LABEL[t]}</button>`
+    const tipoBtns = [0, 1].map((t) =>
+      `<button class="lvl-polbtn${st.tipo === t ? ' sel' : ''}" data-itipo="${t}">${INTERLOCK_TIPO_LABEL[t]}</button>`
     ).join('');
 
-    const condSegs = [0, 1, 2, 3].map((c) =>
-      `<button class="seg${st.condicao === c ? ' active' : ''}" data-icond="${c}">${INTERLOCK_COND_LABEL[c]}</button>`
-    ).join('');
+    let body = '';
+    if (st.tipo === 0) {
+      const stationPills = sts.length
+        ? sts.map((s) => `<button class="lvl-pill${num(s.node) === num(st.node) ? ' sel' : ''}" data-inode="${num(s.node)}">${s.name ? esc(s.name) : nodeHex(s.node)}</button>`).join('')
+        : '<div class="lvl-muted">Nenhuma estação.</div>';
+      const list = stationSensors(sens, st.node);
+      const sensorPills = list.length
+        ? list.map((se) => `<button class="lvl-pill${num(se.idx) === num(st.sensor) ? ' sel' : ''}" data-isensor="${num(se.idx)}">${se.nome ? esc(se.nome) : ('sensor ' + num(se.idx))}</button>`).join('')
+        : '<div class="lvl-muted">Estação sem sensores nomeados — usando índice ' + num(st.sensor) + '.</div>';
+      const condBtns = [0, 1, 2, 3].map((c) =>
+        `<button class="lvl-polbtn${st.condicao === c ? ' sel' : ''}" data-icond="${c}">${INTERLOCK_COND_LABEL[c]}</button>`
+      ).join('');
+      const valBlock = st.condicao >= 2 ? `
+        <div class="lvl-advrow">
+          <div class="lvl-advfld"><div class="lvl-advlbl">Valor (centi-unid.)</div><input class="lvl-input" id="itl-valor" type="number" value="${st.valor}"></div>
+          <div class="lvl-advfld"><div class="lvl-advlbl">Histerese (centi-unid.)</div><input class="lvl-input" id="itl-histerese" type="number" value="${st.histerese}"></div>
+        </div>` : '';
+      const acaoBtns = [0, 1].map((a) =>
+        `<button class="lvl-polbtn${st.acao === a ? ' sel' : ''}" data-iacao="${a}">${INTERLOCK_ACAO_LABEL[a]}</button>`
+      ).join('');
+      body = `
+        <div><div class="lvl-seclbl">Estação</div><div class="lvl-pills">${stationPills}</div></div>
+        <div><div class="lvl-seclbl">Sensor</div><div class="lvl-pills">${sensorPills}</div></div>
+        <div><div class="lvl-seclbl">Condição</div><div class="lvl-pol2" style="flex-wrap:wrap;">${condBtns}</div></div>
+        ${valBlock}
+        <div><div class="lvl-seclbl">Ação</div><div class="lvl-pol2">${acaoBtns}</div></div>
+        <div><div class="lvl-seclbl">Mensagem de alerta</div><input class="lvl-input" id="itl-mensagem" maxlength="40" placeholder="Ex.: Reservatório em nível baixo" value="${esc(st.mensagem)}"></div>`;
+    } else {
+      body = `<div><div class="lvl-seclbl">Máx. saídas abertas simultaneamente</div><input class="lvl-input" id="itl-maxAbertas" type="number" min="1" max="255" value="${st.maxAbertas}"></div>`;
+    }
 
-    const acaoSegs = [0, 1].map((a) =>
-      `<button class="seg wide${st.acao === a ? ' active' : ''}" data-iacao="${a}">${INTERLOCK_ACAO_LABEL[a]}</button>`
-    ).join('');
+    const zonePills = zs.length
+      ? zs.map((z) => `<button class="lvl-pill${st.zonas.includes(num(z.id)) ? ' sel' : ''}" data-izone="${num(z.id)}">${z.name ? esc(z.name) : ('zona ' + num(z.id))}</button>`).join('')
+      : '<div class="lvl-muted">Nenhuma zona.</div>';
 
-    const sensorBlock = st.tipo === 0 ? `
-      <div class="fld">
-        <span class="flbl">Estação</span>
-        <div class="pills">${stationChips}</div>
-      </div>
-      <div class="frow">
-        <label class="fld">
-          <span class="flbl">Sensor (0-3)</span>
-          <input class="finput" id="itl-sensor" type="number" min="0" max="3" value="${st.sensor}">
-        </label>
-        <label class="fld">
-          <span class="flbl">Condição</span>
-          <div class="segrow">${condSegs}</div>
-        </label>
-      </div>
-      ${st.condicao >= 2 ? `
-      <div class="frow">
-        <label class="fld">
-          <span class="flbl">Valor (centi-unid.)</span>
-          <input class="finput" id="itl-valor" type="number" value="${st.valor}">
-        </label>
-        <label class="fld">
-          <span class="flbl">Histerese (centi-unid.)</span>
-          <input class="finput" id="itl-histerese" type="number" value="${st.histerese}">
-        </label>
-      </div>` : ''}
-    ` : `
-      <label class="fld">
-        <span class="flbl">Máx. zonas abertas</span>
-        <input class="finput" id="itl-maxAbertas" type="number" min="1" max="255" value="${st.maxAbertas}">
-      </label>
-    `;
+    const delBlock = editing
+      ? (deleteConfirm
+          ? `<div class="lvl-delbox">Excluir este intertravamento?<div class="lvl-delbtns"><button class="lvl-delcancel" data-itldelcancel>Cancelar</button><button class="lvl-delconfirm" data-itldelconfirm>Excluir</button></div></div>`
+          : `<button class="lvl-delbtn" data-itldel>Excluir intertravamento</button>`)
+      : '';
 
-    view.innerHTML =
-      `<div class="backlink" data-itlback>‹ Intertravamentos</div>
-       <div class="ztitle">${editing ? 'Editar regra' : 'Nova regra'}</div>
-       ${errBox}
-       <div class="card form">
-         <div class="fld">
-           <span class="flbl">Tipo</span>
-           <div class="segrow">${tipoSegs}</div>
-         </div>
-         ${sensorBlock}
-         <div class="fld">
-           <span class="flbl">Ação</span>
-           <div class="segrow">${acaoSegs}</div>
-         </div>
-         <div class="fld">
-           <span class="flbl">Zonas afetadas (ids separados por vírgula)</span>
-           <input class="finput" id="itl-zonas" placeholder="1,2,3" value="${esc(st.zonas.join(','))}">
-           <div class="toggle-row" data-itltodas>
-             <span class="tlbl">Todas as zonas</span>
-             <span class="switch${st.todas ? ' on' : ''}"><span class="knob"></span></span>
-           </div>
-         </div>
-         <label class="fld">
-           <span class="flbl">Mensagem (opcional)</span>
-           <input class="finput" id="itl-mensagem" maxlength="40" placeholder="Ex.: Sensor de chuva ativo" value="${esc(st.mensagem)}">
-         </label>
-       </div>
-       <button class="btn solid big" data-itlsave>Salvar regra</button>`;
+    view.innerHTML = `
+      <div class="lvl-wrap">
+        <div class="lvl-back" data-itlback>‹ Grupos &amp; Intertravamentos</div>
+        <div class="lvl-title">${editing ? 'Editar intertravamento' : 'Novo intertravamento'}</div>
+        ${errBox}
+        <div class="lvl-panel">
+          <div><div class="lvl-seclbl">Tipo de regra</div><div class="lvl-pol2">${tipoBtns}</div></div>
+          ${body}
+          <div><div class="lvl-seclbl">Zonas afetadas ${st.tipo === 1 ? '(vazio = todas)' : ''}</div><div class="lvl-pills">${zonePills}</div></div>
+          <div class="toggle-row" data-itltodas>
+            <span class="tlbl">Todas as zonas</span>
+            <span class="switch${st.todas ? ' on' : ''}"><span class="knob"></span></span>
+          </div>
+        </div>
+        <button class="lvl-save" data-itlsave>Salvar intertravamento</button>
+        ${delBlock}
+      </div>`;
 
-    view.querySelector('[data-itlback]').addEventListener('click', () => renderIntertravamentos().catch(() => {}));
-
-    view.querySelectorAll('[data-itipo]').forEach((b) => {
-      b.addEventListener('click', () => { st.tipo = num(b.dataset.itipo); render(); });
-    });
-    view.querySelectorAll('[data-inode]').forEach((b) => {
-      b.addEventListener('click', () => { st.node = num(b.dataset.inode); render(); });
-    });
-    view.querySelectorAll('[data-icond]').forEach((b) => {
-      b.addEventListener('click', () => { st.condicao = num(b.dataset.icond); render(); });
-    });
-    view.querySelectorAll('[data-iacao]').forEach((b) => {
-      b.addEventListener('click', () => { st.acao = num(b.dataset.iacao); render(); });
-    });
-
+    view.querySelector('[data-itlback]').addEventListener('click', () => renderGruposInterlocks().catch(() => {}));
+    view.querySelectorAll('[data-itipo]').forEach((b) => b.addEventListener('click', () => { st.tipo = num(b.dataset.itipo); render(); }));
+    view.querySelectorAll('[data-inode]').forEach((b) => b.addEventListener('click', () => { st.node = num(b.dataset.inode); st.sensor = 0; render(); }));
+    view.querySelectorAll('[data-isensor]').forEach((b) => b.addEventListener('click', () => { st.sensor = num(b.dataset.isensor); render(); }));
+    view.querySelectorAll('[data-icond]').forEach((b) => b.addEventListener('click', () => { st.condicao = num(b.dataset.icond); render(); }));
+    view.querySelectorAll('[data-iacao]').forEach((b) => b.addEventListener('click', () => { st.acao = num(b.dataset.iacao); render(); }));
+    view.querySelectorAll('[data-izone]').forEach((b) => b.addEventListener('click', () => {
+      const zid = num(b.dataset.izone);
+      const i = st.zonas.indexOf(zid);
+      if (i >= 0) st.zonas.splice(i, 1); else st.zonas.push(zid);
+      render();
+    }));
     const todaBtn = view.querySelector('[data-itltodas]');
     if (todaBtn) todaBtn.addEventListener('click', () => { st.todas = !st.todas; render(); });
 
-    const snInp = view.querySelector('#itl-sensor');
-    if (snInp) snInp.addEventListener('input', (e) => { st.sensor = num(e.target.value); });
-    const condInp = view.querySelector('#itl-valor');
-    if (condInp) condInp.addEventListener('input', (e) => { st.valor = num(e.target.value); });
+    const valInp = view.querySelector('#itl-valor');
+    if (valInp) valInp.addEventListener('input', (e) => { st.valor = num(e.target.value); });
     const histInp = view.querySelector('#itl-histerese');
     if (histInp) histInp.addEventListener('input', (e) => { st.histerese = num(e.target.value); });
     const maxInp = view.querySelector('#itl-maxAbertas');
     if (maxInp) maxInp.addEventListener('input', (e) => { st.maxAbertas = num(e.target.value); });
-
-    view.querySelector('#itl-zonas').addEventListener('input', (e) => {
-      st.zonas = e.target.value.split(',').map((v) => num(v.trim())).filter((v) => v > 0);
-    });
-    view.querySelector('#itl-mensagem').addEventListener('input', (e) => { st.mensagem = e.target.value; });
+    const msgInp = view.querySelector('#itl-mensagem');
+    if (msgInp) msgInp.addEventListener('input', (e) => { st.mensagem = e.target.value; });
 
     view.querySelector('[data-itlsave]').addEventListener('click', save);
+    const delBtn = view.querySelector('[data-itldel]');
+    if (delBtn) delBtn.addEventListener('click', () => { deleteConfirm = true; render(); });
+    const delCancel = view.querySelector('[data-itldelcancel]');
+    if (delCancel) delCancel.addEventListener('click', () => { deleteConfirm = false; render(); });
+    const delConfirm = view.querySelector('[data-itldelconfirm]');
+    if (delConfirm) delConfirm.addEventListener('click', async () => {
+      const r = await postJson('/interlocks/delete', { id: st.id });
+      if (r.ok) renderGruposInterlocks().catch(() => {});
+      else alert('Falha ao excluir: ' + ((r.body && Array.isArray(r.body.errors)) ? r.body.errors.join(', ') : 'erro'));
+    });
   }
 
   async function save() {
@@ -1510,7 +1444,7 @@ function interlockForm(rule, stations, zones, allRules) {
     };
     const r = await postJson('/interlocks', body);
     if (r.ok) {
-      renderIntertravamentos().catch(() => {});
+      renderGruposInterlocks().catch(() => {});
     } else {
       errors = Array.isArray(r.body && r.body.errors) ? r.body.errors : ['Falha ao salvar.'];
       render();
@@ -1667,28 +1601,56 @@ async function renderTamper() {
   });
 }
 
-// ===== Grupos hidráulicos =====
+// ===== Grupos hidráulicos & Intertravamentos (tela combinada — modelo do mockup) =====
 const GROUP_STATE_CLASS = {
   ocioso: 'gray', abrindo: 'amber', aguardando_partida: 'amber', partindo_bomba: 'amber',
   rodando: 'green', transicao: 'amber', parando_bomba: 'amber', drenando: 'amber',
   fechando: 'amber', adiado: 'red', desconhecido: 'gray',
+};
+const GROUP_STATE_LABEL = {
+  ocioso: 'Ocioso', abrindo: 'Abrindo válvulas', aguardando_partida: 'Aguardando partida',
+  partindo_bomba: 'Partindo bomba', rodando: 'Em irrigação', transicao: 'Em transição',
+  parando_bomba: 'Parando bomba', drenando: 'Drenando', fechando: 'Fechando válvulas',
+  adiado: 'Adiado', desconhecido: '—',
 };
 
 function groupStatusById(list, id) {
   return (Array.isArray(list) ? list : []).find((s) => s && num(s.id) === num(id)) || {};
 }
 
-async function renderGrupos() {
-  const [groups, status, zones, weather] = await Promise.all([
+// Descrição curta de uma regra de intertravamento (uma linha). Nomes de estação/
+// sensor quando disponíveis; cai para índice numérico caso contrário. Retorna HTML
+// já escapado (mesma convenção de stationName/zoneName) — embutir sem re-escapar.
+function interlockDesc(r, sts, sens) {
+  if (num(r.tipo) !== 0) return `Máx. ${num(r.maxAbertas)} zonas abertas simultaneamente`;
+  const est = stationName(sts, r.node);
+  const l = stationSensors(sens, r.node);
+  const x = l.find((se) => se && num(se.idx) === num(r.sensor));
+  const sen = x && x.nome ? esc(x.nome) : ('sensor ' + num(r.sensor));
+  const cond = esc(INTERLOCK_COND_LABEL[num(r.condicao)] || ('cond ' + num(r.condicao)));
+  let d = `${est} · ${sen} · ${cond}`;
+  if (num(r.condicao) >= 2) d += ` ${(num(r.valor) / 100).toFixed(2)} (hist. ${(num(r.histerese) / 100).toFixed(2)})`;
+  return d;
+}
+
+async function renderGruposInterlocks() {
+  const [groups, status, zones, weather, interlocks, stations, sensors] = await Promise.all([
     getJson('/groups'),
     getJson('/groups/status').catch(() => []),
     getJson('/zones').catch(() => []),
     getJson('/weather').catch(() => null),
+    getJson('/interlocks').catch(() => []),
+    getJson('/stations').catch(() => []),
+    getJson('/sensors').catch(() => []),
   ]);
-  const rows = Array.isArray(groups) ? groups : [];
-  const st = Array.isArray(status) ? status : [];
+  const grows = Array.isArray(groups) ? groups : [];
+  const gstat = Array.isArray(status) ? status : [];
   const zs = Array.isArray(zones) ? zones : [];
-  // Build groupId → mensagem map from currently-triggered weather rules.
+  const irows = Array.isArray(interlocks) ? interlocks : [];
+  const sts = Array.isArray(stations) ? stations : [];
+  const sens = Array.isArray(sensors) ? sensors : [];
+
+  // groupId → mensagem das regras de meteorologia atualmente disparadas.
   const groupSupMap = {};
   if (weather && Array.isArray(weather.rules)) {
     weather.rules.filter((r) => r && r.triggered).forEach((r) => {
@@ -1700,84 +1662,81 @@ async function renderGrupos() {
     });
   }
 
-  const cards = rows.map((g) => {
+  const groupCards = grows.map((g) => {
     g = g || {};
-    const s = groupStatusById(st, g.id);
+    const s = groupStatusById(gstat, g.id);
     const estado = s.estado || 'ocioso';
     const cls = GROUP_STATE_CLASS[estado] || 'gray';
-    const bomba = s.bomba ? '<span class="chip green">bomba on</span>' : '<span class="chip gray">bomba off</span>';
-    const membros = Array.isArray(g.zonas) ? g.zonas.join(', ') : '';
+    const estLabel = GROUP_STATE_LABEL[estado] || estado;
+    const bombaNome = num(g.bombaZoneId) ? zoneName(zs, g.bombaZoneId) : '—';
+    const zonasNomes = (Array.isArray(g.zonas) ? g.zonas : []).map((id) => zoneName(zs, id)).join(', ') || '—';
+    const maxTxt = num(g.maxOpen) ? num(g.maxOpen) : 'sem teto';
     const supMsg = groupSupMap[num(g.id)];
-    const supLine = supMsg != null
-      ? `<div style="font-size:12px;color:oklch(0.55 0.14 230);margin-top:8px;">Suprimido por meteorologia — ${esc(supMsg)}</div>`
-      : '';
-    return `<div class="card">
-      <div class="itl-row">
-        <div class="itl-info">
-          <div class="name">${esc(g.nome || ('Grupo ' + num(g.id)))}
-            <span class="chip ${cls}" data-gstate="${num(g.id)}">${esc(estado)}</span></div>
-          <div class="sub" data-gbomba="${num(g.id)}">${bomba} · abertas <span data-gopen="${num(g.id)}">${num(s.abertas)}</span></div>
-          <div class="sub">Bomba zona ${num(g.bombaZoneId)} · Zonas: ${esc(membros)} · min ${num(g.minOpen)}/max ${num(g.maxOpen)}</div>
-        </div>
-        <div class="zbtns">
-          <button class="btn outline sm" data-gopenbtn="${num(g.id)}">Abrir</button>
-          <button class="btn ghost sm" data-gclosebtn="${num(g.id)}">Fechar</button>
-          <button class="btn ghost sm" data-gedit="${num(g.id)}">Editar</button>
-          <button class="btn dangerline sm" data-gdel="${num(g.id)}">Excluir</button>
-        </div>
+    const supLine = supMsg != null ? `<div class="gi-supress">Suprimido por meteorologia — ${esc(supMsg)}</div>` : '';
+    return `<div class="gi-card" data-gedit="${num(g.id)}">
+      <div class="gi-cardhdr">
+        <div class="gi-name">${esc(g.nome || ('Grupo ' + num(g.id)))}</div>
+        <span class="gi-editpill">Editar</span>
       </div>
-      ${supLine}</div>`;
+      <div class="gi-line">Bomba: ${bombaNome} · Zonas: ${zonasNomes}</div>
+      <div class="gi-estado ${cls}" data-gstate="${num(g.id)}">${esc(estLabel)}</div>
+      <div class="gi-line gi-cfg">Sobreposição ${num(g.overlapS)}s · partida ${num(g.startAfterOpenS)}s após abrir · parada ${num(g.stopBeforeCloseS)}s antes de fechar<br>Mín. ${num(g.minOpen)} / máx. ${maxTxt} zonas abertas · máx. ${num(g.maxStartsHour)} partidas/hora</div>
+      ${supLine}
+    </div>`;
   }).join('');
 
-  view.innerHTML =
-    `<button class="btn dashed" data-gnew>+ Novo grupo</button>` +
-    (cards || '<div class="empty">Nenhum grupo hidráulico.</div>');
+  const itlCards = irows.map((r) => {
+    r = r || {};
+    const acao = INTERLOCK_ACAO_LABEL[num(r.acao)] || ('ação ' + num(r.acao));
+    const tipo = INTERLOCK_TIPO_LABEL[num(r.tipo)] || ('tipo ' + num(r.tipo));
+    const zonasStr = r.todas ? 'Todas as zonas' : ('Zonas: ' + ((Array.isArray(r.zonas) ? r.zonas : []).map((id) => zoneName(zs, id)).join(', ') || '—'));
+    return `<div class="gi-card" data-itledit="${num(r.id)}">
+      <div class="gi-cardhdr"><div class="gi-name">${esc(r.mensagem || tipo)}</div></div>
+      <div class="gi-line">${interlockDesc(r, sts, sens)} · ${esc(acao)}</div>
+      <div class="gi-line">${zonasStr}</div>
+    </div>`;
+  }).join('');
+
+  view.innerHTML = `
+    <div class="lvl-wrap">
+      <div class="gi-sechdr"><div class="lvl-seclbl">Grupos hidráulicos</div></div>
+      <div class="lvl-list">${groupCards || '<div class="lvl-empty">Nenhum grupo hidráulico.</div>'}</div>
+      <button class="lvl-newbtn" data-gnew>+ Novo grupo</button>
+
+      <div class="gi-sechdr" style="margin-top:6px;"><div class="lvl-seclbl">Intertravamentos</div></div>
+      <button class="lvl-newbtn" data-itlnew>+ Novo intertravamento</button>
+      <div class="lvl-list">${itlCards || '<div class="lvl-empty">Nenhuma regra de intertravamento.</div>'}</div>
+    </div>`;
 
   view.querySelector('[data-gnew]').addEventListener('click', () => groupForm(null, zs));
-  view.querySelectorAll('[data-gedit]').forEach((b) => b.addEventListener('click', () => {
-    groupForm(rows.find((x) => x && num(x.id) === num(b.dataset.gedit)) || null, zs);
+  view.querySelectorAll('[data-gedit]').forEach((c) => c.addEventListener('click', () => {
+    groupForm(grows.find((x) => x && num(x.id) === num(c.dataset.gedit)) || null, zs);
   }));
-  view.querySelectorAll('[data-gdel]').forEach((b) => b.addEventListener('click', async () => {
-    if (!confirm('Excluir este grupo?')) return;
-    const r = await postJson('/groups/delete', { id: num(b.dataset.gdel) });
-    if (r.ok) renderGrupos().catch(() => {});
-    else alert('Falha ao excluir: ' + ((r.body && Array.isArray(r.body.errors)) ? r.body.errors.join(', ') : 'erro'));
-  }));
-  view.querySelectorAll('[data-gopenbtn]').forEach((b) => b.addEventListener('click', async () => {
-    const r = await postJson('/groups/command', { id: num(b.dataset.gopenbtn), acao: 'abrir' });
-    if (!r.ok) alert('Falha: ' + ((r.body && Array.isArray(r.body.errors)) ? r.body.errors.join(', ') : 'erro'));
-  }));
-  view.querySelectorAll('[data-gclosebtn]').forEach((b) => b.addEventListener('click', async () => {
-    const r = await postJson('/groups/command', { id: num(b.dataset.gclosebtn), acao: 'fechar' });
-    if (!r.ok) alert('Falha: ' + ((r.body && Array.isArray(r.body.errors)) ? r.body.errors.join(', ') : 'erro'));
+  view.querySelector('[data-itlnew]').addEventListener('click', () => interlockForm(null, sts, zs, sens, irows));
+  view.querySelectorAll('[data-itledit]').forEach((c) => c.addEventListener('click', () => {
+    interlockForm(irows.find((x) => x && num(x.id) === num(c.dataset.itledit)) || null, sts, zs, sens, irows);
   }));
 }
 
-// Atualiza só os badges/contadores ao vivo (não recria a lista; no-op se a aba/lista não está montada).
+// Atualiza só o rótulo de estado ao vivo (não recria a lista; no-op se a lista não está montada).
 async function pollGroupStatus() {
   if (!document.querySelector('[data-gstate]')) return; // form aberto ou outra aba
   const st = await getJson('/groups/status').catch(() => []);
   (Array.isArray(st) ? st : []).forEach((s) => {
     if (!s) return;
-    const badge = view.querySelector(`[data-gstate="${num(s.id)}"]`);
-    if (badge) {
-      const cls = GROUP_STATE_CLASS[s.estado] || 'gray';
-      badge.className = 'chip ' + cls;
-      badge.textContent = s.estado || 'ocioso';
-    }
-    const open = view.querySelector(`[data-gopen="${num(s.id)}"]`);
-    if (open) open.textContent = num(s.abertas);
-    const bombaWrap = view.querySelector(`[data-gbomba="${num(s.id)}"]`);
-    if (bombaWrap) {
-      const bombaChip = bombaWrap.querySelector('.chip');
-      if (bombaChip) {
-        bombaChip.className = s.bomba ? 'chip green' : 'chip gray';
-        bombaChip.textContent = s.bomba ? 'bomba on' : 'bomba off';
-      }
+    const el = view.querySelector(`[data-gstate="${num(s.id)}"]`);
+    if (el) {
+      const estado = s.estado || 'ocioso';
+      el.className = 'gi-estado ' + (GROUP_STATE_CLASS[estado] || 'gray');
+      el.textContent = GROUP_STATE_LABEL[estado] || estado;
     }
   });
 }
 
+// Formulário de grupo hidráulico — layout do mockup (classes lvl-*): pills com
+// nomes de zona para bomba/zonas-membro, botões de transição, painéis de limites/
+// tempos/proteção. Campos de texto/número atualizam `st` no input para sobreviver
+// aos re-renders disparados pelas pills.
 function groupForm(group, zones) {
   const editing = !!group;
   const zs = (Array.isArray(zones) ? zones : []).filter((z) => z && num(z.fonteInput ?? -1) < 0);
@@ -1786,74 +1745,101 @@ function groupForm(group, zones) {
     overlapS: 10, startAfterOpenS: 5, stopBeforeCloseS: 8, minRunMin: 5, maxStartsHour: 6,
   };
   st.zonas = Array.isArray(st.zonas) ? st.zonas : [];
+  let deleteConfirm = false;
 
   function render() {
-    const zoneChips = zs.map((z) => {
-      const on = st.zonas.includes(num(z.id));
-      return `<button class="chip ${on ? 'green' : 'gray'}" data-gz="${num(z.id)}">${num(z.id)}</button>`;
-    }).join(' ');
-    const bombaOpts = `<option value="0">— sem bomba —</option>` +
-      zs.map((z) => `<option value="${num(z.id)}" ${num(st.bombaZoneId) === num(z.id) ? 'selected' : ''}>zona ${num(z.id)}</option>`).join('');
+    const bombaPills = `<button class="lvl-pill${num(st.bombaZoneId) === 0 ? ' sel' : ''}" data-gbomba="0">— sem —</button>` +
+      zs.map((z) => `<button class="lvl-pill${num(st.bombaZoneId) === num(z.id) ? ' sel' : ''}" data-gbomba="${num(z.id)}">${z.name ? esc(z.name) : ('zona ' + num(z.id))}</button>`).join('');
+    const zonePills = zs.length
+      ? zs.map((z) => `<button class="lvl-pill${st.zonas.includes(num(z.id)) ? ' sel' : ''}" data-gz="${num(z.id)}">${z.name ? esc(z.name) : ('zona ' + num(z.id))}</button>`).join('')
+      : '<div class="lvl-muted">Sem zonas não-espelho.</div>';
+    const transBtns = [['0', 'Abrir antes de fechar'], ['1', 'Fechar antes de abrir']]
+      .map(([v, l]) => `<button class="lvl-polbtn${num(st.transicao) === num(v) ? ' sel' : ''}" data-gtrans="${v}">${l}</button>`).join('');
+    const delBlock = editing
+      ? (deleteConfirm
+          ? `<div class="lvl-delbox">Excluir este grupo?<div class="lvl-delbtns"><button class="lvl-delcancel" data-gdelcancel>Cancelar</button><button class="lvl-delconfirm" data-gdelconfirm>Excluir</button></div></div>`
+          : `<button class="lvl-delbtn" data-gdel>Excluir grupo</button>`)
+      : '';
 
     view.innerHTML = `
-      <div class="form">
-        <label class="fld"><span class="flbl">Nome</span>
-          <input class="finput" id="g-nome" maxlength="15" value="${esc(st.nome || '')}"></label>
-        <label class="fld"><span class="flbl">Bomba (zona GPO)</span>
-          <select class="finput" id="g-bomba">${bombaOpts}</select></label>
-        <div class="fld"><span class="flbl">Zonas membro</span><div class="chips">${zoneChips || '<span class="sub">Sem zonas não-espelho.</span>'}</div></div>
-        <div class="frow">
-          <label class="fld"><span class="flbl">Mín. abertas</span><input class="finput" id="g-min" type="number" min="1" value="${num(st.minOpen)}"></label>
-          <label class="fld"><span class="flbl">Máx. abertas (0=sem teto)</span><input class="finput" id="g-max" type="number" min="0" value="${num(st.maxOpen)}"></label>
+      <div class="lvl-wrap">
+        <div class="lvl-back" data-gback>‹ Grupos &amp; Intertravamentos</div>
+        <div class="lvl-title">Grupo hidráulico</div>
+        <div class="lvl-panel">
+          <div><div class="lvl-seclbl">Nome</div><input class="lvl-input" id="g-nome" maxlength="15" value="${esc(st.nome || '')}"></div>
+          <div><div class="lvl-seclbl">Bomba / válvula mestre</div><div class="lvl-pills">${bombaPills}</div></div>
+          <div><div class="lvl-seclbl">Zonas do grupo</div><div class="lvl-pills">${zonePills}</div></div>
+          <div><div class="lvl-seclbl">Transição</div><div class="lvl-pol2">${transBtns}</div></div>
         </div>
-        <label class="fld"><span class="flbl">Transição</span>
-          <select class="finput" id="g-trans">
-            <option value="0" ${num(st.transicao) === 0 ? 'selected' : ''}>abrir antes de fechar</option>
-            <option value="1" ${num(st.transicao) === 1 ? 'selected' : ''}>fechar antes de abrir</option>
-          </select></label>
-        <div class="frow">
-          <label class="fld"><span class="flbl">Sobrepos. (s)</span><input class="finput" id="g-ov" type="number" min="0" value="${num(st.overlapS)}"></label>
-          <label class="fld"><span class="flbl">Partida após abrir (s)</span><input class="finput" id="g-sa" type="number" min="0" value="${num(st.startAfterOpenS)}"></label>
+        <div class="lvl-panel">
+          <div class="lvl-seclbl">Limites de válvulas abertas</div>
+          <div class="lvl-advrow">
+            <div class="lvl-advfld"><div class="lvl-advlbl">Mín. com bomba ligada</div><input class="lvl-input" id="g-min" type="number" min="1" value="${num(st.minOpen)}"></div>
+            <div class="lvl-advfld"><div class="lvl-advlbl">Máx. simultâneas (0=sem teto)</div><input class="lvl-input" id="g-max" type="number" min="0" value="${num(st.maxOpen)}"></div>
+          </div>
+          <div class="lvl-seclbl">Tempos de comutação (s)</div>
+          <div class="lvl-advrow">
+            <div class="lvl-advfld"><div class="lvl-advlbl">Sobreposição</div><input class="lvl-input" id="g-ov" type="number" min="0" value="${num(st.overlapS)}"></div>
+            <div class="lvl-advfld"><div class="lvl-advlbl">Partida após abrir</div><input class="lvl-input" id="g-sa" type="number" min="0" value="${num(st.startAfterOpenS)}"></div>
+            <div class="lvl-advfld"><div class="lvl-advlbl">Parada antes de fechar</div><input class="lvl-input" id="g-sb" type="number" min="0" value="${num(st.stopBeforeCloseS)}"></div>
+          </div>
+          <div class="lvl-seclbl">Proteção do motor</div>
+          <div class="lvl-advrow">
+            <div class="lvl-advfld"><div class="lvl-advlbl">Funcionamento mín. (min)</div><input class="lvl-input" id="g-mr" type="number" min="0" value="${num(st.minRunMin)}"></div>
+            <div class="lvl-advfld"><div class="lvl-advlbl">Máx. partidas/hora</div><input class="lvl-input" id="g-ms" type="number" min="0" value="${num(st.maxStartsHour)}"></div>
+          </div>
         </div>
-        <div class="frow">
-          <label class="fld"><span class="flbl">Parar antes fechar (s)</span><input class="finput" id="g-sb" type="number" min="0" value="${num(st.stopBeforeCloseS)}"></label>
-          <label class="fld"><span class="flbl">Func. mín. (min)</span><input class="finput" id="g-mr" type="number" min="0" value="${num(st.minRunMin)}"></label>
-        </div>
-        <label class="fld"><span class="flbl">Máx. partidas/hora</span><input class="finput" id="g-ms" type="number" min="0" value="${num(st.maxStartsHour)}"></label>
-        <div class="frow">
-          <button class="btn" data-gsave>${editing ? 'Salvar' : 'Criar'}</button>
-          <button class="btn ghost" data-gback>Cancelar</button>
-        </div>
+        <button class="lvl-save" data-gsave>Salvar grupo</button>
+        ${delBlock}
       </div>`;
 
+    view.querySelector('[data-gback]').addEventListener('click', () => renderGruposInterlocks().catch(() => {}));
+    view.querySelectorAll('[data-gbomba]').forEach((b) => b.addEventListener('click', () => { st.bombaZoneId = num(b.dataset.gbomba); render(); }));
     view.querySelectorAll('[data-gz]').forEach((b) => b.addEventListener('click', () => {
       const zid = num(b.dataset.gz);
       const i = st.zonas.indexOf(zid);
       if (i >= 0) st.zonas.splice(i, 1); else st.zonas.push(zid);
       render();
     }));
-    view.querySelector('[data-gback]').addEventListener('click', () => renderGrupos().catch(() => {}));
+    view.querySelectorAll('[data-gtrans]').forEach((b) => b.addEventListener('click', () => { st.transicao = num(b.dataset.gtrans); render(); }));
+
+    const bind = (id, key) => { const el = view.querySelector(id); if (el) el.addEventListener('input', (e) => { st[key] = e.target.value; }); };
+    bind('#g-nome', 'nome');
+    bind('#g-min', 'minOpen'); bind('#g-max', 'maxOpen');
+    bind('#g-ov', 'overlapS'); bind('#g-sa', 'startAfterOpenS'); bind('#g-sb', 'stopBeforeCloseS');
+    bind('#g-mr', 'minRunMin'); bind('#g-ms', 'maxStartsHour');
+
     view.querySelector('[data-gsave]').addEventListener('click', save);
+    const delBtn = view.querySelector('[data-gdel]');
+    if (delBtn) delBtn.addEventListener('click', () => { deleteConfirm = true; render(); });
+    const delCancel = view.querySelector('[data-gdelcancel]');
+    if (delCancel) delCancel.addEventListener('click', () => { deleteConfirm = false; render(); });
+    const delConfirm = view.querySelector('[data-gdelconfirm]');
+    if (delConfirm) delConfirm.addEventListener('click', async () => {
+      const r = await postJson('/groups/delete', { id: num(st.id) });
+      if (r.ok) renderGruposInterlocks().catch(() => {});
+      else alert('Falha ao excluir: ' + ((r.body && Array.isArray(r.body.errors)) ? r.body.errors.join(', ') : 'erro'));
+    });
   }
 
   async function save() {
     const body = {
       id: num(st.id),
-      nome: view.querySelector('#g-nome').value.slice(0, 15),
-      bombaZoneId: num(view.querySelector('#g-bomba').value),
+      nome: String(st.nome || '').slice(0, 15),
+      bombaZoneId: num(st.bombaZoneId),
       zonas: st.zonas,
-      minOpen: num(view.querySelector('#g-min').value),
-      maxOpen: num(view.querySelector('#g-max').value),
-      transicao: num(view.querySelector('#g-trans').value),
-      overlapS: num(view.querySelector('#g-ov').value),
-      startAfterOpenS: num(view.querySelector('#g-sa').value),
-      stopBeforeCloseS: num(view.querySelector('#g-sb').value),
-      minRunMin: num(view.querySelector('#g-mr').value),
-      maxStartsHour: num(view.querySelector('#g-ms').value),
+      minOpen: num(st.minOpen),
+      maxOpen: num(st.maxOpen),
+      transicao: num(st.transicao),
+      overlapS: num(st.overlapS),
+      startAfterOpenS: num(st.startAfterOpenS),
+      stopBeforeCloseS: num(st.stopBeforeCloseS),
+      minRunMin: num(st.minRunMin),
+      maxStartsHour: num(st.maxStartsHour),
     };
     if (!body.zonas.length) { alert('Selecione ao menos uma zona.'); return; }
     const r = await postJson('/groups', body);
-    if (r.ok) renderGrupos().catch(() => {});
+    if (r.ok) renderGruposInterlocks().catch(() => {});
     else alert('Falha: ' + ((r.body && Array.isArray(r.body.errors)) ? r.body.errors.join(', ') : 'erro'));
   }
 
@@ -3081,10 +3067,9 @@ async function renderMeteo() {
 function renderMais() {
   const items = [
     ['espelhamento', 'Modo Espelhamento', 'Entradas físicas do gateway → saídas dos nós'],
-    ['grupos', 'Grupos hidráulicos', 'Sequenciamento de bomba e válvula mestre'],
+    ['grupos', 'Grupos & Intertravamentos', 'Sequenciamento de bomba e regras de bloqueio'],
     ['niveis', 'Controle de nível', 'Controle de bomba por boia flutuante'],
     ['meteo', 'Meteorologia', 'Supressão por previsão de chuva (Open-Meteo)'],
-    ['intertravamentos', 'Intertravamentos', 'Regras de bloqueio por sensor / simultaneidade'],
     ['sensores', 'Sensores', 'Leituras e nomes por estação'],
     ['gpo', 'Saídas (GPO)', 'Relés/MOSFET: portão, bomba auxiliar, luz, sirene'],
     ['tamper', 'Tamper / manutenção', 'Violação de gabinete e janela de manutenção'],
@@ -3726,10 +3711,9 @@ const RENDER = {
   programs: renderPrograms,
   sensores: renderSensores,
   gpo: renderGpo,
-  grupos: renderGrupos,
+  grupos: renderGruposInterlocks,
   niveis: renderNiveis,
   espelhamento: renderEspelhamento,
-  intertravamentos: renderIntertravamentos,
   auditlog: renderAuditLog,
   tamper: renderTamper,
   cobertura: renderCobertura,
@@ -3743,7 +3727,7 @@ const RENDER = {
 
 // Rótulo mostrado na barra de volta ao entrar numa tela secundária via "Mais".
 const SECTION_LABELS = {
-  espelhamento: 'Espelhamento', grupos: 'Grupos', niveis: 'Nível', intertravamentos: 'Intertravamentos',
+  espelhamento: 'Espelhamento', grupos: 'Grupos & Intertravamentos', niveis: 'Nível',
   sensores: 'Sensores', gpo: 'Saídas (GPO)', tamper: 'Tamper', auditlog: 'Log', cobertura: 'Cobertura',
   malha: 'Malha', wifi: 'Rede Wi-Fi', horario: 'Horário', meteo: 'Meteorologia', sistema: 'Sistema',
 };
