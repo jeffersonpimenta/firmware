@@ -4,7 +4,7 @@
 
 enum class IrrigationRole : uint8_t { ESTACAO = 0, GATEWAY = 1, REPETIDOR = 2, SERVICO = 3 };
 
-// Layout do blob on-disk/radio (180 bytes, ABI-locked v6):
+// Layout do blob on-disk/radio (184 bytes, ABI-locked v7):
 //   0  magic(4) | 4  version(2) | 6  role(1) | 7  numValves(1)
 //   8  boundGateway(4) | 12 hbMinutes(2) | 14 vbatMinAbrirCentiV(2) | 16 maxOpenConfigS(2)
 //  18  cmdRatePerMin(1) | 19 pad0(1) | 20 pulseMs(2)
@@ -18,14 +18,16 @@ enum class IrrigationRole : uint8_t { ESTACAO = 0, GATEWAY = 1, REPETIDOR = 2, S
 // 128  localInterlocks[4]×12(48)
 // --- v6 (Fase 9) ---
 // 176  vbatAvisoCentiV(2) | 178 vbatCriticaCentiV(2)
-// Total = 180.
+// --- v7 (Modo Remoto) ---
+// 180  pinsRemoteLed[2](2) | 182 digitalInBtnMask(1) | 183 digitalInLedIdx(1)
+// Total = 184.
 struct IrrigationSettings {
     static constexpr uint32_t MAGIC = 0x49525231; // "IRR1"
     static constexpr uint8_t MAX_VALVES = 8;
     static constexpr uint8_t MAX_DIGITAL_IN = 4;
 
     uint32_t magic = MAGIC;
-    uint16_t version = 6;
+    uint16_t version = 7;
     uint8_t role = (uint8_t)IrrigationRole::ESTACAO;
     uint8_t numValves = 2;
     uint32_t boundGateway = 0; // 0 = não pareado
@@ -92,17 +94,25 @@ struct IrrigationSettings {
     // para preservar todos os offsets v5.
     uint16_t vbatAvisoCentiV = 1220;   // default = StationMonitor::AVISO_CV
     uint16_t vbatCriticaCentiV = 1180; // default = StationMonitor::CRITICO_CV
+
+    // v7 (Modo Remoto): pinos de LED dedicados + papéis de entrada digital.
+    // Apêndice no FIM — offsets v6 preservados.
+    int8_t pinsRemoteLed[2] = {-1, -1}; // 2 LEDs dedicados de feedback (§modo remoto)
+    uint8_t digitalInBtnMask = 0;       // bit i = entrada digital i é botoeira
+    uint8_t digitalInLedIdx = 0xFF;     // 2 bits por entrada (0..3): slot de LED 0/1, 3=nenhum; default=tudo nenhum
 };
 
 static constexpr size_t IRRIGATION_SETTINGS_V1_SIZE = 40;
 static constexpr size_t IRRIGATION_SETTINGS_V3_SIZE = 52;
 static constexpr size_t IRRIGATION_SETTINGS_V4_SIZE = 128;
 static constexpr size_t IRRIGATION_SETTINGS_V5_SIZE = 176;
+static constexpr size_t IRRIGATION_SETTINGS_V6_SIZE = 180;
 static_assert(sizeof(IrrigationSettings::SensorSlot) == 16, "SensorSlot é ABI on-disk");
 static_assert(sizeof(IrrigationSettings::LocalInterlock) == 12, "LocalInterlock é ABI on-disk");
 static_assert(offsetof(IrrigationSettings, localInterlocks) == 128, "ABI v5");
 
-// ABI lock v6: prefixo v5 (176 B) + vbatAvisoCentiV(2) + vbatCriticaCentiV(2) = 180.
+// ABI lock v7: prefixo v6 (180 B) + pinsRemoteLed[2](2) + digitalInBtnMask(1) + digitalInLedIdx(1) = 184.
+// Prefixo v6 = prefixo v5 (176 B) + vbatAvisoCentiV(2) + vbatCriticaCentiV(2) = 180.
 // Prefixo v5 = prefixo v4 (128 B) + localInterlocks[4×12](48) = 176.
 // Prefixo v4: magic(4)+version(2)+role(1)+numValves(1)+boundGateway(4)+hbMinutes(2)+
 // vbatMinAbrirCentiV(2)+maxOpenConfigS(2)+cmdRatePerMin(1)+pad0(1)+pulseMs(2)+
@@ -112,7 +122,10 @@ static_assert(offsetof(IrrigationSettings, localInterlocks) == 128, "ABI v5");
 // Bump version AND these asserts on any layout change.
 static_assert(offsetof(IrrigationSettings, vbatAvisoCentiV) == 176, "ABI v6");
 static_assert(offsetof(IrrigationSettings, vbatCriticaCentiV) == 178, "ABI v6");
-static_assert(sizeof(IrrigationSettings) == 180, "on-disk settings format is ABI-dependent; bump version on layout change");
+static_assert(offsetof(IrrigationSettings, pinsRemoteLed) == 180, "ABI v7");
+static_assert(offsetof(IrrigationSettings, digitalInBtnMask) == 182, "ABI v7");
+static_assert(offsetof(IrrigationSettings, digitalInLedIdx) == 183, "ABI v7");
+static_assert(sizeof(IrrigationSettings) == 184, "on-disk settings format is ABI-dependent; bump version on layout change");
 
 // Pino de offsets do apêndice v4: drift silencioso de layout vira erro de compilação.
 static_assert(offsetof(IrrigationSettings, pinsGpo) == 52, "ABI v4");
@@ -122,7 +135,19 @@ static_assert(offsetof(IrrigationSettings, latE7) == 56, "ABI v4");
 static_assert(offsetof(IrrigationSettings, lonE7) == 60, "ABI v4");
 static_assert(offsetof(IrrigationSettings, sensores) == 64, "ABI v4");
 
-// Blob v1, v2, v3, v4 ou v5 → struct v5. false = magic/versão/tamanho inválido (out fica intacto).
+// Helpers puros para campos v7 de entrada digital.
+// Retorna true se a entrada digital i é botoeira (bit i de digitalInBtnMask).
+inline bool digitalInIsButton(const IrrigationSettings &s, uint8_t i)
+{
+    return i < IrrigationSettings::MAX_DIGITAL_IN && ((s.digitalInBtnMask >> i) & 1u);
+}
+// Retorna 0 ou 1 (slot de LED) ou 3 (nenhum).
+inline uint8_t digitalInLedSlot(const IrrigationSettings &s, uint8_t i)
+{
+    return (uint8_t)((s.digitalInLedIdx >> (2u * i)) & 0x3u);
+}
+
+// Blob v1, v2, v3, v4, v5, v6 ou v7 → struct v7. false = magic/versão/tamanho inválido (out fica intacto).
 bool migrateIrrigationSettings(const uint8_t *raw, size_t n, IrrigationSettings &out);
 
 // false = arquivo ausente/corrompido; `s` fica com os defaults acima.

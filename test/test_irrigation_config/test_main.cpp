@@ -39,7 +39,7 @@ static void test_migrate_v1_preservesFieldsAndDefaultsNew()
     buildV1Image(img);
     IrrigationSettings s;
     TEST_ASSERT_TRUE(migrateIrrigationSettings(img, sizeof(img), s));
-    TEST_ASSERT_EQUAL_UINT16(6, s.version);
+    TEST_ASSERT_EQUAL_UINT16(7, s.version);
     TEST_ASSERT_EQUAL_UINT8(1, s.role);
     TEST_ASSERT_EQUAL_UINT8(4, s.numValves);
     TEST_ASSERT_EQUAL_HEX32(0xa1b2c3d4, s.boundGateway);
@@ -63,7 +63,7 @@ static void test_migrate_v1_getsDefaultButtonLedPins()
     buildV1Image(img);
     IrrigationSettings out;
     TEST_ASSERT_TRUE(migrateIrrigationSettings(img, sizeof(img), out));
-    TEST_ASSERT_EQUAL_UINT16(6, out.version);
+    TEST_ASSERT_EQUAL_UINT16(7, out.version);
     TEST_ASSERT_EQUAL_INT8(-1, out.pinBtn);
     TEST_ASSERT_EQUAL_INT8(-1, out.pinLed);
 }
@@ -81,7 +81,7 @@ static void test_migrate_v2_getsDefaultButtonLedPins()
     memcpy(raw + 4, &ver2, 2);
     IrrigationSettings out;
     TEST_ASSERT_TRUE(migrateIrrigationSettings(raw, sizeof(raw), out));
-    TEST_ASSERT_EQUAL_UINT16(6, out.version);
+    TEST_ASSERT_EQUAL_UINT16(7, out.version);
     TEST_ASSERT_EQUAL_INT8(-1, out.pinBtn); // v2 não tinha o campo: default
     TEST_ASSERT_EQUAL_INT8(-1, out.pinLed);
 }
@@ -99,7 +99,7 @@ static void test_migrate_v3_passthroughKeepsPins()
     memcpy(raw + 4, &ver3, 2);
     IrrigationSettings out;
     TEST_ASSERT_TRUE(migrateIrrigationSettings(raw, sizeof(raw), out));
-    TEST_ASSERT_EQUAL_UINT16(6, out.version);
+    TEST_ASSERT_EQUAL_UINT16(7, out.version);
     TEST_ASSERT_EQUAL_INT8(0, out.pinBtn);
     TEST_ASSERT_EQUAL_INT8(2, out.pinLed);
 }
@@ -119,7 +119,7 @@ static void test_migrate_v3_passthrough()
     memcpy(raw + 4, &ver3, 2);
     IrrigationSettings out;
     TEST_ASSERT_TRUE(migrateIrrigationSettings(raw, sizeof(raw), out));
-    TEST_ASSERT_EQUAL_UINT16(6, out.version);
+    TEST_ASSERT_EQUAL_UINT16(7, out.version);
     TEST_ASSERT_EQUAL_UINT32(17, out.configEpoch);
     TEST_ASSERT_EQUAL_INT8(36, out.pinsDigitalIn[1]);
     TEST_ASSERT_EQUAL_UINT8(0b0010, out.digitalInActiveLow);
@@ -143,7 +143,7 @@ static void test_migrate_v2_preservesFieldsResetsPins()
     memcpy(raw + 4, &ver2, 2);
     IrrigationSettings out;
     TEST_ASSERT_TRUE(migrateIrrigationSettings(raw, sizeof(raw), out));
-    TEST_ASSERT_EQUAL_UINT16(6, out.version);
+    TEST_ASSERT_EQUAL_UINT16(7, out.version);
     TEST_ASSERT_EQUAL_UINT32(17, out.configEpoch);
     TEST_ASSERT_EQUAL_UINT8(5, out.numValves);
     TEST_ASSERT_EQUAL_INT8(36, out.pinsDigitalIn[2]);
@@ -222,7 +222,7 @@ static void test_migrate_v3_to_v4()
 
     IrrigationSettings out;
     TEST_ASSERT_TRUE(migrateIrrigationSettings(raw, IRRIGATION_SETTINGS_V3_SIZE, out));
-    TEST_ASSERT_EQUAL_UINT16(6, out.version);
+    TEST_ASSERT_EQUAL_UINT16(7, out.version);
     TEST_ASSERT_EQUAL_UINT8(3, out.numValves);
     TEST_ASSERT_EQUAL_UINT32(9, out.configEpoch);
     // Campos novos em default
@@ -236,7 +236,7 @@ static void test_migrate_v3_to_v4()
 
 static void test_v5_roundtrip_and_size()
 {
-    TEST_ASSERT_EQUAL_size_t(180, sizeof(IrrigationSettings));
+    TEST_ASSERT_EQUAL_size_t(184, sizeof(IrrigationSettings));
     IrrigationSettings s;
     s.sensores[1] = {36, 1, 0, 30, 0, 300, 3800, 0, 1000, 1, 0}; // analógico bar
     s.pinsGpo[0] = 27;
@@ -267,21 +267,21 @@ static void test_defaultStruct_bytesDeterministic()
 
 static void test_v5_size_and_offsets()
 {
-    TEST_ASSERT_EQUAL_UINT32(180, sizeof(IrrigationSettings));
+    TEST_ASSERT_EQUAL_UINT32(184, sizeof(IrrigationSettings));
     TEST_ASSERT_EQUAL_UINT32(12, sizeof(IrrigationSettings::LocalInterlock));
     TEST_ASSERT_EQUAL_UINT32(128, offsetof(IrrigationSettings, localInterlocks));
     IrrigationSettings s;
-    TEST_ASSERT_EQUAL_UINT16(6, s.version);
+    TEST_ASSERT_EQUAL_UINT16(7, s.version);
 }
 
-// Fase 9 (v6): defaults, tamanho e offsets dos limiares de bateria.
+// Fase 9 (v6→v7): defaults, tamanho e offsets dos limiares de bateria (v6 preservados).
 static void test_v6_defaults_and_size()
 {
     IrrigationSettings s;
-    TEST_ASSERT_EQUAL_UINT16(6, s.version);
+    TEST_ASSERT_EQUAL_UINT16(7, s.version);
     TEST_ASSERT_EQUAL_UINT16(1220, s.vbatAvisoCentiV);
     TEST_ASSERT_EQUAL_UINT16(1180, s.vbatCriticaCentiV);
-    TEST_ASSERT_EQUAL_UINT32(180, sizeof(IrrigationSettings));
+    TEST_ASSERT_EQUAL_UINT32(184, sizeof(IrrigationSettings));
     TEST_ASSERT_EQUAL_UINT32(176, offsetof(IrrigationSettings, vbatAvisoCentiV));
     TEST_ASSERT_EQUAL_UINT32(178, offsetof(IrrigationSettings, vbatCriticaCentiV));
 }
@@ -298,7 +298,7 @@ static void test_migrate_v5_to_v6_fills_defaults()
     memcpy(raw + 4, &ver5, 2);
     IrrigationSettings out;
     TEST_ASSERT_TRUE(migrateIrrigationSettings(raw, IRRIGATION_SETTINGS_V5_SIZE, out));
-    TEST_ASSERT_EQUAL_UINT16(6, out.version);
+    TEST_ASSERT_EQUAL_UINT16(7, out.version);
     TEST_ASSERT_EQUAL_UINT16(1220, out.vbatAvisoCentiV);
     TEST_ASSERT_EQUAL_UINT16(1180, out.vbatCriticaCentiV);
     TEST_ASSERT_EQUAL_INT32(-221234560, out.latE7);
@@ -328,12 +328,35 @@ static void test_v4_blob_migrates_to_v5()
     uint16_t ver = 4; memcpy(raw + 4, &ver, 2); // garante version=4 no blob
     IrrigationSettings out;
     TEST_ASSERT_TRUE(migrateIrrigationSettings(raw, 128, out));
-    TEST_ASSERT_EQUAL_UINT16(6, out.version);
+    TEST_ASSERT_EQUAL_UINT16(7, out.version);
     TEST_ASSERT_EQUAL_UINT8(3, out.numValves);
     TEST_ASSERT_EQUAL_INT8(34, out.sensores[0].pino);
     TEST_ASSERT_EQUAL_UINT8(0, out.localInterlocks[0].sensorIdx);
     TEST_ASSERT_EQUAL_UINT8(0, out.localInterlocks[0].saidasValvMask); // inativo
     TEST_ASSERT_EQUAL_UINT8(0, out.localInterlocks[0].saidasGpoMask);
+}
+
+// v7 (Modo Remoto): blob v6 (180 B) migra para v7 com defaults dos campos novos.
+static void test_migrate_v6_to_v7()
+{
+    IrrigationSettings d;
+    d.version = 6;
+    uint8_t raw[180];
+    memcpy(raw, &d, 180);
+    IrrigationSettings out;
+    TEST_ASSERT_TRUE(migrateIrrigationSettings(raw, 180, out));
+    TEST_ASSERT_EQUAL_UINT16(7, out.version);
+    TEST_ASSERT_EQUAL_INT8(-1, out.pinsRemoteLed[0]);
+    TEST_ASSERT_EQUAL_INT8(-1, out.pinsRemoteLed[1]);
+    TEST_ASSERT_EQUAL_UINT8(0, out.digitalInBtnMask);
+    TEST_ASSERT_EQUAL_UINT8(3, digitalInLedSlot(out, 0)); // 3 = nenhum por default
+    TEST_ASSERT_FALSE(digitalInIsButton(out, 0));
+}
+
+// v7 (Modo Remoto): struct v7 tem exatamente 184 bytes.
+static void test_settings_v7_size()
+{
+    TEST_ASSERT_EQUAL_UINT(184, sizeof(IrrigationSettings));
 }
 
 void setup()
@@ -358,6 +381,8 @@ void setup()
     RUN_TEST(test_migrate_v5_to_v6_fills_defaults);
     RUN_TEST(test_migrate_v5_wrongSize_rejected_v6);
     RUN_TEST(test_v4_blob_migrates_to_v5);
+    RUN_TEST(test_migrate_v6_to_v7);
+    RUN_TEST(test_settings_v7_size);
     exit(UNITY_END());
 }
 
