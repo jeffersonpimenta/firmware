@@ -3218,12 +3218,6 @@ function rmtEditHtml() {
     return `<button data-rmttriginput="${idx}" style="cursor:pointer;border:1.5px solid ${border};padding:7px 12px;border-radius:999px;background:${bg};color:${color};font-size:12.5px;font-weight:600;box-shadow:${shadow};">Entrada ${idx + 1}</button>`;
   }).join('');
 
-  // Tags dos gatilhos selecionados
-  const triggerTags = triggers.map((t) => {
-    const nodeName = rmtNodeLabel(t.node, stations, selfNode);
-    return `<span style="display:inline-flex;align-items:center;gap:5px;background:oklch(0.47 0.1 150 / 0.1);border:1px solid oklch(0.47 0.1 150 / 0.3);border-radius:999px;padding:4px 10px;font-size:12px;font-weight:600;color:oklch(0.47 0.1 150);">${esc(nodeName + ' · Entrada ' + (num(t.inputIdx) + 1))}<button data-rmtremtrig="${num(t.node)}" style="cursor:pointer;border:none;background:transparent;color:oklch(0.47 0.1 150);font-size:14px;line-height:1;padding:0 0 0 2px;">×</button></span>`;
-  }).join('');
-
   // Nós para saída-alvo (gateway + estações)
   const targetNodePills = allNodes.map((n) => {
     const sel = num(n.node) === num(d.targetPickNode);
@@ -3304,10 +3298,9 @@ function rmtEditHtml() {
           ${triggerNodePills}
         </div>
         <div style="font-size:10px;font-weight:700;color:oklch(0.6 0.006 100);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:5px;">Entrada</div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:${triggers.length ? '10px' : '0'};">
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
           ${triggerInputPills}
         </div>
-        ${triggers.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px;">${triggerTags}</div>` : ''}
       </div>
 
       <div>
@@ -3411,15 +3404,6 @@ function rmtWire() {
         triggers.push({ node: pickNode, inputIdx, ledSlot: 255 });
       }
       rmtUI.draft.triggers = triggers;
-      rmtRender();
-    });
-  });
-
-  // Remover gatilho via tag ×
-  view.querySelectorAll('[data-rmtremtrig]').forEach((b) => {
-    b.addEventListener('click', () => {
-      const nodeId = num(b.dataset.rmtremtrig);
-      rmtUI.draft.triggers = (rmtUI.draft.triggers || []).filter((t) => num(t.node) !== nodeId);
       rmtRender();
     });
   });
