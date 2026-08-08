@@ -898,6 +898,88 @@ static void hMirrorMappingDelete(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, buf);
 }
 
+// ---------------------------------------------------------------------------
+// Modo Remoto (Task 8): 4 endpoints CI-only. Espelham hMirror/hMirrorMapping/hMirrorMappingDelete.
+// Gateados por gwReady() (role==GATEWAY verificado internamente pelo módulo).
+// ---------------------------------------------------------------------------
+
+// GET /api/irrigation/remote — estado ao vivo das saídas remotas (dedup por targetZoneId)
+static void hRemote(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!gwReady()) {
+        res->setStatusCode(404);
+        return;
+    }
+    char buf[1024];
+    size_t n = irrigationModule->remoteBuildStatus(buf, sizeof(buf));
+    if (!n) {
+        res->setStatusCode(500);
+        return;
+    }
+    sendJson(res, buf);
+}
+
+// POST /api/irrigation/remote — upsert de associação botoeira→saída  {id?,enabled?,targetZoneId,triggers:[...]}
+static void hRemoteUpsert(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!gwReady()) {
+        res->setStatusCode(404);
+        return;
+    }
+    char body[512];
+    size_t nb = readBody(req, body, sizeof(body));
+    if (!irrigationModule->remoteApplyUpsert(body, nb)) {
+        sendJson(res, "{\"errors\":[\"requisição inválida ou zona inexistente\"]}", 400);
+        return;
+    }
+    char buf[1024];
+    size_t n = irrigationModule->remoteBuildStatus(buf, sizeof(buf));
+    if (!n) {
+        res->setStatusCode(500);
+        return;
+    }
+    sendJson(res, buf);
+}
+
+// POST /api/irrigation/remote/delete — remove associação por id  {id:1..255}
+static void hRemoteDelete(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!gwReady()) {
+        res->setStatusCode(404);
+        return;
+    }
+    char body[128];
+    size_t nb = readBody(req, body, sizeof(body));
+    if (!irrigationModule->remoteApplyDelete(body, nb)) {
+        sendJson(res, "{\"errors\":[\"associação inexistente\"]}", 400);
+        return;
+    }
+    char buf[1024];
+    size_t n = irrigationModule->remoteBuildStatus(buf, sizeof(buf));
+    if (!n) {
+        res->setStatusCode(500);
+        return;
+    }
+    sendJson(res, buf);
+}
+
+// POST /api/irrigation/remote/command — toggle manual da saída  {targetZoneId:1..255}
+static void hRemoteCommand(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!gwReady()) {
+        res->setStatusCode(404);
+        return;
+    }
+    char body[128];
+    size_t nb = readBody(req, body, sizeof(body));
+    if (!irrigationModule->remoteRunCommand(body, nb)) {
+        sendJson(res, "{\"errors\":[\"zona inexistente ou comando inválido\"]}", 400);
+        return;
+    }
+    sendJson(res, "{\"ok\":true}");
+}
+
 // POST /api/irrigation/import — restaura as 4 tabelas de config de um envelope de backup (§5.5).
 // NÃO toca PSK/canal; NÃO reinicializa; NÃO bumpa epoch das estações. CI-only.
 static void hImport(HTTPRequest *req, HTTPResponse *res)
@@ -1185,6 +1267,11 @@ void registerIrrigationHandlers(HTTPServer *server)
     server->registerNode(new ResourceNode("/api/irrigation/mirror", "POST", &hMirrorToggle));
     server->registerNode(new ResourceNode("/api/irrigation/mirror/mapping", "POST", &hMirrorMapping));
     server->registerNode(new ResourceNode("/api/irrigation/mirror/mapping/delete", "POST", &hMirrorMappingDelete));
+    // Modo Remoto (Task 8): estado ao vivo / upsert / delete / comando manual. CI-only.
+    server->registerNode(new ResourceNode("/api/irrigation/remote", "GET", &hRemote));
+    server->registerNode(new ResourceNode("/api/irrigation/remote", "POST", &hRemoteUpsert));
+    server->registerNode(new ResourceNode("/api/irrigation/remote/delete", "POST", &hRemoteDelete));
+    server->registerNode(new ResourceNode("/api/irrigation/remote/command", "POST", &hRemoteCommand));
     // Sistema restore: importa tabelas de config de um envelope de backup (NÃO toca PSK). CI-only.
     server->registerNode(new ResourceNode("/api/irrigation/import", "POST", &hImport));
     // Fase 8b: export §5.5 completo (PSK + tabelas) p/ o cofre do device SERVICO

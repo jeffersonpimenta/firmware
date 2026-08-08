@@ -4344,3 +4344,45 @@ bool IrrigationModule::gwRunRemoteCommand(uint8_t targetZoneId)
     gwPushRemoteLed();
     return true;
 }
+
+// ---------------------------------------------------------------------------
+// Modo Remoto (Task 8): acessores públicos para os endpoints CI-only.
+// Espelham gwBuildMirror / gwApplyMirrorMapping / gwDeleteMirrorMapping.
+// ---------------------------------------------------------------------------
+
+size_t IrrigationModule::remoteBuildStatus(char *buf, size_t cap)
+{
+    bool zoneOpenById[256] = {};
+    size_t cnt = gateway.zones.count();
+    for (size_t i = 0; i < cnt; i++) {
+        const Zone *z = gateway.zones.zoneAt(i);
+        if (z)
+            zoneOpenById[z->id] = gwZoneIsOpen(z->id);
+    }
+    return IrrigationWeb::buildRemoteStatus(buf, cap, gateway.remoteButtons, gateway.zones,
+                                            zoneOpenById);
+}
+
+bool IrrigationModule::remoteApplyUpsert(const char *json, size_t n)
+{
+    IrrigationWeb::RemoteUpsertReq u;
+    if (!IrrigationWeb::parseRemoteUpsert(json, n, u))
+        return false;
+    return gwApplyRemoteUpsert(u);
+}
+
+bool IrrigationModule::remoteApplyDelete(const char *json, size_t n)
+{
+    uint8_t id = 0;
+    if (!IrrigationWeb::parseRemoteDelete(json, n, id))
+        return false;
+    return gwApplyRemoteDelete(id);
+}
+
+bool IrrigationModule::remoteRunCommand(const char *json, size_t n)
+{
+    uint8_t targetZoneId = 0;
+    if (!IrrigationWeb::parseRemoteCommand(json, n, targetZoneId))
+        return false;
+    return gwRunRemoteCommand(targetZoneId);
+}
