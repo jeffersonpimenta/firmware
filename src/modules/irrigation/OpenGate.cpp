@@ -14,6 +14,10 @@ bool OpenGate::isQueued(uint8_t zoneId) const {
     for (size_t i = 0; i < qSize; i++) if (queue[(qHead + i) % MAX_QUEUE].zoneId == zoneId) return true;
     return false;
 }
+bool OpenGate::isOpen(uint8_t zoneId) const {
+    for (uint8_t z : open) if (z == zoneId) return true;
+    return false;
+}
 OpenGate::Decision OpenGate::request(uint8_t zoneId, uint16_t durationS) {
     for (uint8_t z : open) if (z == zoneId) return Decision::ADMIT; // renovação idempotente
     if (hasCapacity()) { markOpen(zoneId); return Decision::ADMIT; }

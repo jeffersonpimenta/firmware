@@ -19,6 +19,7 @@ class OpenGate {
     Pending nextAdmittable();          // {0,0} = nada a admitir agora; senão desenfileira 1
     size_t openCount() const;
     bool isQueued(uint8_t zoneId) const;
+    bool isOpen(uint8_t zoneId) const; // true se a zona está registrada como aberta
 
   private:
     uint8_t open[MAX_OPEN] = {0};

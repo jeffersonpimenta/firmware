@@ -4,6 +4,7 @@
 // Os membros são públicos para que o módulo acesse diretamente sem getters desnecessários.
 
 #include "modules/irrigation/CommandTracker.h"
+#include "modules/irrigation/RemoteButtonTable.h"
 #include "modules/irrigation/GatewayTables.h"
 #include "modules/irrigation/HydraulicGroupEngine.h"
 #include "modules/irrigation/HydraulicGroupTable.h"
@@ -46,4 +47,6 @@ struct IrrigationGateway {
     WeatherConfig weatherConfig;
     WeatherRuleTable weatherRules;
     WeatherCache weatherCache; // RAM; preenchido pelo WeatherClient
+    // Modo Remoto: tabela de associações botoeira→saída (Task 6).
+    RemoteButtonTable remoteButtons;
 };

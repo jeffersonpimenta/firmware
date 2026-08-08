@@ -8,7 +8,8 @@ enum class AuditOrigin : uint8_t {
     ENTRADA_FISICA, INTERTRAVAMENTO, FAILSAFE_TIMER, SERVICO,
     GRUPO_HIDRAULICO, // = 9 (append-only ABI; rótulo JS no 7b)
     NIVEL,            // = 10 (controle de nível por boia) — append-only
-    CLIMA             // = 11 (supressão por previsão meteorológica) — append-only
+    CLIMA,            // = 11 (supressão por previsão meteorológica) — append-only
+    MODO_REMOTO       // = 12 (botoeira remota / toggle por botão de campo) — append-only
 };
 // Valores são ABI persistida (log em flash) e contrato com os rótulos do JS (portal/app.js):
 // só APPEND no fim, nunca reordenar/remover. FACTORY_RESET (log é apagado no reset, não se

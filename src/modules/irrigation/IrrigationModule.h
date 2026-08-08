@@ -24,6 +24,8 @@
 #include "modules/irrigation/ServicePortalApi.h" // Fase 8c: tipos/builders do portal SERVICO
 #include "modules/irrigation/LittleFsProfileStore.h"
 #include "modules/irrigation/WeatherClient.h"
+#include "modules/irrigation/RemoteButtonEdge.h"
+#include "modules/irrigation/RemoteLedFsm.h"
 
 // Forward-decl da cola web (definida em IrrigationWebApi.h, incluída só no .cpp).
 namespace IrrigationWeb
@@ -44,6 +46,8 @@ struct WifiScanCtx;
 struct WifiConnectReq;
 struct WifiConnectCtx;
 struct WifiToggleReq;
+// Modo Remoto
+struct RemoteUpsertReq;
 }
 
 // Saída de nível (relé/MOSFET) dos GPOs.
@@ -150,6 +154,11 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     bool gwSyncNtpNow();                   // dispara NTP; false se WiFi STA down
 
     // Supressão meteorológica (Open-Meteo) — Task 10.
+    // Modo Remoto (Task 6): CRUD de associações botoeira→saída.
+    bool gwApplyRemoteUpsert(const IrrigationWeb::RemoteUpsertReq &u); // upsert + save + push LED
+    bool gwApplyRemoteDelete(uint8_t id);                              // removeById + save + recompute cfg
+    bool gwRunRemoteCommand(uint8_t targetZoneId);                     // toggle manual (botão "Acionar" da UI)
+
     bool gwWeatherSetConfig(uint8_t enabled, int32_t latE7, int32_t lonE7);
     uint8_t gwWeatherUpsertRule(const WeatherRule &r); // retorna id atribuído (0=falha/sem espaço)
     bool gwWeatherDeleteRule(uint8_t id);
@@ -378,6 +387,38 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     // Janela de manutenção do tamper (Fase 6b Task 15): suprime EV_TAMPER até este instante.
     // 0 = janela fechada. Combinado com portal.apShouldBeUp() por OR.
     uint32_t tamperMaintUntilMs = 0;
+
+    // ── Modo Remoto (Task 6/7) ────────────────────────────────────────────────
+    // Detector de borda de botão local (compartilhado gateway e estação).
+    RemoteButtonEdge _btnEdge[IrrigationSettings::MAX_DIGITAL_IN];
+    // FSM dos 2 LEDs de feedback local (gateway tem pinsRemoteLed[]; estação Task 7 reusa).
+    RemoteLedFsm _remoteLed[2];
+    // Cache change-driven: último estado de LEDs por nó-gatilho (até 16 entradas).
+    static constexpr size_t LED_CACHE_MAX = 16;
+    struct LedCacheEntry { uint32_t node = 0; uint8_t states = 0; };
+    LedCacheEntry _ledCache[LED_CACHE_MAX];
+    uint8_t _ledCacheCount = 0;
+    // Lê/atualiza o cache node→states; retorna 0xFF se node não está no cache.
+    uint8_t _ledCacheLookup(uint32_t node) const;
+    void _ledCacheSet(uint32_t node, uint8_t states);
+    // Persistência da tabela de associações.
+    bool loadRemoteButtons();
+    bool saveRemoteButtons();
+    // Estado de zona: authoritative open-state (openGate para zonas livres; groupEngine para zonas de grupo).
+    bool gwZoneIsOpen(uint8_t zoneId) const;
+    // Handlers de botoeira remota.
+    void handleRemoteTrigger(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
+    void gwFireRemote(uint32_t node, uint8_t inputIdx);
+    void gwPushRemoteLed(uint8_t targetZoneId);
+    void applyLocalRemoteLeds(uint8_t states);
+    // Apply-helpers chamados pelo CRUD de associações (endpoints Task 8).
+    uint8_t gwAllocRemoteId() const;
+    void gwPushStationBtnConfig(const RemoteAssoc &a);
+    // Recomputa e grava btnMask/ledIdx para um nó-gatilho a partir da tabela inteira.
+    void gwRecomputeNodeBtnConfig(uint32_t node);
+    // Abertura/fechamento pelo caminho manual (extrai helper para reuso sem duplicar coreografia).
+    void gwRunCommandOpen(uint8_t zoneId);
+    void gwRunCommandClose(uint8_t zoneId);
 };
 
 extern IrrigationModule *irrigationModule;

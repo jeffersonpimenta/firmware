@@ -36,6 +36,18 @@ bool CommandTracker::onAck(uint32_t node, uint32_t ackedSeq)
     return false; // não encontrado
 }
 
+bool CommandTracker::peekZone(uint32_t node, uint32_t seq, uint8_t &zoneIdOut, uint8_t &actionOut) const
+{
+    for (const auto &slot : slots) {
+        if (slot.inUse && slot.node == node && slot.seq == seq) {
+            zoneIdOut = slot.zoneId;
+            actionOut = slot.action;
+            return true;
+        }
+    }
+    return false;
+}
+
 bool CommandTracker::retrack(uint32_t newSeq, const Retry &r, uint32_t nowMs)
 {
     // Procura slot vazio (RESEND já removeu a pendência anterior)

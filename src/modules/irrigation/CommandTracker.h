@@ -26,6 +26,9 @@ class CommandTracker
     // Confirma recebimento do ACK. Retorna true se encontrou e removeu a pendência.
     bool onAck(uint32_t node, uint32_t ackedSeq);
 
+    // Lê zoneId e action de um slot pendente sem removê-lo. Retorna false se não encontrou.
+    bool peekZone(uint32_t node, uint32_t seq, uint8_t &zoneIdOut, uint8_t &actionOut) const;
+
     // Registra reenvio após timeout (chamado após glue reenvia com novo seq).
     // Retorna false se não há slot livre (a perda silenciosa esconderia um comando de segurança).
     bool retrack(uint32_t newSeq, const Retry &r, uint32_t nowMs);

@@ -55,6 +55,9 @@ static const char *GW_WEATHERCFG_PATH = "/prefs/irrigation_weathercfg.dat";
 static const char *GW_WEATHERCFG_TMP  = "/prefs/irrigation_weathercfg.tmp";
 static const char *GW_WEATHERRULES_PATH = "/prefs/irrigation_weatherrules.dat";
 static const char *GW_WEATHERRULES_TMP  = "/prefs/irrigation_weatherrules.tmp";
+// Modo Remoto (Task 6): tabela de associações botoeira→saída.
+static const char *GW_REMOTE_PATH = "/prefs/irrigation-remote.dat";
+static const char *GW_REMOTE_TMP  = "/prefs/irrigation-remote.tmp";
 
 // Cooldown de reconciliação de epoch por nó (30 s)
 static constexpr uint32_t EPOCH_COOLDOWN_MS = 30000;
@@ -266,6 +269,7 @@ IrrigationModule::IrrigationModule()
         loadGroups();                // Fase 7a: carrega grupos hidráulicos salvos
         loadLevels();                // controle de nível: carrega regras salvas
         loadWeather();               // config + regras de supressão climática
+        loadRemoteButtons();         // Modo Remoto (Task 6): associações botoeira→saída
         gwRebuildLocalInterlocks();  // Fase 6b Task 14b: monta réplicas locais v5 e empurra via epoch
         // Fase 6b Task 16: inicializa o log de auditoria persistente em flash do gateway.
         auditFlashStore.ensureAllocated();
@@ -389,6 +393,12 @@ ProcessMessage IrrigationModule::handleReceived(const meshtastic_MeshPacket &mp)
             handleRemoteCmd(mp, h);
         else
             LOG_DEBUG("Irrigation: REMOTE_CMD from 0x%08x ignored (role=%d)", mp.from, settings.role);
+        break;
+    case MSG_REMOTE_TRIGGER:
+        if (settings.role == (uint8_t)IrrigationRole::GATEWAY)
+            handleRemoteTrigger(mp, h);
+        else
+            LOG_DEBUG("Irrigation: REMOTE_TRIGGER from 0x%08x ignored (role=%d)", mp.from, settings.role);
         break;
     case MSG_CMD_MAINT:
         // Estação recebe janela de manutenção do tamper enviada pelo gateway (Fase 6b Task 15).
@@ -1978,6 +1988,7 @@ bool IrrigationModule::saveGatewayState()
         size_t n = gateway.mirror.serialize(buf, sizeof(buf));
         ok &= stagedWrite(GW_MIRROR_TMP, GW_MIRROR_PATH, buf, n);
     }
+    ok &= saveRemoteButtons(); // Modo Remoto: persiste associações botoeira→saída
     return ok;
 }
 
@@ -3475,6 +3486,25 @@ void IrrigationModule::gwTick()
         }
     }
 
+    // --- Botoeira local do gateway (Modo Remoto Task 6 Step 6) ---
+    for (uint8_t i = 0; i < IrrigationSettings::MAX_DIGITAL_IN; i++) {
+        if (settings.pinsDigitalIn[i] < 0 || !digitalInIsButton(settings, i))
+            continue;
+#ifndef ARCH_PORTDUINO
+        bool raw = (digitalRead(settings.pinsDigitalIn[i]) == HIGH);
+#else
+        bool raw = false;
+#endif
+        bool activeLow = (settings.digitalInActiveLow >> i) & 1;
+        bool pressed = activeLow ? !raw : raw;
+        if (_btnEdge[i].update(pressed, millis())) {
+            uint8_t slot = digitalInLedSlot(settings, i);
+            if (slot <= 1)
+                _remoteLed[slot].onPress(millis());
+            gwFireRemote(nodeDB->getNodeNum(), i);
+        }
+    }
+
     // --- Retries (tracker) ---
     for (;;) {
         CommandTracker::Retry r = gateway.tracker.poll(millis());
@@ -3662,9 +3692,16 @@ void IrrigationModule::confirmCommand(uint32_t node, uint32_t seq, uint8_t reaso
         // Fase 7a: NACK é FALHA — o motor de grupos NÃO deve avançar como se tivesse ligado.
         gateway.groupEngine.onNack(node, seq);
     } else {
+        // Peek zoneId ANTES de onAck remover o slot (para gwPushRemoteLed abaixo).
+        uint8_t ackZoneId = 0, ackAction_ = 0; // ackAction_ não usado; peek precisa do out-param
+        bool hadPending = gateway.tracker.peekZone(node, seq, ackZoneId, ackAction_);
+        (void)ackAction_;
         gateway.tracker.onAck(node, seq);
         // Fase 7a: só o ACK OK avança o handshake do motor de grupos.
         gateway.groupEngine.onAck(node, seq);
+        // Modo Remoto: atualiza LED de feedback quando o estado de zona muda por qualquer origem.
+        if (hadPending && ackZoneId != 0 && gateway.remoteButtons.count() > 0)
+            gwPushRemoteLed(ackZoneId);
     }
 }
 
@@ -3872,3 +3909,345 @@ void IrrigationModule::portalWifiConnectProgress(IrrigationWeb::WifiConnectCtx &
 void IrrigationModule::portalWifiForget() {}
 void IrrigationModule::portalWifiToggle(bool) {}
 #endif
+
+// ---------------------------------------------------------------------------
+// Modo Remoto (Task 6): persistência da tabela de associações botoeira→saída.
+// ---------------------------------------------------------------------------
+
+bool IrrigationModule::loadRemoteButtons()
+{
+    size_t n = 0;
+    uint8_t buf[6 + RemoteButtonTable::MAX * 27];
+    if (!stagedRead(GW_REMOTE_PATH, buf, sizeof(buf), n))
+        return false; // arquivo ausente na primeira inicialização — ok, tabela vazia
+    return gateway.remoteButtons.deserialize(buf, n);
+}
+
+bool IrrigationModule::saveRemoteButtons()
+{
+    uint8_t buf[6 + RemoteButtonTable::MAX * 27];
+    size_t n = gateway.remoteButtons.serialize(buf, sizeof(buf));
+    return stagedWrite(GW_REMOTE_TMP, GW_REMOTE_PATH, buf, n);
+}
+
+// ---------------------------------------------------------------------------
+// Modo Remoto (Task 6): estado autoritativo de zona aberta.
+// Fontes: openGate (zonas livres) + groupEngine.currentZone (zonas de grupo).
+// ---------------------------------------------------------------------------
+
+bool IrrigationModule::gwZoneIsOpen(uint8_t zoneId) const
+{
+    // Fonte 1: openGate rastreia zonas livres (não em grupo).
+    if (gateway.openGate.isOpen(zoneId))
+        return true;
+    // Fonte 2: groupEngine — verifica se esta é a zona corrente aberta em algum grupo.
+    for (size_t gi = 0; gi < gateway.groups.count(); gi++) {
+        const HydraulicGroup *hg = gateway.groups.groupAt(gi);
+        if (!hg)
+            break;
+        if (gateway.groupEngine.currentZone(hg->id) == zoneId &&
+            gateway.groupEngine.stateOf(hg->id) == HydraulicGroupEngine::State::RUNNING)
+            return true;
+    }
+    return false;
+}
+
+// ---------------------------------------------------------------------------
+// Modo Remoto (Task 6 Step 4): handler de MSG_REMOTE_TRIGGER no gateway.
+// ---------------------------------------------------------------------------
+
+void IrrigationModule::handleRemoteTrigger(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h)
+{
+    if (!seqTable.checkAndUpdate(mp.from, h.seq)) {
+        LOG_WARN("Irrigation GW: replayed remote-trigger seq %u from 0x%08x", h.seq, mp.from);
+        return;
+    }
+    if (!senderAuthorized(mp.from, h.flags))
+        return;
+    if (!rateLimiter.allow(millis()))
+        return;
+    IrrigationProto::RemoteTrigger rt;
+    if (!decodeRemoteTrigger(mp.decoded.payload.bytes, mp.decoded.payload.size, rt))
+        return;
+    gwFireRemote(mp.from, rt.inputIdx);
+}
+
+// ---------------------------------------------------------------------------
+// Modo Remoto (Task 6 Step 5): resolve associações e toggla saída.
+// ---------------------------------------------------------------------------
+
+void IrrigationModule::gwRunCommandOpen(uint8_t zoneId)
+{
+    const Zone *z = gateway.zones.byId(zoneId);
+    if (!z)
+        return;
+    if (safeMode)
+        return;
+    if (gateway.interlockEngine.zoneVerdict(z->id).bloqueada)
+        return;
+    uint16_t dur = z->padraoMin > 0 ? (uint16_t)(z->padraoMin * 60) : DEFAULT_MANUAL_OPEN_S;
+    if (z->maxMin > 0 && dur > (uint16_t)(z->maxMin * 60))
+        dur = (uint16_t)(z->maxMin * 60);
+    if (routeZoneToGroup(z->id, true, dur))
+        return;
+    const StationEntry *st = gateway.stations.byNode(z->node);
+    uint8_t attempts = (st && st->retries > 0) ? st->retries : 3;
+    gwSendValveCmd(z->node, z->index, z->tipo, 1, dur, z->id, attempts, AuditOrigin::MODO_REMOTO);
+}
+
+void IrrigationModule::gwRunCommandClose(uint8_t zoneId)
+{
+    const Zone *z = gateway.zones.byId(zoneId);
+    if (!z)
+        return;
+    if (routeZoneToGroup(z->id, false, 0))
+        return;
+    gateway.openGate.release(z->id);
+    gwSendValveCmd(z->node, z->index, z->tipo, 0, 0, z->id, 1, AuditOrigin::MODO_REMOTO);
+}
+
+void IrrigationModule::gwFireRemote(uint32_t node, uint8_t inputIdx)
+{
+    const RemoteAssoc *hits[RemoteButtonTable::MAX];
+    size_t k = gateway.remoteButtons.findByTrigger(node, inputIdx, hits, RemoteButtonTable::MAX);
+    for (size_t i = 0; i < k; i++) {
+        const RemoteAssoc *a = hits[i];
+        if (!a->enabled)
+            continue;
+        if (!gateway.zones.byId(a->targetZoneId))
+            continue;
+        bool on = gwZoneIsOpen(a->targetZoneId);
+        uint8_t action = remoteToggleAction(on);
+        if (action == 1)
+            gwRunCommandOpen(a->targetZoneId);
+        else
+            gwRunCommandClose(a->targetZoneId);
+        gwPushRemoteLed(a->targetZoneId);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Modo Remoto (Task 6 Step 7): push de LED de feedback change-driven.
+// ---------------------------------------------------------------------------
+
+uint8_t IrrigationModule::_ledCacheLookup(uint32_t node) const
+{
+    for (size_t i = 0; i < _ledCacheCount; i++)
+        if (_ledCache[i].node == node)
+            return _ledCache[i].states;
+    return 0xFF;
+}
+
+void IrrigationModule::_ledCacheSet(uint32_t node, uint8_t states)
+{
+    for (size_t i = 0; i < _ledCacheCount; i++) {
+        if (_ledCache[i].node == node) {
+            _ledCache[i].states = states;
+            return;
+        }
+    }
+    if (_ledCacheCount < LED_CACHE_MAX) {
+        _ledCache[_ledCacheCount].node = node;
+        _ledCache[_ledCacheCount].states = states;
+        _ledCacheCount++;
+    }
+}
+
+void IrrigationModule::applyLocalRemoteLeds(uint8_t states)
+{
+    for (uint8_t slot = 0; slot <= 1; slot++) {
+        bool on = (states >> slot) & 1u;
+        _remoteLed[slot].onLedState(on, millis());
+        if (settings.pinsRemoteLed[slot] >= 0) {
+#ifndef ARCH_PORTDUINO
+            digitalWrite((uint8_t)settings.pinsRemoteLed[slot], on ? HIGH : LOW);
+#endif
+        }
+    }
+}
+
+void IrrigationModule::gwPushRemoteLed(uint8_t targetZoneId)
+{
+    // Acumula, por nó-gatilho, o estado de LED consolidado de TODAS as associações.
+    struct NodeLed {
+        uint32_t node;
+        uint8_t states;
+    };
+    NodeLed acc[RemoteButtonTable::MAX * RemoteAssoc::MAX_TRIGGERS];
+    size_t na = 0;
+
+    for (size_t ai = 0; ai < RemoteButtonTable::MAX; ai++) {
+        const RemoteAssoc *a = gateway.remoteButtons.assocAt(ai);
+        if (!a)
+            break;
+        bool on = gwZoneIsOpen(a->targetZoneId);
+        for (size_t ti = 0; ti < RemoteAssoc::MAX_TRIGGERS; ti++) {
+            const RemoteTriggerRef &t = a->triggers[ti];
+            if (t.node == 0 || t.ledSlot > 1)
+                continue;
+            size_t j = 0;
+            for (; j < na; j++)
+                if (acc[j].node == t.node)
+                    break;
+            if (j == na) {
+                if (na >= sizeof(acc) / sizeof(acc[0]))
+                    continue; // sem espaço no acumulador
+                acc[na++] = {t.node, 0};
+            }
+            if (on)
+                acc[j].states |= (uint8_t)(1u << t.ledSlot);
+        }
+    }
+
+    for (size_t j = 0; j < na; j++) {
+        uint8_t prev = _ledCacheLookup(acc[j].node);
+        if (prev != 0xFF && prev == acc[j].states)
+            continue; // sem mudança
+        _ledCacheSet(acc[j].node, acc[j].states);
+        if (acc[j].node == nodeDB->getNodeNum()) {
+            applyLocalRemoteLeds(acc[j].states);
+            continue;
+        }
+        meshtastic_MeshPacket *p = allocDataPacket();
+        p->to = acc[j].node;
+        IrrigationProto::RemoteLed rl;
+        rl.ledStates = acc[j].states;
+        p->decoded.payload.size = (uint16_t)IrrigationProto::encodeRemoteLed(
+            p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), ++txSeq, rl);
+        if (!p->decoded.payload.size) {
+            packetPool.release(p);
+            continue;
+        }
+        service->sendToMesh(p, RX_SRC_LOCAL, false);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Modo Remoto (Task 6 Step 8): helpers de config de botoeira por estação/gateway.
+// ---------------------------------------------------------------------------
+
+uint8_t IrrigationModule::gwAllocRemoteId() const
+{
+    for (uint8_t cand = 1; cand <= (uint8_t)RemoteButtonTable::MAX; cand++)
+        if (!gateway.remoteButtons.byId(cand))
+            return cand;
+    return 0;
+}
+
+// Recomputa btnMask e ledIdx para um nó-gatilho com base na tabela inteira.
+// Limpa bits que não têm mais gatilho registrado (evita entradas órfãs).
+void IrrigationModule::gwRecomputeNodeBtnConfig(uint32_t node)
+{
+    uint8_t btnMask = 0;
+    uint8_t ledIdx = 0xFF; // default: todos os slots = 3 (nenhum)
+
+    for (size_t ai = 0; ai < RemoteButtonTable::MAX; ai++) {
+        const RemoteAssoc *a = gateway.remoteButtons.assocAt(ai);
+        if (!a)
+            break;
+        for (size_t ti = 0; ti < RemoteAssoc::MAX_TRIGGERS; ti++) {
+            const RemoteTriggerRef &t = a->triggers[ti];
+            if (t.node != node)
+                continue;
+            if (t.inputIdx < IrrigationSettings::MAX_DIGITAL_IN) {
+                btnMask |= (uint8_t)(1u << t.inputIdx);
+                if (t.ledSlot <= 1) {
+                    // Limpa os 2 bits do slot de LED para esta entrada e escreve o novo valor.
+                    uint8_t shift = (uint8_t)(2u * t.inputIdx);
+                    ledIdx &= ~(uint8_t)(0x3u << shift);
+                    ledIdx |= (uint8_t)(t.ledSlot << shift);
+                }
+            }
+        }
+    }
+
+    if (node == nodeDB->getNodeNum()) {
+        // Nó local: grava nos settings do próprio gateway.
+        settings.digitalInBtnMask = btnMask;
+        settings.digitalInLedIdx = ledIdx;
+        saveIrrigationSettings(settings);
+    } else {
+        // Estação remota: muta blob desejado + bump epoch + re-push SET_CONFIG.
+        StationEntry *e = gateway.stations.mutableByNode(node);
+        if (!e || e->desiredEpoch == 0)
+            return;
+        IrrigationSettings cfg;
+        if (!migrateIrrigationSettings(e->blob, sizeof(e->blob), cfg))
+            return;
+        cfg.digitalInBtnMask = btnMask;
+        cfg.digitalInLedIdx = ledIdx;
+        memcpy(e->blob, &cfg, sizeof(e->blob));
+        e->desiredEpoch += 1;
+        saveGatewayState();
+        const StationTelemetry *tel = gateway.telemetry.byNode(node);
+        gwReconcileEpoch(node, tel ? tel->configEpoch : 0);
+    }
+}
+
+void IrrigationModule::gwPushStationBtnConfig(const RemoteAssoc &a)
+{
+    // Recomputa para todos os nós-gatilho desta associação.
+    for (size_t ti = 0; ti < RemoteAssoc::MAX_TRIGGERS; ti++) {
+        uint32_t node = a.triggers[ti].node;
+        if (node == 0)
+            continue;
+        gwRecomputeNodeBtnConfig(node);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Modo Remoto (Task 6 Step 8): apply-helpers de CRUD.
+// ---------------------------------------------------------------------------
+
+bool IrrigationModule::gwApplyRemoteUpsert(const IrrigationWeb::RemoteUpsertReq &u)
+{
+    if (!IrrigationWeb::validateRemoteTriggers(u))
+        return false;
+    RemoteAssoc a;
+    a.id = u.id ? u.id : gwAllocRemoteId();
+    if (a.id == 0)
+        return false; // tabela cheia
+    a.enabled = u.enabled;
+    a.targetZoneId = u.targetZoneId;
+    for (size_t i = 0; i < RemoteAssoc::MAX_TRIGGERS; i++)
+        a.triggers[i] = u.triggers[i];
+    if (!gateway.remoteButtons.upsert(a))
+        return false;
+    saveRemoteButtons();
+    gwPushStationBtnConfig(a);
+    gwPushRemoteLed(a.targetZoneId);
+    return true;
+}
+
+bool IrrigationModule::gwApplyRemoteDelete(uint8_t id)
+{
+    const RemoteAssoc *a = gateway.remoteButtons.byId(id);
+    if (!a)
+        return false;
+    // Coleta os nós afetados antes de remover.
+    uint32_t affectedNodes[RemoteAssoc::MAX_TRIGGERS] = {0};
+    for (size_t ti = 0; ti < RemoteAssoc::MAX_TRIGGERS; ti++)
+        affectedNodes[ti] = a->triggers[ti].node;
+    if (!gateway.remoteButtons.removeById(id))
+        return false;
+    saveRemoteButtons();
+    // Recomputa config das estações afetadas (limpa bits órfãos).
+    for (size_t ti = 0; ti < RemoteAssoc::MAX_TRIGGERS; ti++) {
+        if (affectedNodes[ti] != 0)
+            gwRecomputeNodeBtnConfig(affectedNodes[ti]);
+    }
+    return true;
+}
+
+bool IrrigationModule::gwRunRemoteCommand(uint8_t targetZoneId)
+{
+    if (!gateway.zones.byId(targetZoneId))
+        return false;
+    bool on = gwZoneIsOpen(targetZoneId);
+    if (remoteToggleAction(on) == 1)
+        gwRunCommandOpen(targetZoneId);
+    else
+        gwRunCommandClose(targetZoneId);
+    gwPushRemoteLed(targetZoneId);
+    return true;
+}
