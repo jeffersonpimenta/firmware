@@ -447,6 +447,34 @@ static void test_resyncPing_truncated_rejected()
     TEST_ASSERT_FALSE(decodePingSurvey(buf, np - 1, po)); // corta 1 byte do lonE7
 }
 
+static void test_remoteTrigger_roundTrip()
+{
+    uint8_t buf[32];
+    IrrigationProto::RemoteTrigger m{3};
+    size_t n = IrrigationProto::encodeRemoteTrigger(buf, sizeof(buf), 0x1122, m);
+    TEST_ASSERT_TRUE(n > 0);
+    IrrigationProto::Header h;
+    TEST_ASSERT_TRUE(IrrigationProto::decodeHeader(buf, n, h));
+    TEST_ASSERT_EQUAL_UINT8(IrrigationProto::MSG_REMOTE_TRIGGER, h.type);
+    TEST_ASSERT_EQUAL_UINT32(0x1122, h.seq);
+    IrrigationProto::RemoteTrigger out{};
+    TEST_ASSERT_TRUE(IrrigationProto::decodeRemoteTrigger(buf, n, out));
+    TEST_ASSERT_EQUAL_UINT8(3, out.inputIdx);
+    // buffer curto → 0
+    TEST_ASSERT_EQUAL_UINT(0, IrrigationProto::encodeRemoteTrigger(buf, 2, 1, m));
+}
+
+static void test_remoteLed_roundTrip()
+{
+    uint8_t buf[32];
+    IrrigationProto::RemoteLed m{0b10};
+    size_t n = IrrigationProto::encodeRemoteLed(buf, sizeof(buf), 7, m);
+    TEST_ASSERT_TRUE(n > 0);
+    IrrigationProto::RemoteLed out{};
+    TEST_ASSERT_TRUE(IrrigationProto::decodeRemoteLed(buf, n, out));
+    TEST_ASSERT_EQUAL_UINT8(0b10, out.ledStates);
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -479,6 +507,8 @@ void setup()
     RUN_TEST(test_resyncSeq_roundTrip);
     RUN_TEST(test_pingSurvey_roundTrip);
     RUN_TEST(test_resyncPing_truncated_rejected);
+    RUN_TEST(test_remoteTrigger_roundTrip);
+    RUN_TEST(test_remoteLed_roundTrip);
     exit(UNITY_END());
 }
 

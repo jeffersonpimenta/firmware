@@ -36,6 +36,8 @@ enum MsgType : uint8_t {
     MSG_RESYNC_SEQ = 11,
     MSG_REMOTE_CMD = 12,
     MSG_CMD_MAINT = 13, // janela de manutenção do tamper (panel → gateway → estação)
+    MSG_REMOTE_TRIGGER = 14, // entrada digital remota (painel → gateway)
+    MSG_REMOTE_LED = 15,     // estado de LEDs remoto (gateway → painel)
 };
 
 enum AckStatus : uint8_t { ACK_OK = 0, ACK_NACK = 1 };
@@ -88,6 +90,14 @@ struct RemoteCmd {
 
 struct CmdMaint {
     uint16_t durationMin; // 0 = fechar janela agora
+};
+
+struct RemoteTrigger {
+    uint8_t inputIdx; // 0..3
+};
+
+struct RemoteLed {
+    uint8_t ledStates; // bit s = slot de LED s ligado
 };
 
 struct Ack {
@@ -186,6 +196,8 @@ size_t encodePairGrant(uint8_t *buf, size_t len, uint32_t seq, const PairGrant &
 size_t encodeEvento(uint8_t *buf, size_t len, uint32_t seq, const Evento &m);
 size_t encodeRemoteCmd(uint8_t *buf, size_t len, uint32_t seq, const RemoteCmd &m);
 size_t encodeCmdMaint(uint8_t *buf, size_t len, uint32_t seq, const CmdMaint &m);
+size_t encodeRemoteTrigger(uint8_t *buf, size_t len, uint32_t seq, const RemoteTrigger &m);
+size_t encodeRemoteLed(uint8_t *buf, size_t len, uint32_t seq, const RemoteLed &m);
 size_t encodeResyncSeq(uint8_t *buf, size_t len, uint32_t seq, const ResyncSeq &m);
 size_t encodePingSurvey(uint8_t *buf, size_t len, uint32_t seq, const PingSurvey &m);
 
@@ -201,6 +213,8 @@ bool decodePairGrant(const uint8_t *buf, size_t len, PairGrant &out);
 bool decodeEvento(const uint8_t *buf, size_t len, Evento &out);
 bool decodeRemoteCmd(const uint8_t *buf, size_t len, RemoteCmd &out);
 bool decodeCmdMaint(const uint8_t *buf, size_t len, CmdMaint &out);
+bool decodeRemoteTrigger(const uint8_t *buf, size_t len, RemoteTrigger &out);
+bool decodeRemoteLed(const uint8_t *buf, size_t len, RemoteLed &out);
 bool decodeResyncSeq(const uint8_t *buf, size_t len, ResyncSeq &out);
 bool decodePingSurvey(const uint8_t *buf, size_t len, PingSurvey &out);
 

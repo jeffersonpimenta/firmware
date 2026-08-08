@@ -352,6 +352,36 @@ bool decodeRemoteCmd(const uint8_t *buf, size_t len, RemoteCmd &out)
     return r.ok;
 }
 
+size_t encodeRemoteTrigger(uint8_t *buf, size_t len, uint32_t seq, const RemoteTrigger &m)
+{
+    Writer w{buf, len};
+    writeHeader(w, MSG_REMOTE_TRIGGER, seq);
+    w.u8(m.inputIdx);
+    return w.ok ? w.pos : 0;
+}
+
+bool decodeRemoteTrigger(const uint8_t *buf, size_t len, RemoteTrigger &out)
+{
+    Reader r = bodyReader(buf, len);
+    out.inputIdx = r.u8();
+    return r.ok;
+}
+
+size_t encodeRemoteLed(uint8_t *buf, size_t len, uint32_t seq, const RemoteLed &m)
+{
+    Writer w{buf, len};
+    writeHeader(w, MSG_REMOTE_LED, seq);
+    w.u8(m.ledStates);
+    return w.ok ? w.pos : 0;
+}
+
+bool decodeRemoteLed(const uint8_t *buf, size_t len, RemoteLed &out)
+{
+    Reader r = bodyReader(buf, len);
+    out.ledStates = r.u8();
+    return r.ok;
+}
+
 size_t encodeCmdMaint(uint8_t *buf, size_t len, uint32_t seq, const CmdMaint &m)
 {
     Writer w{buf, len};
