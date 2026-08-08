@@ -17,7 +17,8 @@ static void test_edge_debounce_risingOnce()
     TEST_ASSERT_FALSE(e.update(true, 200));  // segurando: sem repetir
     TEST_ASSERT_FALSE(e.update(false, 260)); // soltou (debounce)
     TEST_ASSERT_FALSE(e.update(false, 320)); // estável baixo, rearma
-    TEST_ASSERT_TRUE(e.update(true, 400));   // nova subida (após rearmar)
+    TEST_ASSERT_FALSE(e.update(true, 370));  // nova subida: inicia debounce
+    TEST_ASSERT_TRUE(e.update(true, 425));   // estável ≥50ms → nova borda
 }
 
 static void test_led_fsm()
