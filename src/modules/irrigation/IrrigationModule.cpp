@@ -400,6 +400,9 @@ ProcessMessage IrrigationModule::handleReceived(const meshtastic_MeshPacket &mp)
         else
             LOG_DEBUG("Irrigation: REMOTE_TRIGGER from 0x%08x ignored (role=%d)", mp.from, settings.role);
         break;
+    case MSG_REMOTE_LED:
+        handleRemoteLed(mp, h);
+        break;
     case MSG_CMD_MAINT:
         // Estação recebe janela de manutenção do tamper enviada pelo gateway (Fase 6b Task 15).
         if ((IrrigationRole)settings.role == IrrigationRole::ESTACAO)
@@ -1011,6 +1014,45 @@ int32_t IrrigationModule::runOnce()
         lastHeartbeatMs = millis();
         sendHeartbeat();
     }
+
+    // --- Botoeira local da estação (Modo Remoto Task 7) ---
+    for (uint8_t i = 0; i < IrrigationSettings::MAX_DIGITAL_IN; i++) {
+        if (settings.pinsDigitalIn[i] < 0 || !digitalInIsButton(settings, i))
+            continue;
+#ifndef ARCH_PORTDUINO
+        bool raw = (digitalRead(settings.pinsDigitalIn[i]) == HIGH);
+#else
+        bool raw = false;
+#endif
+        bool activeLow = (settings.digitalInActiveLow >> i) & 1;
+        bool pressed = activeLow ? !raw : raw;
+        if (_btnEdge[i].update(pressed, millis())) {
+            uint8_t slot = digitalInLedSlot(settings, i);
+            if (slot <= 1)
+                _remoteLed[slot].onPress(millis());
+            if (settings.boundGateway != 0) {
+                meshtastic_MeshPacket *p = allocDataPacket();
+                p->to = settings.boundGateway;
+                IrrigationProto::RemoteTrigger rt{i};
+                p->decoded.payload.size = (uint16_t)IrrigationProto::encodeRemoteTrigger(
+                    p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), ++txSeq, rt);
+                if (p->decoded.payload.size)
+                    service->sendToMesh(p, RX_SRC_LOCAL, false);
+                else
+                    packetPool.release(p);
+            }
+        }
+    }
+
+    // --- Drive físico dos LEDs remotos da estação (Modo Remoto Task 7) ---
+    for (uint8_t slot = 0; slot <= 1; slot++) {
+        if (settings.pinsRemoteLed[slot] < 0)
+            continue;
+#ifndef ARCH_PORTDUINO
+        digitalWrite(settings.pinsRemoteLed[slot], _remoteLed[slot].ledOn(millis()) ? HIGH : LOW);
+#endif
+    }
+
     refreshLedMode();
     return 1000; // tick de 1 s mantém o fail-safe responsivo
 }
@@ -3980,6 +4022,23 @@ bool IrrigationModule::gwZoneIsOpen(uint8_t zoneId) const
     if (z->tipo == 1)
         return (tel->gpoStates >> z->index) & 1u;
     return (tel->valveStates >> z->index) & 1u;
+}
+
+// ---------------------------------------------------------------------------
+// Modo Remoto (Task 7): handler de MSG_REMOTE_LED na estação.
+// Aceita somente do gateway vinculado (boundGateway); sem boundGateway, aceita de qualquer nó.
+// ---------------------------------------------------------------------------
+
+void IrrigationModule::handleRemoteLed(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &)
+{
+    // Checagem leve de origem: posse da PSK do canal já garante confiança; isto é defesa extra.
+    if (settings.boundGateway != 0 && mp.from != settings.boundGateway)
+        return;
+    IrrigationProto::RemoteLed rl;
+    if (!decodeRemoteLed(mp.decoded.payload.bytes, mp.decoded.payload.size, rl))
+        return;
+    for (uint8_t s = 0; s < 2; s++)
+        _remoteLed[s].onLedState((rl.ledStates >> s) & 1u, millis());
 }
 
 // ---------------------------------------------------------------------------

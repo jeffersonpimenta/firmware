@@ -407,6 +407,7 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     // Estado de zona: authoritative open-state (openGate para zonas livres; groupEngine para zonas de grupo).
     bool gwZoneIsOpen(uint8_t zoneId) const;
     // Handlers de botoeira remota.
+    void handleRemoteLed(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
     void handleRemoteTrigger(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
     void gwFireRemote(uint32_t node, uint8_t inputIdx);
     void gwPushRemoteLed();
