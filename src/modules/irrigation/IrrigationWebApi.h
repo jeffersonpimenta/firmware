@@ -5,6 +5,7 @@
 #include "modules/irrigation/IrrigationProtocol.h"
 #include "modules/irrigation/LevelControlTable.h"
 #include "modules/irrigation/ProgramScheduler.h"
+#include "modules/irrigation/RemoteButtonTable.h"
 #include "modules/irrigation/StationMonitor.h" // AlertCenter/Alert p/ buildAlerts
 #include "modules/irrigation/SurveyLog.h"
 #include "modules/irrigation/WeatherConfig.h"
@@ -342,5 +343,38 @@ ParseResult parseMirrorMapping(const char *json, size_t len, int8_t &input, uint
 // liveActive[i]: estado ao vivo do GPIO (após inversão de hardware).
 size_t buildMirror(char *buf, size_t cap, bool enabled, const ZoneTable &zones,
                    uint8_t digitalInActiveLow, const bool liveActive[4]);
+
+// ── Modo Remoto — web helpers ─────────────────────────────────────────────────
+
+struct RemoteUpsertReq {
+    uint8_t id = 0;
+    uint8_t enabled = 1;
+    uint8_t targetZoneId = 0;
+    RemoteTriggerRef triggers[4];
+    uint8_t triggerCount = 0;
+};
+
+// {id, enabled?, targetZoneId, triggers:[{node,inputIdx,ledSlot?}]}
+// ledSlot ausente → 255. Falha se targetZoneId==0 ou triggers ausente/vazio.
+bool parseRemoteUpsert(const char *json, size_t n, RemoteUpsertReq &out);
+
+// {id:1..255}
+bool parseRemoteDelete(const char *json, size_t n, uint8_t &idOut);
+
+// {targetZoneId:1..255}
+bool parseRemoteCommand(const char *json, size_t n, uint8_t &targetZoneIdOut);
+
+// Valida semântica: targetZoneId!=0, triggerCount>=1, cada inputIdx<4,
+// cada ledSlot in {0,1,255}, sem nó duplicado entre gatilhos.
+bool validateRemoteTriggers(const RemoteUpsertReq &u);
+
+// Serializa array de associações: [{id,enabled,targetZoneId,zoneName,triggers:[{node,inputIdx,ledSlot}]}]
+size_t buildRemote(char *buf, size_t cap, const RemoteButtonTable &t, const ZoneTable &zones);
+
+// Serializa status por saída distinta (dedup por targetZoneId):
+// [{targetZoneId,name,on,triggers:[{node,inputIdx,ledSlot}]}]
+// on = zoneOpenById[targetZoneId]. Cada saída emitida UMA vez mesmo com múltiplas associações.
+size_t buildRemoteStatus(char *buf, size_t cap, const RemoteButtonTable &t, const ZoneTable &zones,
+                         const bool *zoneOpenById /*index 0..255*/);
 
 } // namespace IrrigationWeb

@@ -1592,4 +1592,162 @@ WeatherConfigParse parseWeatherConfig(const char *body, size_t n)
     return result;
 }
 
+// ── Modo Remoto — parsers e builders ─────────────────────────────────────────
+
+bool parseRemoteUpsert(const char *json, size_t n, RemoteUpsertReq &out)
+{
+    if (!json || n == 0) return false;
+    JsonReader rd(json, n);
+    int64_t id = -1, target = 0;
+    bool enabled = true;
+
+    rd.getInt("id", id);
+    rd.getBool("enabled", enabled);
+    if (!rd.getInt("targetZoneId", target) || target < 1 || target > 255) return false;
+
+    // Localiza array "triggers" — mesma técnica de parseGroupUpsert/parseProgramUpsert
+    const char *sp = strstr(json, "\"triggers\"");
+    const char *arr = sp ? strchr(sp, '[') : nullptr;
+    const char *arrEnd = arr ? strchr(arr, ']') : nullptr;
+    if (!arr || !arrEnd) return false;
+
+    RemoteUpsertReq req{};
+    req.id = (uint8_t)(id < 0 ? 0 : id);
+    req.enabled = enabled ? 1 : 0;
+    req.targetZoneId = (uint8_t)target;
+    uint8_t count = 0;
+
+    const char *o = arr;
+    while ((o = strchr(o, '{')) != nullptr && o < arrEnd) {
+        const char *oEnd = strchr(o, '}');
+        if (!oEnd || oEnd > arrEnd) break;
+        if (count >= 4) break; // guard: at most 4 triggers
+        JsonReader sr(o, (size_t)(oEnd - o + 1));
+        int64_t node = 0, inputIdx = -1, ledSlot = 255;
+        if (!sr.getInt("node", node) || node == 0) { o = oEnd + 1; continue; }
+        if (!sr.getInt("inputIdx", inputIdx)) { o = oEnd + 1; continue; }
+        sr.getInt("ledSlot", ledSlot); // opcional; default 255
+        req.triggers[count].node = (uint32_t)node;
+        req.triggers[count].inputIdx = (uint8_t)inputIdx;
+        req.triggers[count].ledSlot = (uint8_t)(ledSlot < 0 || ledSlot > 255 ? 255 : ledSlot);
+        count++;
+        o = oEnd + 1;
+    }
+
+    if (count == 0) return false;
+    req.triggerCount = count;
+    out = req;
+    return true;
+}
+
+bool parseRemoteDelete(const char *json, size_t n, uint8_t &idOut)
+{
+    if (!json || n == 0) return false;
+    JsonReader rd(json, n);
+    int64_t id = 0;
+    if (!rd.getInt("id", id) || id < 1 || id > 255) return false;
+    idOut = (uint8_t)id;
+    return true;
+}
+
+bool parseRemoteCommand(const char *json, size_t n, uint8_t &targetZoneIdOut)
+{
+    if (!json || n == 0) return false;
+    JsonReader rd(json, n);
+    int64_t zid = 0;
+    if (!rd.getInt("targetZoneId", zid) || zid < 1 || zid > 255) return false;
+    targetZoneIdOut = (uint8_t)zid;
+    return true;
+}
+
+bool validateRemoteTriggers(const RemoteUpsertReq &u)
+{
+    if (u.targetZoneId == 0) return false;
+    if (u.triggerCount < 1) return false;
+    for (uint8_t i = 0; i < u.triggerCount && i < 4; i++) {
+        if (u.triggers[i].inputIdx >= 4) return false;
+        uint8_t ls = u.triggers[i].ledSlot;
+        if (ls != 0 && ls != 1 && ls != 255) return false;
+    }
+    // O(n²) sobre ≤4: sem nó duplicado
+    for (uint8_t i = 0; i < u.triggerCount && i < 4; i++) {
+        for (uint8_t j = (uint8_t)(i + 1); j < u.triggerCount && j < 4; j++) {
+            if (u.triggers[i].node == u.triggers[j].node) return false;
+        }
+    }
+    return true;
+}
+
+size_t buildRemote(char *buf, size_t cap, const RemoteButtonTable &t, const ZoneTable &zones)
+{
+    JsonWriter w(buf, cap);
+    w.beginArray();
+    for (size_t i = 0; i < t.count(); i++) {
+        const RemoteAssoc *a = t.assocAt(i);
+        if (!a) break;
+        const Zone *z = zones.byId(a->targetZoneId);
+        w.beginObject();
+        w.keyNum("id", a->id);
+        w.keyBool("enabled", a->enabled != 0);
+        w.keyNum("targetZoneId", a->targetZoneId);
+        w.keyStr("zoneName", z ? z->name : "");
+        w.key("triggers");
+        w.beginArray();
+        for (uint8_t k = 0; k < RemoteAssoc::MAX_TRIGGERS; k++) {
+            const RemoteTriggerRef &tr = a->triggers[k];
+            if (tr.node == 0) continue;
+            w.beginObject();
+            w.keyNum("node", (int64_t)(uint32_t)tr.node);
+            w.keyNum("inputIdx", tr.inputIdx);
+            w.keyNum("ledSlot", tr.ledSlot);
+            w.endObject();
+        }
+        w.endArray();
+        w.endObject();
+    }
+    w.endArray();
+    return w.done();
+}
+
+size_t buildRemoteStatus(char *buf, size_t cap, const RemoteButtonTable &t, const ZoneTable &zones,
+                         const bool *zoneOpenById)
+{
+    bool seen[256] = {false};
+    JsonWriter w(buf, cap);
+    w.beginArray();
+    for (size_t i = 0; i < t.count(); i++) {
+        const RemoteAssoc *a = t.assocAt(i);
+        if (!a) break;
+        uint8_t zid = a->targetZoneId;
+        if (zid == 0 || seen[zid]) continue;
+        seen[zid] = true;
+        const Zone *z = zones.byId(zid);
+        bool on = zoneOpenById ? zoneOpenById[zid] : false;
+        w.beginObject();
+        w.keyNum("targetZoneId", zid);
+        w.keyStr("name", z ? z->name : "");
+        w.keyBool("on", on);
+        // Triggers combinados de todas as associações que apontam para esta saída
+        w.key("triggers");
+        w.beginArray();
+        for (size_t j = 0; j < t.count(); j++) {
+            const RemoteAssoc *b = t.assocAt(j);
+            if (!b || b->targetZoneId != zid) continue;
+            for (uint8_t k = 0; k < RemoteAssoc::MAX_TRIGGERS; k++) {
+                const RemoteTriggerRef &tr = b->triggers[k];
+                if (tr.node == 0) continue;
+                w.beginObject();
+                w.keyNum("node", (int64_t)(uint32_t)tr.node);
+                w.keyNum("inputIdx", tr.inputIdx);
+                w.keyNum("ledSlot", tr.ledSlot);
+                w.endObject();
+            }
+        }
+        w.endArray();
+        w.endObject();
+    }
+    w.endArray();
+    return w.done();
+}
+
 } // namespace IrrigationWeb

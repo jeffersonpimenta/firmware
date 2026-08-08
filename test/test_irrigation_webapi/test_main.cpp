@@ -6,6 +6,7 @@
 #include "modules/irrigation/IrrigationWebApi.h"
 #include "modules/irrigation/LevelControlTable.h"
 #include "modules/irrigation/ProgramScheduler.h"
+#include "modules/irrigation/RemoteButtonTable.h"
 #include <string.h>
 #include <unity.h>
 
@@ -1352,6 +1353,49 @@ static void test_parseTimezone_ok_and_reject()
     TEST_ASSERT_FALSE(r2.ok);
 }
 
+// ── Modo Remoto — Task 5 ─────────────────────────────────────────────────────
+
+static void test_parseRemoteUpsert_and_validate()
+{
+    const char *j = "{\"id\":0,\"enabled\":true,\"targetZoneId\":5,"
+                    "\"triggers\":[{\"node\":170,\"inputIdx\":2,\"ledSlot\":0},"
+                    "{\"node\":187,\"inputIdx\":3,\"ledSlot\":255}]}";
+    IrrigationWeb::RemoteUpsertReq u{};
+    TEST_ASSERT_TRUE(IrrigationWeb::parseRemoteUpsert(j, strlen(j), u));
+    TEST_ASSERT_EQUAL_UINT8(5, u.targetZoneId);
+    TEST_ASSERT_EQUAL_UINT8(2, u.triggerCount);
+    TEST_ASSERT_EQUAL_HEX32(170, u.triggers[0].node);
+    TEST_ASSERT_EQUAL_UINT8(0, u.triggers[0].ledSlot);
+    TEST_ASSERT_TRUE(IrrigationWeb::validateRemoteTriggers(u));
+
+    IrrigationWeb::RemoteUpsertReq dup = u; // mesmo nó nos 2 gatilhos → inválido
+    dup.triggers[1].node = 170;
+    TEST_ASSERT_FALSE(IrrigationWeb::validateRemoteTriggers(dup));
+
+    IrrigationWeb::RemoteUpsertReq empty{};
+    empty.targetZoneId = 5;
+    TEST_ASSERT_FALSE(IrrigationWeb::validateRemoteTriggers(empty)); // sem gatilho
+}
+
+static void test_buildRemoteStatus_dedupByOutput()
+{
+    ZoneTable z;
+    Zone zz; zz.id = 5; snprintf(zz.name, sizeof(zz.name), "Bomba"); zz.node = 170;
+    z.upsert(zz);
+    RemoteButtonTable t;
+    RemoteAssoc a1; a1.id = 1; a1.targetZoneId = 5; a1.triggers[0] = {170, 2, 0}; t.upsert(a1);
+    RemoteAssoc a2; a2.id = 2; a2.targetZoneId = 5; a2.triggers[0] = {187, 3, 1}; t.upsert(a2);
+    bool open[256] = {false}; open[5] = true;
+    char buf[1024];
+    size_t n = IrrigationWeb::buildRemoteStatus(buf, sizeof(buf), t, z, open);
+    TEST_ASSERT_TRUE(n > 0);
+    // saída 5 aparece UMA vez apesar de 2 associações
+    const char *first = strstr(buf, "\"targetZoneId\":5");
+    TEST_ASSERT_NOT_NULL(first);
+    TEST_ASSERT_NULL(strstr(first + 1, "\"targetZoneId\":5"));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"on\":true"));
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -1458,6 +1502,9 @@ void setup()
     RUN_TEST(test_parseTimeSet_ok);
     RUN_TEST(test_parseTimeSet_rejectsImplausible);
     RUN_TEST(test_parseTimezone_ok_and_reject);
+    // Modo Remoto — Task 5
+    RUN_TEST(test_parseRemoteUpsert_and_validate);
+    RUN_TEST(test_buildRemoteStatus_dedupByOutput);
     exit(UNITY_END());
 }
 
