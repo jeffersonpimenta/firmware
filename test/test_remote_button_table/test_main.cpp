@@ -77,12 +77,14 @@ static void test_serialize_round_trip()
     TEST_ASSERT_EQUAL_UINT(0, t2.count());
 }
 
-int main(int, char **)
+void setup()
 {
     UNITY_BEGIN();
     RUN_TEST(test_upsert_lookup_count);
     RUN_TEST(test_findByTrigger_multi);
     RUN_TEST(test_full_and_idzero_rejected);
     RUN_TEST(test_serialize_round_trip);
-    return UNITY_END();
+    exit(UNITY_END());
 }
+
+void loop() {}

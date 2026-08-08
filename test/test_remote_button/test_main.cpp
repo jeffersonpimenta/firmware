@@ -47,11 +47,13 @@ static void test_toggle_action()
     TEST_ASSERT_EQUAL_UINT8(0, remoteToggleAction(true));  // ligado → fechar
 }
 
-int main(int, char **)
+void setup()
 {
     UNITY_BEGIN();
     RUN_TEST(test_edge_debounce_risingOnce);
     RUN_TEST(test_led_fsm);
     RUN_TEST(test_toggle_action);
-    return UNITY_END();
+    exit(UNITY_END());
 }
+
+void loop() {}
