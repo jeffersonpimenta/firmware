@@ -3611,6 +3611,13 @@ void IrrigationModule::gwTick()
             LOG_WARN("Irrigation GW: SILENT node=0x%08x", entry->node);
         }
     }
+
+    // Modo Remoto: refresh periódico dos LEDs de estado compartilhado.
+    // Garante que alterações por scheduler, grupos, fail-safe ou heartbeat de estação
+    // repintem a botoeira-nó corretamente. gwPushRemoteLed() é change-driven (_ledCache
+    // suprime RF quando o bitmap não mudou), então chamar a cada tick é barato.
+    if (gateway.remoteButtons.count() > 0)
+        gwPushRemoteLed();
 }
 
 // Decisão §3: reconciliação de epoch com cooldown de 30 s.
@@ -3762,13 +3769,9 @@ void IrrigationModule::handleGwAck(const meshtastic_MeshPacket &mp, const Header
         return;
     }
 
-    confirmCommand(mp.from, ack.ackedSeq, ack.reason, ack.status == ACK_OK);
-
-    // Reconciliação de epoch (mesma regra do HB — decisão §3).
-    gwReconcileEpoch(mp.from, ack.configEpoch);
-
     // Modo Remoto (Task 6 fix): ACK traz o estado pós-comando das saídas — atualiza cache
-    // para que gwZoneIsOpen reflita o estado real logo após o comando ser executado.
+    // ANTES de confirmCommand para que gwZoneIsOpen (chamado internamente via gwPushRemoteLed)
+    // já enxergue o estado real pós-comando quando calcula o bitmap de LED.
     {
         const StationTelemetry *existing = gateway.telemetry.byNode(mp.from);
         StationTelemetry tel = existing ? *existing : StationTelemetry{};
@@ -3777,6 +3780,11 @@ void IrrigationModule::handleGwAck(const meshtastic_MeshPacket &mp, const Header
         tel.gpoStates = ack.gpoStates;
         gateway.telemetry.update(tel);
     }
+
+    confirmCommand(mp.from, ack.ackedSeq, ack.reason, ack.status == ACK_OK);
+
+    // Reconciliação de epoch (mesma regra do HB — decisão §3).
+    gwReconcileEpoch(mp.from, ack.configEpoch);
 }
 
 // Decisão §3: MSG_HEARTBEAT recebido pelo gateway.

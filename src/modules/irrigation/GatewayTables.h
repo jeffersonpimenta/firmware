@@ -64,7 +64,7 @@ class StationRegistry {
     StationEntry *mutableByNode(uint32_t node);
     const StationEntry *nodeAt(size_t index) const; // index-ésima entrada ocupada; nullptr se >= count()
     size_t count() const;
-    void adoptConfig(uint32_t node, const uint8_t *blobData, size_t blobLen, uint32_t epoch); // regra do maior epoch; migra p/ v5 canônico
+    void adoptConfig(uint32_t node, const uint8_t *blobData, size_t blobLen, uint32_t epoch); // regra do maior epoch; migra p/ v7 canônico
     size_t serialize(uint8_t *buf, size_t cap) const;
     bool deserialize(const uint8_t *buf, size_t n);
 

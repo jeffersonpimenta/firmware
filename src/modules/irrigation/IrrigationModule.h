@@ -410,7 +410,8 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     // Persistência da tabela de associações.
     bool loadRemoteButtons();
     bool saveRemoteButtons();
-    // Estado de zona: authoritative open-state (openGate para zonas livres; groupEngine para zonas de grupo).
+    // Estado de zona: authoritative open-state — driver local (válvula/GPO) para zona local do gateway;
+    // StationTelemetry (valveStates/gpoStates do ACK ou HB) para zona remota; groupEngine para zonas de grupo.
     bool gwZoneIsOpen(uint8_t zoneId) const;
     // Handlers de botoeira remota.
     void handleRemoteLed(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
