@@ -1,5 +1,7 @@
 #include "Arduino.h"
 #include "TestUtil.h"
+#include "modules/irrigation/IrrigationWebApi.h"
+#include "modules/irrigation/RemoteButtonTable.h"
 #include "modules/irrigation/ServiceBackup.h"
 #include <cstring>
 #include <unity.h>
@@ -248,6 +250,18 @@ static void test_planMerge_replace_removes_absent()
     TEST_ASSERT_EQUAL_INT(2, r.n); // a and c removed
 }
 
+static void test_import_remoteButtons()
+{
+    const char *env = "{\"clients\":[{\"config\":{\"remoteButtons\":["
+        "{\"id\":1,\"enabled\":1,\"targetZoneId\":5,"
+        "\"triggers\":[{\"node\":170,\"inputIdx\":2,\"ledSlot\":0}]}]}}]}";
+    RemoteButtonTable t;
+    size_t n = IrrigationWeb::importRemoteButtonsFromBackup(env, strlen(env), t);
+    TEST_ASSERT_EQUAL_UINT(1, n);
+    TEST_ASSERT_NOT_NULL(t.byId(1));
+    TEST_ASSERT_EQUAL_UINT8(5, t.byId(1)->targetZoneId);
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -269,6 +283,7 @@ void setup()
     RUN_TEST(test_buildClientBackup_carries_niveis);
     RUN_TEST(test_planMerge_keeps_others_when_not_replace);
     RUN_TEST(test_planMerge_replace_removes_absent);
+    RUN_TEST(test_import_remoteButtons);
     exit(UNITY_END());
 }
 

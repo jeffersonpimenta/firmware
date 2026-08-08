@@ -1269,6 +1269,49 @@ bool importConfigTablesFromBackup(const char *json, size_t len, ZoneTable &zones
     return true;
 }
 
+// ── RemoteButtonTable restore (§5.5 Modo Remoto) ────────────────────────────
+
+namespace {
+struct RBCtx { RemoteButtonTable *t; size_t *n; };
+bool applyRemoteButton(void *v, IrrigationService::Slice e)
+{
+    auto *x = static_cast<RBCtx *>(v);
+    // sliceToBuf isola o elemento para que strstr/strchr não leiam além do objeto
+    char buf[512];
+    if (!sliceToBuf(e, buf, sizeof(buf))) return true; // elemento grande demais → pula
+    RemoteUpsertReq req{};
+    if (!parseRemoteUpsert(buf, strlen(buf), req)) return true;
+    RemoteAssoc a{};
+    a.id           = req.id;
+    a.enabled      = req.enabled;
+    a.targetZoneId = req.targetZoneId;
+    uint8_t cnt = req.triggerCount < RemoteAssoc::MAX_TRIGGERS ? req.triggerCount
+                                                                : (uint8_t)RemoteAssoc::MAX_TRIGGERS;
+    for (uint8_t i = 0; i < cnt; i++)
+        a.triggers[i] = req.triggers[i];
+    if (x->t->upsert(a))
+        (*x->n)++;
+    return true;
+}
+} // anonymous namespace
+
+size_t importRemoteButtonsFromBackup(const char *json, size_t n, RemoteButtonTable &out)
+{
+    // Obtém o primeiro client do envelope (mesmo padrão de importConfigTablesFromBackup).
+    IrrigationService::Slice client{};
+    FirstClientCtx fcc{&client};
+    IrrigationService::envelopeForEachClient(json, n, &fcc, firstClientCb);
+    if (!client.p) return 0;
+
+    IrrigationService::Slice config{};
+    if (!IrrigationService::jsonMember(client.p, client.n, "config", config)) return 0;
+
+    size_t count = 0;
+    RBCtx ctx{&out, &count};
+    importArray(config.p, config.n, "remoteButtons", &ctx, applyRemoteButton);
+    return count;
+}
+
 // ── Supressão meteorológica — builders e parsers (fase 11) ───────────────────
 
 // Serializa um decimal com 1 casa fracionária (ex.: -235 → "-23.5").

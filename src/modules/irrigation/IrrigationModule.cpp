@@ -1603,12 +1603,13 @@ size_t IrrigationModule::gwBuildBackup(char *buf, size_t cap)
     if (!gwIsGateway())
         return 0;
     // Sub-arrays de config via os builders existentes do painel (DRY, Fase 5a-7b).
-    static char zonasB[900], progB[800], interB[700], grupB[700], niveisB[512];
+    static char zonasB[900], progB[800], interB[700], grupB[700], niveisB[512], remoteB[512];
     IrrigationWeb::buildZones(gateway.zones, zonasB, sizeof zonasB);
     IrrigationWeb::buildPrograms(gateway.scheduler, progB, sizeof progB);
     IrrigationWeb::buildInterlocks(gateway.interlocks, interB, sizeof interB);
     IrrigationWeb::buildGroups(gateway.groups, grupB, sizeof grupB);
     IrrigationWeb::buildLevelControls(gateway.levels, niveisB, sizeof niveisB);
+    IrrigationWeb::buildRemote(remoteB, sizeof remoteB, gateway.remoteButtons, gateway.zones);
     // estacoes[] + snapshot_epoch{} a partir do registro de estações.
     static char estB[2048], epoB[600];
     {
@@ -1673,6 +1674,7 @@ size_t IrrigationModule::gwBuildBackup(char *buf, size_t cap)
     s.gruposJson = grupB;
     s.sensorNamesJson = "[]"; // nomes de sensor: follow-up (sem builder dedicado)
     s.niveisJson = niveisB;
+    s.remoteButtonsJson = remoteB;
     static char clientB[6144];
     size_t cn = IrrigationService::buildClientBackup(s, clientB, sizeof clientB);
     if (!cn)
@@ -3128,16 +3130,19 @@ bool IrrigationModule::gwImportTables(const char *json, size_t len, char *resp, 
         snprintf(resp, respCap, "{\"ok\":false,\"err\":\"%s\"}", err);
         return false;
     }
-    // Persiste as quatro tabelas recém-importadas.
+    // Importa a tabela de botões remotos (§5.5 Modo Remoto).
+    size_t remoteCount = IrrigationWeb::importRemoteButtonsFromBackup(json, len, gateway.remoteButtons);
+    // Persiste as tabelas recém-importadas.
     saveGatewayState();  // zonas + programas (+ stations + mirror — inofensivo, não foram tocados)
     saveInterlocks();    // tabela de intertravamentos (arquivo separado)
     saveGroups();        // tabela de grupos hidráulicos (arquivo separado)
+    saveRemoteButtons(); // associações botoeira→zona (§5.5 Modo Remoto)
     // §8.9: audita importação de configuração — CONFIG_EPOCH é a ação existente mais próxima
     // de "substituição em bloco das tabelas de config via painel".
     auditEvent(AuditOrigin::PAINEL, AuditAction::CONFIG_EPOCH, 0, AuditResult::OK);
     snprintf(resp, respCap,
-             "{\"ok\":true,\"zonas\":%u,\"programas\":%u,\"intertravamentos\":%u,\"grupos\":%u}",
-             c.zonas, c.programas, c.intertravamentos, c.grupos);
+             "{\"ok\":true,\"zonas\":%u,\"programas\":%u,\"intertravamentos\":%u,\"grupos\":%u,\"remoteButtons\":%u}",
+             c.zonas, c.programas, c.intertravamentos, c.grupos, (unsigned)remoteCount);
     return true;
 }
 

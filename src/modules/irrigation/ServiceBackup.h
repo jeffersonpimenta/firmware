@@ -64,7 +64,8 @@ struct BackupSource {
     const char *intertravamentosJson = "[]";
     const char *gruposJson = "[]";
     const char *sensorNamesJson = "[]";
-    const char *niveisJson = nullptr;  // "[{...}]" ou nullptr/omitido → "[]"
+    const char *niveisJson = nullptr;        // "[{...}]" ou nullptr/omitido → "[]"
+    const char *remoteButtonsJson = nullptr; // "[{id,enabled,targetZoneId,triggers:[…]}]" ou nullptr → "[]"
     const char *seqJson = ""; // "" to omit
 };
 size_t buildClientBackup(const BackupSource &s, char *buf, size_t cap);

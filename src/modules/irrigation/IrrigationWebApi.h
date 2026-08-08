@@ -298,6 +298,11 @@ bool importConfigTablesFromBackup(const char *json, size_t len, ZoneTable &zones
                                   HydraulicGroupTable &groups, ImportCounts &out,
                                   char *err, size_t errCap);
 
+// Importa o array remoteButtons do primeiro client do envelope para a tabela fornecida.
+// Retorna o número de itens importados (0 = seção ausente ou vazia).
+// Não valida o envelope — deve ser chamada após importConfigTablesFromBackup que já valida.
+size_t importRemoteButtonsFromBackup(const char *json, size_t n, RemoteButtonTable &out);
+
 // ── Supressão meteorológica (fase 11) ────────────────────────────────────────
 
 // Contexto de status agregado da página Meteorologia.
