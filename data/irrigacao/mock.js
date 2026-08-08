@@ -321,7 +321,64 @@ const MOCK_DATA = {
     { ssid: 'Wifi Publico', rssi: -75, secure: 0 },
     { ssid: 'Irrigacao-IOT', rssi: -55, secure: 1 },
   ],
+
+  // Meteorologia (§ supressão por previsão de chuva). Espelha WeatherCache +
+  // WeatherRuleTable. Valores de exemplo simples: chuva leve, NÃO dispara
+  // supressão (limiar da regra fica acima das métricas → badge "Suprimindo" off).
+  // updatedEpoch é reescrito com "agora" em cada GET/refresh (fmtAgo → "há N s").
+  weather: {
+    enabled: true,
+    lat: -22.90680,
+    lon: -47.06160,
+    isMock: false, // dados "reais" fictícios; troque p/ true p/ ver banner "estimativa offline"
+    staUp: true,
+    location: 'Fazenda Bela Vista',
+    metrics: {
+      chuvaPrevista12hCenti: 320, // 3.2 mm (Σ próximas 12h)
+      probChuva: 45,              // 45 % (máx 13h)
+      chuvaAcum24hCenti: 180,     // 1.8 mm
+      umidadeSolo: 32,            // 32 %
+      tempMinCenti: 1780,         // 17.8 °C
+      tempMaxCenti: 2960,         // 29.6 °C
+      ventoRajadaCenti: 2450,     // 24.5 km/h
+      et0Centi: 470,              // 4.7 mm
+      tempAtualCenti: 2540,       // 25.4 °C
+      umidadeRel: 57,             // 57 %
+    },
+    rules: [
+      {
+        id: 1,
+        nome: 'Chuva forte',
+        enabled: 1,
+        limiarMmCenti: 1000, // 10 mm — acima da chuva prevista (3.2) → não dispara
+        limiarPct: 70,       // 70 % — acima da prob (45) → não dispara
+        mensagem: 'Previsão de chuva significativa nas próximas 12h',
+        zonaIds: [1, 2],
+        grupoIds: [1],
+      },
+    ],
+  },
 };
+
+// ===== Modo Remoto — estado em memória =====
+// 2 associações apontando para a MESMA saída (targetZoneId=1) para exercitar o dedup do card.
+// ledSlot distintos: botoeira A → LED 1 (slot 0), botoeira B → LED 2 (slot 1).
+let remoteAssociations = [
+  {
+    id: 1,
+    enabled: true,
+    targetZoneId: 1,
+    triggers: [{ node: 0xa1b2c3d4, inputIdx: 0, ledSlot: 0 }], // Horta Norte · Entrada 1 · LED 1
+  },
+  {
+    id: 2,
+    enabled: true,
+    targetZoneId: 1,
+    triggers: [{ node: 0xe5f6a7b8, inputIdx: 2, ledSlot: 1 }], // Pomar · Entrada 3 · LED 2
+  },
+];
+// Estado ao vivo das saídas acionadas via /remote/command (por targetZoneId).
+let remoteOutputState = {}; // { [zoneId]: boolean }
 
 // Estado mutável (alterações de UI persiste até reload)
 let STATE = JSON.parse(JSON.stringify(MOCK_DATA));
@@ -373,6 +430,47 @@ function mockTimeStatus() {
     tz: timeState.tz,
     tzLabel: TZ_LABELS[timeState.tz] || 'Personalizado',
     staUp: !!wifiState.connectedSsid,
+  };
+}
+
+// Espelha buildWeatherStatus() do backend (IrrigationWebApi.cpp) +
+// WeatherEngine::ruleTriggered. Recalcula triggered/anySuppressed a partir das
+// métricas e regras em STATE.weather; carimba updatedEpoch com "agora".
+function mockWeatherStatus() {
+  const w = STATE.weather;
+  const m = w.metrics || {};
+  const now = Math.floor(Date.now() / 1000);
+  // regra dispara ⟺ enabled && chuva12h > limiarMm && prob > limiarPct (ambos ">").
+  const rules = (Array.isArray(w.rules) ? w.rules : []).map((r) => {
+    const trig = !!r.enabled &&
+      num(m.chuvaPrevista12hCenti) > num(r.limiarMmCenti) &&
+      num(m.probChuva) > num(r.limiarPct);
+    return {
+      id: r.id,
+      nome: r.nome,
+      enabled: !!r.enabled,
+      limiarMmCenti: num(r.limiarMmCenti),
+      limiarPct: num(r.limiarPct),
+      mensagem: r.mensagem || '',
+      zonaIds: Array.isArray(r.zonaIds) ? r.zonaIds : [],
+      grupoIds: Array.isArray(r.grupoIds) ? r.grupoIds : [],
+      triggered: trig,
+      fresh: true, // mock sempre fresco (cacheFresh=true)
+      chuvaAtualCenti: num(m.chuvaPrevista12hCenti),
+      probAtual: num(m.probChuva),
+    };
+  });
+  return {
+    enabled: !!w.enabled,
+    lat: w.lat,
+    lon: w.lon,
+    updatedEpoch: now,
+    isMock: !!w.isMock,
+    staUp: !!w.staUp,
+    location: w.location || '',
+    metrics: m,
+    rules,
+    anySuppressed: rules.some((r) => r.triggered),
   };
 }
 
@@ -509,7 +607,29 @@ window.fetch = async function (url, opts) {
       ],
     });
   if (path.startsWith('/survey')) return mockResponse(STATE.survey);
+  if (path.startsWith('/weather')) return mockResponse(mockWeatherStatus());
   if (path.startsWith('/levels')) return mockResponse(STATE.levels);
+  if (path.startsWith('/remote')) {
+    // GET /remote — dedup por saída: um entry por targetZoneId (status) + lista de associações.
+    const zoneMap = {};
+    remoteAssociations.forEach((a) => {
+      const zid = a.targetZoneId;
+      if (!zoneMap[zid]) {
+        const zone = STATE.zones.find((z) => z.id === zid);
+        const name = zone ? (zone.name || zone.nome || ('Zona ' + zid)) : ('Zona ' + zid);
+        zoneMap[zid] = { targetZoneId: zid, name, on: !!remoteOutputState[zid], triggers: [] };
+      }
+      (a.triggers || []).forEach((t) => {
+        if (!zoneMap[zid].triggers.some((x) => x.node === t.node && x.inputIdx === t.inputIdx)) {
+          zoneMap[zid].triggers.push(t);
+        }
+      });
+    });
+    return mockResponse({
+      status: Object.values(zoneMap),
+      associations: remoteAssociations,
+    });
+  }
   if (path.startsWith('/mirror')) {
     // Constrói a resposta a partir de STATE.zones (fonteInput >= 0 → associação ativa).
     const ports = [0, 1, 2, 3].map((i) => {
@@ -750,6 +870,61 @@ function handlePost(path, body) {
     return mockResponse({ ok: true });
   }
 
+  // Meteorologia
+  if (path === '/weather/refresh') {
+    // Simula poll Open-Meteo bem-sucedido (mock sempre "com WiFi").
+    STATE.weather.isMock = false;
+    return mockResponse({ ok: true });
+  }
+  if (path === '/weather/rule') {
+    // Form envia limiarMm em mm; backend/cache guardam em centi-mm (×100).
+    const rule = {
+      id: body.id || (Math.max(0, ...STATE.weather.rules.map((r) => r.id)) + 1),
+      nome: body.nome || '',
+      enabled: body.enabled ? 1 : 0,
+      limiarMmCenti: Math.round(Number(body.limiarMm) * 100),
+      limiarPct: num(body.limiarPct),
+      mensagem: body.mensagem || '',
+      zonaIds: Array.isArray(body.zonaIds) ? body.zonaIds : [],
+      grupoIds: Array.isArray(body.grupoIds) ? body.grupoIds : [],
+    };
+    const idx = STATE.weather.rules.findIndex((r) => r.id === rule.id);
+    if (idx >= 0) STATE.weather.rules[idx] = rule;
+    else STATE.weather.rules.push(rule);
+    return mockResponse({ ok: true });
+  }
+  if (path === '/weather/rule/delete') {
+    STATE.weather.rules = STATE.weather.rules.filter((r) => r.id !== body.id);
+    return mockResponse({ ok: true });
+  }
+
+  // Modo Remoto
+  if (path === '/remote/command') {
+    const zid = Number(body.targetZoneId);
+    remoteOutputState[zid] = !remoteOutputState[zid];
+    return mockResponse({ ok: true });
+  }
+  if (path === '/remote/delete') {
+    remoteAssociations = remoteAssociations.filter((a) => a.id !== body.id);
+    return mockResponse({ ok: true });
+  }
+  if (path === '/remote') {
+    if (!Array.isArray(body.triggers) || body.triggers.length === 0)
+      return mockResponse({ errors: ['Selecione ao menos um gatilho.'] }, 400);
+    if (!body.targetZoneId)
+      return mockResponse({ errors: ['Selecione a saída a ser acionada.'] }, 400);
+    const id = body.id || (Math.max(0, ...remoteAssociations.map((a) => a.id)) + 1);
+    const record = {
+      id,
+      enabled: body.enabled !== false,
+      targetZoneId: Number(body.targetZoneId),
+      triggers: body.triggers.map((t) => ({ node: Number(t.node), inputIdx: Number(t.inputIdx), ledSlot: t.ledSlot != null ? Number(t.ledSlot) : 255 })),
+    };
+    const idx = remoteAssociations.findIndex((a) => a.id === id);
+    if (idx >= 0) remoteAssociations[idx] = record;
+    else remoteAssociations.push(record);
+    return mockResponse({ ok: true });
+  }
   // Modo Espelhamento
   if (path === '/mirror') {
     // Toggle do flag global enabled.

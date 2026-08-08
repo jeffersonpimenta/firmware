@@ -3063,9 +3063,492 @@ async function renderMeteo() {
   mtRender();
 }
 
+// ===== Modo Remoto (botoeira em nó/gateway → saída em outro nó/gateway) =====
+
+// Estado do módulo
+let rmtData = { status: [], associations: [], zones: [], stations: [], selfNode: null };
+let rmtUI = { screen: 'list', draft: null, errors: [], deleteConfirm: false };
+
+// Cor do ponto de estado vivo.
+function rmtDotColor(on) {
+  return on ? 'oklch(0.47 0.1 150)' : 'oklch(0.75 0.006 100)';
+}
+
+// Formata label de um nó (node id número).
+function rmtNodeLabel(nodeId, stations, selfNode) {
+  if (nodeId == null) return '—';
+  if (num(nodeId) === num(selfNode)) return 'Gateway (local)';
+  const s = (Array.isArray(stations) ? stations : []).find((x) => num(x.node) === num(nodeId));
+  return s ? (s.name || ('Nó ' + nodeHex(nodeId))) : nodeHex(nodeId);
+}
+
+// Formata label de uma zona (para card de associação).
+function rmtZoneLabel(zoneId, zones, stations, selfNode) {
+  const z = (Array.isArray(zones) ? zones : []).find((x) => num(x.id) === num(zoneId));
+  if (!z) return 'Zona ' + num(zoneId);
+  const nome = z.name || z.nome || ('Zona ' + num(z.id));
+  const nodeLabel = rmtNodeLabel(z.node, stations, selfNode);
+  return nodeLabel + ' · ' + nome;
+}
+
+// ---- Tela lista (pura, não toca DOM) ----
+function rmtListHtml() {
+  const { status, associations, zones, stations, selfNode } = rmtData;
+
+  // Card "Testar acionamento" — cada entrada do status[] é já deduplicada por saída.
+  const testRows = (Array.isArray(status) ? status : []).map((s) => {
+    const label = esc(s.name || ('Zona ' + num(s.targetZoneId)));
+    const on = !!s.on;
+    const dotColor = rmtDotColor(on);
+    const stateLabel = on ? 'ligada' : 'desligada';
+    return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 0;border-bottom:1px solid oklch(0.94 0.004 100);">
+      <div style="min-width:0;">
+        <div style="font-size:13px;font-weight:600;color:oklch(0.22 0.008 100);">${label}</div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:3px;">
+          <div style="width:7px;height:7px;border-radius:999px;background:${dotColor};"></div>
+          <div style="font-size:11px;color:oklch(0.52 0.006 100);">${stateLabel}</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+        <button data-rmtcmd="${num(s.targetZoneId)}" style="cursor:pointer;border:1.5px solid oklch(0.47 0.1 150 / 0.4);padding:6px 14px;border-radius:999px;background:transparent;color:oklch(0.47 0.1 150);font-size:12px;font-weight:700;white-space:nowrap;">Acionar</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  const hasTestRows = testRows.length > 0;
+  const testCard = hasTestRows
+    ? `<div style="background:oklch(1 0 0);border:1px solid oklch(0.9 0.006 100);box-shadow:0 1px 3px rgba(0,0,0,0.05);border-radius:16px;padding:6px 16px;display:flex;flex-direction:column;">${testRows}</div>`
+    : `<div style="font-size:12.5px;color:oklch(0.52 0.006 100);">Nenhuma botoeira configurada ainda.</div>`;
+
+  // Cards de associação
+  const assocCards = (Array.isArray(associations) ? associations : []).map((a) => {
+    const targetLabel = esc(rmtZoneLabel(a.targetZoneId, zones, stations, selfNode));
+    const triggerNodeNames = (Array.isArray(a.triggers) ? a.triggers : [])
+      .map((t) => rmtNodeLabel(t.node, stations, selfNode))
+      .filter((v, i, arr) => arr.indexOf(v) === i)
+      .join(', ') || '—';
+    const habilitado = !!a.enabled;
+    const habChip = habilitado
+      ? `<span style="font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:999px;background:oklch(0.47 0.1 150 / 0.12);color:oklch(0.47 0.1 150);white-space:nowrap;">Habilitada</span>`
+      : `<span style="font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:999px;background:oklch(0.9 0.006 100);color:oklch(0.52 0.006 100);white-space:nowrap;">Desativada</span>`;
+    const habBg = habilitado ? 'oklch(0.47 0.1 150)' : 'oklch(0.85 0.006 100)';
+    const habKnob = habilitado ? '16px' : '2px';
+    const on = !!(Array.isArray(status) ? status : []).find((s) => num(s.targetZoneId) === num(a.targetZoneId) && s.on);
+    const outDotColor = rmtDotColor(on);
+    const outLabel = on ? 'ligada' : 'desligada';
+    return `<div style="cursor:pointer;background:oklch(1 0 0);border:1px solid oklch(0.9 0.006 100);box-shadow:0 1px 3px rgba(0,0,0,0.05);border-radius:16px;padding:14px 16px;" data-rmtedit="${esc(String(a.id))}">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+        <div style="font-size:14px;font-weight:600;color:oklch(0.22 0.008 100);min-width:0;">${targetLabel}</div>
+        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+          ${habChip}
+          <div data-rmttoghab="${esc(String(a.id))}" style="cursor:pointer;width:34px;height:20px;border-radius:999px;background:${habBg};position:relative;">
+            <div style="position:absolute;top:2px;left:${habKnob};width:16px;height:16px;border-radius:999px;background:#fff;"></div>
+          </div>
+        </div>
+      </div>
+      <div style="font-size:12px;color:oklch(0.52 0.006 100);margin-top:6px;">Acionado por: ${esc(triggerNodeNames)}</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+        <div style="width:8px;height:8px;border-radius:999px;background:${outDotColor};"></div>
+        <div style="font-size:11.5px;color:oklch(0.52 0.006 100);">saída ${outLabel}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  const hasAssocs = assocCards.length > 0;
+  const noAssocsMsg = !hasAssocs
+    ? `<div style="font-size:12.5px;color:oklch(0.52 0.006 100);">Nenhuma associação configurada.</div>`
+    : '';
+
+  return `
+    <div style="font-size:18px;font-weight:700;color:oklch(0.22 0.008 100);">Modo Remoto</div>
+    <div style="font-size:12px;color:oklch(0.52 0.006 100);margin-top:-6px;">O aperto de um botão em um nó ou no gateway aciona uma válvula/saída em outro nó ou no gateway. A ativação depende apenas das associações configuradas abaixo.</div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;">
+      <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;">Testar acionamento</div>
+    </div>
+    ${testCard}
+
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;">
+      <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;">Associações botão(ões) → saída</div>
+    </div>
+    <button data-rmtnew style="cursor:pointer;border:1.5px dashed oklch(0.47 0.1 150 / 0.5);background:transparent;color:oklch(0.47 0.1 150);font-size:13px;font-weight:700;padding:11px;border-radius:14px;width:100%;">+ Nova associação</button>
+    ${assocCards}
+    ${noAssocsMsg}
+  `;
+}
+
+// ---- Tela edição (pura, não toca DOM) ----
+function rmtEditHtml() {
+  const d = rmtUI.draft || {};
+  const { zones, stations, selfNode } = rmtData;
+  const isEditing = !!d.isEditing;
+  const errors = rmtUI.errors || [];
+
+  const errBox = errors.length
+    ? `<div style="background:oklch(0.55 0.16 30 / 0.08);border:1px solid oklch(0.55 0.16 30 / 0.3);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:4px;">
+        ${errors.map((e) => `<div style="font-size:12px;color:oklch(0.55 0.16 30);">${esc(e)}</div>`).join('')}
+      </div>`
+    : '';
+
+  // Nós disponíveis para gatilho (gateway + todas as estações)
+  const allNodes = [
+    { node: num(selfNode), name: 'Gateway (local)' },
+    ...(Array.isArray(stations) ? stations : []).map((s) => ({ node: num(s.node), name: s.name || nodeHex(s.node) })),
+  ];
+
+  // Chips de nó para seleção de gatilho
+  const triggerNodePills = allNodes.map((n) => {
+    const sel = num(n.node) === num(d.triggerPickNode);
+    const border = sel ? 'oklch(0.47 0.1 150)' : 'oklch(0.88 0.006 100)';
+    const bg = sel ? 'oklch(0.47 0.1 150)' : 'transparent';
+    const color = sel ? '#fff' : 'oklch(0.4 0.006 100)';
+    const shadow = sel ? '0 1px 4px oklch(0.47 0.1 150 / 0.3)' : 'none';
+    return `<button data-rmttrignode="${num(n.node)}" style="cursor:pointer;border:1.5px solid ${border};padding:6px 11px;border-radius:999px;background:${bg};color:${color};font-size:12px;font-weight:600;box-shadow:${shadow};">${esc(n.name)}</button>`;
+  }).join('');
+
+  // Entradas do nó selecionado para gatilho (0..3)
+  const triggers = Array.isArray(d.triggers) ? d.triggers : [];
+  const triggerForPickNode = triggers.find((t) => num(t.node) === num(d.triggerPickNode));
+  const triggerInputPills = [0, 1, 2, 3].map((idx) => {
+    const sel = triggerForPickNode ? num(triggerForPickNode.inputIdx) === idx : false;
+    const border = sel ? 'oklch(0.47 0.1 150)' : 'oklch(0.88 0.006 100)';
+    const bg = sel ? 'oklch(0.47 0.1 150)' : 'transparent';
+    const color = sel ? '#fff' : 'oklch(0.4 0.006 100)';
+    const shadow = sel ? '0 1px 4px oklch(0.47 0.1 150 / 0.3)' : 'none';
+    return `<button data-rmttriginput="${idx}" style="cursor:pointer;border:1.5px solid ${border};padding:7px 12px;border-radius:999px;background:${bg};color:${color};font-size:12.5px;font-weight:600;box-shadow:${shadow};">Entrada ${idx + 1}</button>`;
+  }).join('');
+
+  // Tags dos gatilhos selecionados
+  const triggerTags = triggers.map((t) => {
+    const nodeName = rmtNodeLabel(t.node, stations, selfNode);
+    return `<span style="display:inline-flex;align-items:center;gap:5px;background:oklch(0.47 0.1 150 / 0.1);border:1px solid oklch(0.47 0.1 150 / 0.3);border-radius:999px;padding:4px 10px;font-size:12px;font-weight:600;color:oklch(0.47 0.1 150);">${esc(nodeName + ' · Entrada ' + (num(t.inputIdx) + 1))}<button data-rmtremtrig="${num(t.node)}" style="cursor:pointer;border:none;background:transparent;color:oklch(0.47 0.1 150);font-size:14px;line-height:1;padding:0 0 0 2px;">×</button></span>`;
+  }).join('');
+
+  // Nós para saída-alvo (gateway + estações)
+  const targetNodePills = allNodes.map((n) => {
+    const sel = num(n.node) === num(d.targetPickNode);
+    const border = sel ? 'oklch(0.47 0.1 150)' : 'oklch(0.88 0.006 100)';
+    const bg = sel ? 'oklch(0.47 0.1 150)' : 'transparent';
+    const color = sel ? '#fff' : 'oklch(0.4 0.006 100)';
+    const shadow = sel ? '0 1px 4px oklch(0.47 0.1 150 / 0.3)' : 'none';
+    return `<button data-rmttargetnode="${num(n.node)}" style="cursor:pointer;border:1.5px solid ${border};padding:6px 11px;border-radius:999px;background:${bg};color:${color};font-size:12px;font-weight:600;box-shadow:${shadow};">${esc(n.name)}</button>`;
+  }).join('');
+
+  // Zonas do nó-alvo selecionado
+  const targetZones = (Array.isArray(zones) ? zones : []).filter((z) => num(z.node) === num(d.targetPickNode));
+  const targetZonePills = targetZones.length
+    ? targetZones.map((z) => {
+        const nome = esc(z.name || z.nome || ('Zona ' + num(z.id)));
+        const sel = num(z.id) === num(d.targetZoneId);
+        const border = sel ? 'oklch(0.47 0.1 150)' : 'oklch(0.88 0.006 100)';
+        const bg = sel ? 'oklch(0.47 0.1 150)' : 'transparent';
+        const color = sel ? '#fff' : 'oklch(0.4 0.006 100)';
+        const shadow = sel ? '0 1px 4px oklch(0.47 0.1 150 / 0.3)' : 'none';
+        return `<button data-rmtzone="${num(z.id)}" style="cursor:pointer;border:1.5px solid ${border};padding:7px 12px;border-radius:999px;background:${bg};color:${color};font-size:12.5px;font-weight:600;box-shadow:${shadow};">${nome}</button>`;
+      }).join('')
+    : `<div style="font-size:12px;color:oklch(0.6 0.006 100);">Nenhuma zona neste nó.</div>`;
+
+  // LED por gatilho — para cada trigger selecionado, picker LED 1 / LED 2 / nenhum
+  const ledSections = triggers.length
+    ? triggers.map((t) => {
+        const nodeName = esc(rmtNodeLabel(t.node, stations, selfNode));
+        const curSlot = t.ledSlot != null ? num(t.ledSlot) : 255;
+        const ledOpts = [
+          { label: 'Nenhum', slot: 255 },
+          { label: 'LED 1', slot: 0 },
+          { label: 'LED 2', slot: 1 },
+        ];
+        const pills = ledOpts.map((opt) => {
+          const sel = curSlot === opt.slot;
+          const border = sel ? 'oklch(0.47 0.1 150)' : 'oklch(0.88 0.006 100)';
+          const bg = sel ? 'oklch(0.47 0.1 150)' : 'transparent';
+          const color = sel ? '#fff' : 'oklch(0.4 0.006 100)';
+          const shadow = sel ? '0 1px 4px oklch(0.47 0.1 150 / 0.3)' : 'none';
+          return `<button data-rmtled="${num(t.node)}" data-rmtledslot="${opt.slot}" style="cursor:pointer;border:1.5px solid ${border};padding:7px 12px;border-radius:999px;background:${bg};color:${color};font-size:12.5px;font-weight:600;box-shadow:${shadow};">${esc(opt.label)}</button>`;
+        }).join('');
+        return `<div style="margin-bottom:8px;">
+          <div style="font-size:11px;color:oklch(0.6 0.006 100);margin-bottom:5px;">${nodeName}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;">${pills}</div>
+        </div>`;
+      }).join('')
+    : `<div style="font-size:12px;color:oklch(0.6 0.006 100);">Selecione gatilho(s) acima.</div>`;
+
+  const habBg = d.enabled ? 'oklch(0.47 0.1 150)' : 'oklch(0.85 0.006 100)';
+  const habKnob = d.enabled ? '18px' : '2px';
+
+  let delBlock = '';
+  if (isEditing) {
+    if (rmtUI.deleteConfirm) {
+      delBlock = `<div style="background:oklch(0.55 0.16 30 / 0.08);border:1px solid oklch(0.55 0.16 30 / 0.3);border-radius:12px;padding:12px 14px;">
+        <div style="font-size:12.5px;color:oklch(0.22 0.008 100);">Excluir esta associação?</div>
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <button data-rmtdelcancel style="cursor:pointer;flex:1;border:1px solid oklch(0.9 0.006 100);padding:9px;border-radius:8px;background:transparent;color:oklch(0.4 0.006 100);font-size:12.5px;font-weight:600;">Cancelar</button>
+          <button data-rmtdelconfirm style="cursor:pointer;flex:1;border:none;padding:9px;border-radius:8px;background:oklch(0.55 0.16 30);color:#fff;font-size:12.5px;font-weight:700;">Excluir</button>
+        </div>
+      </div>`;
+    }
+    delBlock += `<button data-rmtdelreq style="cursor:pointer;border:1px solid oklch(0.55 0.16 30 / 0.4);padding:11px;border-radius:12px;background:transparent;color:oklch(0.55 0.16 30);font-size:13px;font-weight:700;width:100%;">Excluir associação</button>`;
+  }
+
+  return `
+    <div data-rmtcancel style="cursor:pointer;font-size:13px;font-weight:600;color:oklch(0.47 0.1 150);">‹ Modo Remoto</div>
+    <div style="font-size:18px;font-weight:700;color:oklch(0.22 0.008 100);">${isEditing ? 'Editar associação' : 'Nova associação'}</div>
+
+    ${errBox}
+
+    <div style="background:oklch(1 0 0);border:1px solid oklch(0.9 0.006 100);border-radius:16px;padding:14px 16px;display:flex;flex-direction:column;gap:14px;">
+      <div>
+        <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;">Botões — um por nó/gateway; pode adicionar mais de um nó</div>
+        <div style="font-size:10px;font-weight:700;color:oklch(0.6 0.006 100);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:5px;">Nó</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">
+          ${triggerNodePills}
+        </div>
+        <div style="font-size:10px;font-weight:700;color:oklch(0.6 0.006 100);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:5px;">Entrada</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:${triggers.length ? '10px' : '0'};">
+          ${triggerInputPills}
+        </div>
+        ${triggers.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px;">${triggerTags}</div>` : ''}
+      </div>
+
+      <div>
+        <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;">Saída a acionar</div>
+        <div style="font-size:10px;font-weight:700;color:oklch(0.6 0.006 100);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:5px;">Nó</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">
+          ${targetNodePills}
+        </div>
+        <div style="font-size:10px;font-weight:700;color:oklch(0.6 0.006 100);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:5px;">Saída</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${targetZonePills}
+        </div>
+      </div>
+
+      <div>
+        <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;">LED de feedback por gatilho (opcional)</div>
+        <div style="font-size:12px;color:oklch(0.52 0.006 100);margin-bottom:8px;line-height:1.4;">Acende junto com a saída acionada, indicando visualmente que a botoeira foi ativada — no nó da botoeira.</div>
+        ${ledSections}
+      </div>
+
+      <div data-rmthab style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;background:oklch(0.97 0.003 100);border-radius:10px;padding:10px 12px;">
+        <div style="font-size:13px;font-weight:600;color:oklch(0.22 0.008 100);">Associação habilitada</div>
+        <div style="width:38px;height:22px;border-radius:999px;background:${habBg};position:relative;flex-shrink:0;">
+          <div style="position:absolute;top:2px;left:${habKnob};width:18px;height:18px;border-radius:999px;background:#fff;"></div>
+        </div>
+      </div>
+    </div>
+
+    <button data-rmtsave style="cursor:pointer;border:none;padding:13px;border-radius:12px;background:oklch(0.47 0.1 150);color:#fff;font-size:15px;font-weight:700;width:100%;">Salvar associação</button>
+
+    ${delBlock}
+  `;
+}
+
+function rmtRender() {
+  view.innerHTML = rmtUI.screen === 'edit' ? rmtEditHtml() : rmtListHtml();
+  rmtWire();
+}
+
+function rmtWire() {
+  const q = (sel) => view.querySelector(sel);
+
+  if (rmtUI.screen !== 'edit') {
+    // Botões "Acionar" (testar acionamento)
+    view.querySelectorAll('[data-rmtcmd]').forEach((btn) => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const zid = num(btn.dataset.rmtcmd);
+        await postJson('/remote/command', { targetZoneId: zid });
+        renderRemoto().catch(() => {});
+      });
+    });
+
+    // Nova associação
+    const nb = q('[data-rmtnew]');
+    if (nb) nb.addEventListener('click', () => rmtOpenNew());
+
+    // Editar associação (click no card, não no toggle)
+    view.querySelectorAll('[data-rmtedit]').forEach((el) => {
+      el.addEventListener('click', (e) => {
+        if (e.target.closest('[data-rmttoghab]')) return;
+        rmtOpenEdit(el.dataset.rmtedit);
+      });
+    });
+
+    // Toggle habilitado inline
+    view.querySelectorAll('[data-rmttoghab]').forEach((el) => {
+      el.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const id = el.dataset.rmttoghab;
+        const a = (rmtData.associations || []).find((x) => String(x.id) === String(id));
+        if (!a) return;
+        const r = await postJson('/remote', { id: a.id, enabled: !a.enabled, targetZoneId: num(a.targetZoneId), triggers: Array.isArray(a.triggers) ? a.triggers : [] });
+        if (r.ok) renderRemoto().catch(() => {});
+      });
+    });
+    return;
+  }
+
+  // Tela de edição
+  const cancel = q('[data-rmtcancel]');
+  if (cancel) cancel.addEventListener('click', () => { rmtUI = { screen: 'list', draft: null, errors: [], deleteConfirm: false }; rmtRender(); });
+
+  // Seleção do nó de gatilho
+  view.querySelectorAll('[data-rmttrignode]').forEach((b) => {
+    b.addEventListener('click', () => {
+      rmtUI.draft.triggerPickNode = num(b.dataset.rmttrignode);
+      rmtRender();
+    });
+  });
+
+  // Seleção de entrada do nó de gatilho (um por nó, substitui se já existir)
+  view.querySelectorAll('[data-rmttriginput]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const inputIdx = num(b.dataset.rmttriginput);
+      const pickNode = num(rmtUI.draft.triggerPickNode);
+      const triggers = (rmtUI.draft.triggers || []).filter((t) => num(t.node) !== pickNode);
+      // Verifica se já estava selecionado (toggle off)
+      const wasSelected = (rmtUI.draft.triggers || []).some((t) => num(t.node) === pickNode && num(t.inputIdx) === inputIdx);
+      if (!wasSelected) {
+        triggers.push({ node: pickNode, inputIdx, ledSlot: 255 });
+      }
+      rmtUI.draft.triggers = triggers;
+      rmtRender();
+    });
+  });
+
+  // Remover gatilho via tag ×
+  view.querySelectorAll('[data-rmtremtrig]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const nodeId = num(b.dataset.rmtremtrig);
+      rmtUI.draft.triggers = (rmtUI.draft.triggers || []).filter((t) => num(t.node) !== nodeId);
+      rmtRender();
+    });
+  });
+
+  // Seleção do nó de saída-alvo
+  view.querySelectorAll('[data-rmttargetnode]').forEach((b) => {
+    b.addEventListener('click', () => {
+      rmtUI.draft.targetPickNode = num(b.dataset.rmttargetnode);
+      rmtUI.draft.targetZoneId = null;
+      rmtRender();
+    });
+  });
+
+  // Seleção de zona-alvo
+  view.querySelectorAll('[data-rmtzone]').forEach((b) => {
+    b.addEventListener('click', () => {
+      rmtUI.draft.targetZoneId = num(b.dataset.rmtzone);
+      rmtRender();
+    });
+  });
+
+  // LED por gatilho
+  view.querySelectorAll('[data-rmtled]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const nodeId = num(b.dataset.rmtled);
+      const slot = num(b.dataset.rmtledslot);
+      rmtUI.draft.triggers = (rmtUI.draft.triggers || []).map((t) =>
+        num(t.node) === nodeId ? { ...t, ledSlot: slot } : t
+      );
+      rmtRender();
+    });
+  });
+
+  const hab = q('[data-rmthab]');
+  if (hab) hab.addEventListener('click', () => { rmtUI.draft.enabled = !rmtUI.draft.enabled; rmtRender(); });
+
+  const save = q('[data-rmtsave]');
+  if (save) save.addEventListener('click', () => rmtSave());
+
+  const delReq = q('[data-rmtdelreq]');
+  if (delReq) delReq.addEventListener('click', () => { rmtUI.deleteConfirm = true; rmtRender(); });
+  const delCancel = q('[data-rmtdelcancel]');
+  if (delCancel) delCancel.addEventListener('click', () => { rmtUI.deleteConfirm = false; rmtRender(); });
+  const delConfirm = q('[data-rmtdelconfirm]');
+  if (delConfirm) delConfirm.addEventListener('click', () => rmtDelete());
+}
+
+function rmtOpenNew() {
+  const selfNode = rmtData.selfNode;
+  const firstNode = selfNode != null ? num(selfNode) : 0;
+  rmtUI = {
+    screen: 'edit', errors: [], deleteConfirm: false,
+    draft: { id: null, enabled: true, triggers: [], targetZoneId: null, targetPickNode: firstNode, triggerPickNode: firstNode, isEditing: false },
+  };
+  rmtRender();
+}
+
+function rmtOpenEdit(id) {
+  const a = (rmtData.associations || []).find((x) => String(x.id) === String(id));
+  if (!a) return;
+  const selfNode = rmtData.selfNode;
+  const firstNode = selfNode != null ? num(selfNode) : 0;
+  const triggers = Array.isArray(a.triggers) ? a.triggers : [];
+  const triggerPickNode = triggers.length ? num(triggers[0].node) : firstNode;
+  const targetZone = (rmtData.zones || []).find((z) => num(z.id) === num(a.targetZoneId));
+  const targetPickNode = targetZone ? num(targetZone.node) : firstNode;
+  rmtUI = {
+    screen: 'edit', errors: [], deleteConfirm: false,
+    draft: {
+      id: a.id,
+      enabled: !!a.enabled,
+      triggers: triggers.map((t) => ({ node: num(t.node), inputIdx: num(t.inputIdx), ledSlot: t.ledSlot != null ? num(t.ledSlot) : 255 })),
+      targetZoneId: num(a.targetZoneId),
+      targetPickNode,
+      triggerPickNode,
+      isEditing: true,
+    },
+  };
+  rmtRender();
+}
+
+async function rmtSave() {
+  const d = rmtUI.draft;
+  const errors = [];
+  if (!d.triggers || d.triggers.length === 0) errors.push('Selecione ao menos um gatilho.');
+  if (!d.targetZoneId) errors.push('Selecione a saída a ser acionada.');
+  if (errors.length) { rmtUI.errors = errors; rmtRender(); return; }
+  const payload = {
+    enabled: !!d.enabled,
+    targetZoneId: num(d.targetZoneId),
+    triggers: d.triggers.map((t) => ({ node: num(t.node), inputIdx: num(t.inputIdx), ledSlot: t.ledSlot != null ? num(t.ledSlot) : 255 })),
+  };
+  if (d.id != null) payload.id = d.id;
+  const r = await postJson('/remote', payload);
+  if (r.ok) { rmtUI = { screen: 'list', draft: null, errors: [], deleteConfirm: false }; renderRemoto().catch(() => {}); }
+  else { rmtUI.errors = (r.body && Array.isArray(r.body.errors)) ? r.body.errors : ['Falha ao salvar.']; rmtRender(); }
+}
+
+async function rmtDelete() {
+  const r = await postJson('/remote/delete', { id: rmtUI.draft.id });
+  if (r.ok) { rmtUI = { screen: 'list', draft: null, errors: [], deleteConfirm: false }; renderRemoto().catch(() => {}); }
+  else { rmtUI.deleteConfirm = false; rmtUI.errors = ['Falha ao excluir.']; rmtRender(); }
+}
+
+// Entrada do roteador: carrega GET /remote + dados auxiliares e cacheia em rmtData.
+async function renderRemoto() {
+  const [remoteData, overview, zones, stations] = await Promise.all([
+    getJson('/remote').catch(() => ({ status: [], associations: [] })),
+    getJson('/overview').catch(() => ({})),
+    getJson('/zones').catch(() => []),
+    getJson('/stations').catch(() => []),
+  ]);
+  rmtData = {
+    status: Array.isArray(remoteData.status) ? remoteData.status : [],
+    associations: Array.isArray(remoteData.associations) ? remoteData.associations : [],
+    zones: Array.isArray(zones) ? zones : [],
+    stations: Array.isArray(stations) ? stations : [],
+    selfNode: overview.selfNode != null ? num(overview.selfNode) : null,
+  };
+  // Poll apenas atualiza o cache; não reconstrói o DOM da tela de edição.
+  if (rmtUI.screen === 'edit') return;
+  rmtUI = { screen: 'list', draft: null, errors: [], deleteConfirm: false };
+  rmtRender();
+}
+
 // ===== "Mais" (menu de telas secundárias) =====
 function renderMais() {
   const items = [
+    ['remoto', 'Modo Remoto', 'Botoeira em um nó/gateway aciona saída em outro'],
     ['espelhamento', 'Modo Espelhamento', 'Entradas físicas do gateway → saídas dos nós'],
     ['grupos', 'Grupos & Intertravamentos', 'Sequenciamento de bomba e regras de bloqueio'],
     ['niveis', 'Controle de nível', 'Controle de bomba por boia flutuante'],
@@ -3713,6 +4196,7 @@ const RENDER = {
   gpo: renderGpo,
   grupos: renderGruposInterlocks,
   niveis: renderNiveis,
+  remoto: renderRemoto,
   espelhamento: renderEspelhamento,
   auditlog: renderAuditLog,
   tamper: renderTamper,
@@ -3727,12 +4211,13 @@ const RENDER = {
 
 // Rótulo mostrado na barra de volta ao entrar numa tela secundária via "Mais".
 const SECTION_LABELS = {
+  remoto: 'Modo Remoto',
   espelhamento: 'Espelhamento', grupos: 'Grupos & Intertravamentos', niveis: 'Nível',
   sensores: 'Sensores', gpo: 'Saídas (GPO)', tamper: 'Tamper', auditlog: 'Log', cobertura: 'Cobertura',
   malha: 'Malha', wifi: 'Rede Wi-Fi', horario: 'Horário', meteo: 'Meteorologia', sistema: 'Sistema',
 };
 // Telas que se auto-atualizam (poll 3 s) via re-render completo.
-const POLLED = { overview: 1, stations: 1, sensores: 1, cobertura: 1, espelhamento: 1, malha: 1, meteo: 1 };
+const POLLED = { overview: 1, stations: 1, sensores: 1, cobertura: 1, remoto: 1, espelhamento: 1, malha: 1, meteo: 1 };
 
 const subbar = document.getElementById('subbar');
 const subTitle = document.getElementById('subTitle');
