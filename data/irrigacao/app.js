@@ -3681,7 +3681,7 @@ async function renderRadio() {
   const seg = signalSeg === 'cobertura' ? 'cobertura' : 'enlace';
   let body;
   if (seg === 'cobertura') {
-    const rows = (await getJson('/survey')) || [];
+    const rows = (await getJson('/survey').catch(() => [])) || [];
     body = coberturaTableHtml(rows);
   } else {
     const list = await getJson('/stations').catch(() => []);
