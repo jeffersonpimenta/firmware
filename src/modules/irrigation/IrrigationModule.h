@@ -81,6 +81,9 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
 
     // Called by IrrigationUiThread (25 ms poll) to dispatch button gestures.
     void onButtonEvent(ButtonGestureDetector::Event ev);
+    // Janela de acesso (spec 2026-08-11): aplica a ação de SHORT press (reabre a
+    // janela ou agenda reboot conforme o BLE já ter sido liberado neste boot).
+    void applyAccessWindowShort();
     // Called by IrrigationUiThread to read current LED state (pure function of time).
     bool ledOnNow() { return led.ledOn(millis()); }
 
@@ -361,6 +364,9 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     void noteGatewayLink(int8_t snrQ, int16_t rssi);
     bool safeMode = false;
     bool provisioned = false; // false = nó de fábrica (sem config salva no boot) → wizard de 1º boot (§6)
+    // Janela de acesso (Portal AP + BLE) nos nós de campo — spec 2026-08-11.
+    bool bleReleasedThisBoot = false; // BLE já foi liberado (RAM) nesta sessão; release é sticky até reboot.
+    bool apWasUp = false;             // nível anterior de portal.apShouldBeUp() p/ detectar a borda OPEN->CLOSED.
     bool bootHeartbeatPending = true;
     // Controle de LOG_WARN de RTC (1×/h para não spam)
     uint32_t lastRtcWarnMs = 0;

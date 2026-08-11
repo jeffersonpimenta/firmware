@@ -1,5 +1,6 @@
 #include "modules/irrigation/IrrigationModule.h"
 #include "FSCommon.h"
+#include "modules/irrigation/AccessWindowPolicy.h"
 #include "modules/irrigation/IrrigationWebApi.h"
 #include "modules/irrigation/WeatherEngine.h"
 #include "modules/irrigation/PortalApi.h"
@@ -296,6 +297,12 @@ IrrigationModule::IrrigationModule()
     // The class is defined later in this translation unit; new'd here so it owns its own lifetime.
     if (settings.pinBtn >= 0 || settings.pinLed >= 0)
         new IrrigationUiThread(this, settings.pinBtn, settings.pinLed);
+    // Janela de acesso (spec 2026-08-11): estação/repetidor provisionados abrem a
+    // janela Portal AP + BLE no boot; ela fecha por inatividade e, na borda de
+    // fechamento, o BLE é liberado de vez (ver runOnce). Fora do regime elegível
+    // (fábrica/gateway/serviço) o comportamento antigo é preservado.
+    if (AccessWindowPolicy::eligible((IrrigationRole)settings.role, provisioned))
+        portal.requestOpen(millis());
 }
 
 bool IrrigationModule::wantPacket(const meshtastic_MeshPacket *p)
@@ -907,6 +914,25 @@ int32_t IrrigationModule::runOnce()
 {
 #if defined(ARCH_ESP32) && !MESHTASTIC_EXCLUDE_WEBSERVER
     portalApLoop(millis());
+#endif
+#ifdef ARCH_ESP32
+    // Janela de acesso (spec 2026-08-11): detecta a borda OPEN->CLOSED da janela
+    // num nó elegível e, uma única vez por boot, derruba o BLE de verdade
+    // (config.bluetooth.enabled=false em RAM → deinit → release da RAM). O AP já
+    // foi derrubado pelo próprio portalApLoop() quando apShouldBeUp() virou false.
+    {
+        bool eligible = AccessWindowPolicy::eligible((IrrigationRole)settings.role, provisioned);
+        bool up = portal.apShouldBeUp();
+        if (AccessWindowPolicy::shouldTearDownBle(eligible, up, apWasUp, bleReleasedThisBoot)) {
+            LOG_INFO("Irrigation: access window closed — tearing down BLE (RAM release, sticky until reboot)");
+            config.bluetooth.enabled = false; // RAM only — flash mantém enabled=true p/ o próximo boot.
+            if (nimbleBluetooth)
+                nimbleBluetooth->deinit();
+            esp32ReleaseBluetoothMemoryIfUnused(); // shouldReleaseBluetoothMemory()==true agora
+            bleReleasedThisBoot = true;
+        }
+        apWasUp = up;
+    }
 #endif
     // Fail-safe tick roda em TODOS os papéis: num nó mal-configurado nunca deve
     // sobrar válvula aberta sem timer sendo decrementado.
@@ -1707,6 +1733,30 @@ void IrrigationModule::sendEvento(uint8_t code, uint32_t arg)
     service->sendToMesh(p, RX_SRC_LOCAL, false);
 }
 
+// Janela de acesso (spec 2026-08-11): traduz o SHORT press num nó elegível.
+// BLE vivo -> reabre a janela in-loco (portal + BLE seguem de pé). BLE já
+// liberado (release sticky) -> só um reboot reabre a janela; agenda-o com LED de
+// confirmação. Fora do regime elegível a política devolve NONE (no-op).
+void IrrigationModule::applyAccessWindowShort()
+{
+    using Action = AccessWindowPolicy::ButtonAction;
+    bool eligible = AccessWindowPolicy::eligible((IrrigationRole)settings.role, provisioned);
+    switch (AccessWindowPolicy::buttonShortAction(eligible, bleReleasedThisBoot)) {
+    case Action::REOPEN_LIVE:
+        portal.requestOpen(millis());
+        LOG_INFO("Irrigation: access window reopened (portal + BLE live)");
+        break;
+    case Action::REBOOT_TO_REOPEN:
+        led.setMode(LedPatternController::Mode::PAIRING); // confirmação visual antes do reboot
+        LOG_INFO("Irrigation: BLE released — rebooting in 1.5 s to reopen access window");
+        rebootAtMsec = millis() + 1500;
+        break;
+    case Action::NONE:
+    default:
+        break;
+    }
+}
+
 // Decision §6: button gestures per role/state.
 void IrrigationModule::onButtonEvent(ButtonGestureDetector::Event ev)
 {
@@ -1742,13 +1792,18 @@ void IrrigationModule::onButtonEvent(ButtonGestureDetector::Event ev)
             portal.requestOpen(millis());
         return;
     }
+    if (role == IrrigationRole::REPETIDOR) {
+        // Repetidor provisionado: SHORT reabre a janela de acesso (spec 2026-08-11).
+        if (ev == Ev::SHORT)
+            applyAccessWindowShort();
+        return;
+    }
     if (role != IrrigationRole::ESTACAO)
         return;
     // Paired station gestures.
     switch (ev) {
     case Ev::SHORT:
-        portal.requestOpen(millis()); // Fase 5b: sobe o captive portal (10 min, spec §8.7)
-        LOG_INFO("Irrigation: captive portal requested");
+        applyAccessWindowShort(); // Janela de acesso: REOPEN_LIVE ou REBOOT_TO_REOPEN (spec 2026-08-11)
         break;
     case Ev::DOUBLE:
         if (valves.isOpen(0)) {

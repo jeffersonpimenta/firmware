@@ -47,8 +47,10 @@ void portalApLoop(unsigned long nowMs)
     if (!irrigationModule)
         return;
     PortalSession &s = irrigationModule->portalSession();
-    // Renova atividade enquanto houver estação Wi-Fi associada ao AP.
-    s.noteClient(nowMs, sApUp && WiFi.softAPgetStationNum() > 0);
+    // Renova atividade enquanto houver cliente no AP Wi-Fi OU no BLE (spec 2026-08-11:
+    // a janela compartilhada Portal AP + BLE renova por qualquer um dos dois).
+    bool anyClient = (sApUp && WiFi.softAPgetStationNum() > 0) || (nimbleBluetooth && nimbleBluetooth->isConnected());
+    s.noteClient(nowMs, anyClient);
     s.tick(nowMs);
 
     bool want = s.apShouldBeUp();
