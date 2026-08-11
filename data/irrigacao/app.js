@@ -2163,37 +2163,6 @@ function nvWire() {
   if (delConfirm) delConfirm.addEventListener('click', () => nvDelete());
 }
 
-// ===== Cobertura (site survey §8.5) =====
-async function renderCobertura() {
-  const COV_ROLES = ['Estação', 'Gateway', 'Repetidor', 'Serviço'];
-  const rows = (await getJson('/survey')) || [];
-  const list = Array.isArray(rows) ? rows : [];
-  const clearRow = `<div class="log-export-row"><button class="btn ghost sm" id="cov-clear">Limpar</button></div>`;
-  const body = list.length
-    ? list.map((r) => {
-        r = r || {};
-        const coord = r.coord ? `${(num(r.lat) / 1e7).toFixed(5)}, ${(num(r.lon) / 1e7).toFixed(5)}` : '—';
-        return `<tr>
-          <td class="mono">${esc(nodeHex(r.no))}</td>
-          <td>${esc(COV_ROLES[num(r.role)] || ('papel ' + num(r.role)))}</td>
-          <td class="mono">${esc(coord)}</td>
-          <td>${esc((num(r.snr) / 4).toFixed(0))}</td>
-          <td>${esc(String(num(r.rssi)))}</td>
-          <td>${esc(fmtSince(r.idadeS))}</td>
-        </tr>`;
-      }).join('')
-    : '<tr><td colspan="6" class="empty">Sem beacons recebidos.</td></tr>';
-  view.innerHTML = clearRow + `<div class="log-table-wrap"><table class="log-table">
-    <thead><tr><th>Nó</th><th>Papel</th><th>Coordenada</th><th>SNR</th><th>RSSI</th><th>Idade</th></tr></thead>
-    <tbody>${body}</tbody></table></div>`;
-  const cb = view.querySelector('#cov-clear');
-  if (cb)
-    cb.addEventListener('click', async () => {
-      await postJson('/survey/clear', {});
-      renderCobertura().catch(() => {});
-    });
-}
-
 // ===== Modo Espelhamento =====
 // Copia o estado das entradas físicas do gateway para as saídas de zona associadas nos nós.
 // Modelo de UI do mockup "Irrigacao Mobile.dc.html" linhas 815–970.
@@ -3541,8 +3510,7 @@ function renderMais() {
     ['gpo', 'Saídas (GPO)', 'Relés/MOSFET: portão, bomba auxiliar, luz, sirene'],
     ['tamper', 'Tamper / manutenção', 'Violação de gabinete e janela de manutenção'],
     ['auditlog', 'Log de auditoria', 'Histórico completo de ações e eventos'],
-    ['cobertura', 'Cobertura', 'Pesquisa de sinal (site survey)'],
-    ['malha', 'Malha / Enlace', 'Qualidade de rádio (SNR/RSSI) de cada nó'],
+    ['radio', 'Enlace / Cobertura', 'SNR/RSSI dos nós e cobertura de sinal'],
     ['wifi', 'Rede Wi-Fi', 'Conectar o gateway a uma rede Wi-Fi local'],
     ['horario', 'Horário', 'Fonte de hora, fuso e sincronização dos nós'],
     ['sistema', 'Sistema', 'Backup e chave da rede'],
@@ -3706,33 +3674,34 @@ function radioSegHtml(seg) {
   </div>`;
 }
 
-// ===== Malha / Enlace (SNR/RSSI/bateria por nó) =====
-async function renderMalha() {
-  const list = await getJson('/stations').catch(() => []);
-  if (!list || !list.length) {
-    view.innerHTML = `<div class="card"><div class="sub">Nenhuma estação conhecida.</div></div>`;
-    return;
+// ===== Rádio: tela unificada (Enlace + Cobertura) =====
+// Estado da aba ativa; sobrevive aos re-renders de poll (3 s).
+let signalSeg = 'enlace'; // 'enlace' | 'cobertura'
+async function renderRadio() {
+  const seg = signalSeg === 'cobertura' ? 'cobertura' : 'enlace';
+  let body;
+  if (seg === 'cobertura') {
+    const rows = (await getJson('/survey')) || [];
+    body = coberturaTableHtml(rows);
+  } else {
+    const list = await getJson('/stations').catch(() => []);
+    body = malhaCardsHtml(list);
   }
-  view.innerHTML = list
-    .map((s) => {
-      s = s || {};
-      const snrQ = s.snrQuarterDb;
-      const snr = snrQ != null ? (num(snrQ) / 4).toFixed(1) + ' dB' : '—';
-      const rssi = s.rssiDbm != null ? num(s.rssiDbm) + ' dBm' : '—';
-      const vbat = s.vbatCentiV != null ? fmtVolts(s.vbatCentiV) : '—';
-      // qualidade por SNR (quarter-dB): >=24 (6 dB) bom, >=8 (2 dB) médio, senão fraco
-      const q = snrQ == null ? 'gray' : num(snrQ) >= 24 ? 'green' : num(snrQ) >= 8 ? 'amber' : 'red';
-      const name = s.name ? esc(s.name) : nodeHex(s.node);
-      return `<div class="card">
-        <div class="sens-hdr"><span class="name">${name}</span><span class="chip ${q}">${snr}</span></div>
-        <div class="row3">
-          <div class="card stat"><div class="lbl">SNR</div><div class="val">${snr}</div></div>
-          <div class="card stat"><div class="lbl">RSSI</div><div class="val">${rssi}</div></div>
-          <div class="card stat"><div class="lbl">Bateria</div><div class="val">${vbat}</div></div>
-        </div>
-      </div>`;
+  view.innerHTML = radioSegHtml(seg) + body;
+  view.querySelectorAll('[data-radioseg]').forEach((b) =>
+    b.addEventListener('click', () => {
+      signalSeg = b.dataset.radioseg;
+      renderRadio().catch(() => {});
     })
-    .join('');
+  );
+  if (seg === 'cobertura') {
+    const cb = view.querySelector('#cov-clear');
+    if (cb)
+      cb.addEventListener('click', async () => {
+        await postJson('/survey/clear', {});
+        renderRadio().catch(() => {});
+      });
+  }
 }
 
 // ===== Rede Wi-Fi (gateway) — endpoints /api/portal/wifi/* =====
@@ -4248,8 +4217,7 @@ const RENDER = {
   espelhamento: renderEspelhamento,
   auditlog: renderAuditLog,
   tamper: renderTamper,
-  cobertura: renderCobertura,
-  malha: renderMalha,
+  radio: renderRadio,
   wifi: renderWifi,
   horario: renderHorario,
   meteo: renderMeteo,
@@ -4261,11 +4229,11 @@ const RENDER = {
 const SECTION_LABELS = {
   remoto: 'Modo Remoto',
   espelhamento: 'Espelhamento', grupos: 'Grupos & Intertravamentos', niveis: 'Nível',
-  sensores: 'Sensores', gpo: 'Saídas (GPO)', tamper: 'Tamper', auditlog: 'Log', cobertura: 'Cobertura',
-  malha: 'Malha', wifi: 'Rede Wi-Fi', horario: 'Horário', meteo: 'Meteorologia', sistema: 'Sistema',
+  sensores: 'Sensores', gpo: 'Saídas (GPO)', tamper: 'Tamper', auditlog: 'Log', radio: 'Enlace / Cobertura',
+  wifi: 'Rede Wi-Fi', horario: 'Horário', meteo: 'Meteorologia', sistema: 'Sistema',
 };
 // Telas que se auto-atualizam (poll 3 s) via re-render completo.
-const POLLED = { overview: 1, stations: 1, sensores: 1, cobertura: 1, remoto: 1, espelhamento: 1, malha: 1, meteo: 1 };
+const POLLED = { overview: 1, stations: 1, sensores: 1, radio: 1, remoto: 1, espelhamento: 1, meteo: 1 };
 
 const subbar = document.getElementById('subbar');
 const subTitle = document.getElementById('subTitle');
