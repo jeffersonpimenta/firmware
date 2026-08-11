@@ -3642,6 +3642,70 @@ function renderSistema() {
   rBtn.addEventListener('click', () => restoreBackup(rBtn, rFile, rStatus));
 }
 
+// ===== Rádio: helpers puros de render (Enlace + Cobertura) =====
+// Cards por estação conhecida (fonte /stations). Qualidade por SNR quarter-dB.
+function malhaCardsHtml(list) {
+  if (!list || !list.length) return `<div class="card"><div class="sub">Nenhuma estação conhecida.</div></div>`;
+  return list
+    .map((s) => {
+      s = s || {};
+      const snrQ = s.snrQuarterDb;
+      const snr = snrQ != null ? (num(snrQ) / 4).toFixed(1) + ' dB' : '—';
+      const rssi = s.rssiDbm != null ? num(s.rssiDbm) + ' dBm' : '—';
+      const vbat = s.vbatCentiV != null ? fmtVolts(s.vbatCentiV) : '—';
+      const q = snrQ == null ? 'gray' : num(snrQ) >= 24 ? 'green' : num(snrQ) >= 8 ? 'amber' : 'red';
+      const name = s.name ? esc(s.name) : nodeHex(s.node);
+      return `<div class="card">
+        <div class="sens-hdr"><span class="name">${name}</span><span class="chip ${q}">${snr}</span></div>
+        <div class="row3">
+          <div class="card stat"><div class="lbl">SNR</div><div class="val">${snr}</div></div>
+          <div class="card stat"><div class="lbl">RSSI</div><div class="val">${rssi}</div></div>
+          <div class="card stat"><div class="lbl">Bateria</div><div class="val">${vbat}</div></div>
+        </div>
+      </div>`;
+    })
+    .join('');
+}
+
+// Tabela de beacons de site survey (fonte /survey) + botão Limpar.
+function coberturaTableHtml(rows) {
+  const COV_ROLES = ['Estação', 'Gateway', 'Repetidor', 'Serviço'];
+  const list = Array.isArray(rows) ? rows : [];
+  const clearRow = `<div class="log-export-row"><button class="btn ghost sm" id="cov-clear">Limpar</button></div>`;
+  const body = list.length
+    ? list
+        .map((r) => {
+          r = r || {};
+          const coord = r.coord ? `${(num(r.lat) / 1e7).toFixed(5)}, ${(num(r.lon) / 1e7).toFixed(5)}` : '—';
+          return `<tr>
+          <td class="mono">${esc(nodeHex(r.no))}</td>
+          <td>${esc(COV_ROLES[num(r.role)] || ('papel ' + num(r.role)))}</td>
+          <td class="mono">${esc(coord)}</td>
+          <td>${esc((num(r.snr) / 4).toFixed(0))}</td>
+          <td>${esc(String(num(r.rssi)))}</td>
+          <td>${esc(fmtSince(r.idadeS))}</td>
+        </tr>`;
+        })
+        .join('')
+    : '<tr><td colspan="6" class="empty">Sem beacons recebidos.</td></tr>';
+  return (
+    clearRow +
+    `<div class="log-table-wrap"><table class="log-table">
+    <thead><tr><th>Nó</th><th>Papel</th><th>Coordenada</th><th>SNR</th><th>RSSI</th><th>Idade</th></tr></thead>
+    <tbody>${body}</tbody></table></div>`
+  );
+}
+
+// Toggle segmentado Enlace|Cobertura. seg: 'enlace' | 'cobertura'.
+function radioSegHtml(seg) {
+  const eAct = seg === 'cobertura' ? '' : ' active';
+  const cAct = seg === 'cobertura' ? ' active' : '';
+  return `<div class="segrow">
+    <button class="seg wide${eAct}" data-radioseg="enlace">Enlace</button>
+    <button class="seg wide${cAct}" data-radioseg="cobertura">Cobertura</button>
+  </div>`;
+}
+
 // ===== Malha / Enlace (SNR/RSSI/bateria por nó) =====
 async function renderMalha() {
   const list = await getJson('/stations').catch(() => []);
