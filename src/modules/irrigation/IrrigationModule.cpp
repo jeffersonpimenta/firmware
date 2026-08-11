@@ -2,8 +2,8 @@
 #include "FSCommon.h"
 #include "modules/irrigation/AccessWindowPolicy.h"
 #include "modules/irrigation/IrrigationWebApi.h"
-#include "modules/irrigation/WeatherEngine.h"
 #include "modules/irrigation/PortalApi.h"
+#include "modules/irrigation/WeatherEngine.h"
 #if defined(ARCH_ESP32) && !MESHTASTIC_EXCLUDE_WEBSERVER
 #include "modules/irrigation/PortalAp.h"
 #endif
