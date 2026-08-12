@@ -121,15 +121,18 @@ central no caso normal.
 
 ## ABI & persistência
 
-- **Settings v7→v8** — apêndice no FIM (offsets v7 intactos), **por entrada-botão** (4):
-  - `uint32_t btnFallbackNode[4]` (0 = sem fallback).
-  - `uint8_t btnFallbackOutId[4]` (id local da saída no nó alvo).
-  - `uint8_t btnFallbackKind` (2 bits/entrada × 4: 0=válvula, 1=GPO, 3=nenhum).
-  - `uint16_t remoteFallbackMs` (T_FALLBACK; 0 ⇒ default compilado).
-  - Total **184→184+23 = 207 B** (4×4 + 4×1 + 1 + 2). `version=8`. Migrar v1..v7→v8
-    (`migrateIrrigationSettings`), `IRRIGATION_SETTINGS_V7_SIZE=184`, atualizar `static_assert`s.
-- **Ripple** (roteiro conhecido das fases anteriores): `StationEntry.blob` 184→205 ·
-  `STATION_ENTRY` serialize +21 · `StationRegistry::SERIALIZED_MAX` · `gwBuildBackup` (emite os
+- **Settings v7→v8** — apêndice no FIM (offsets v7 intactos), **por entrada-botão** (4).
+  Ordem escolhida por alinhamento (struct alinha a 4; `uint16` em offset par; `sizeof` múltiplo
+  de 4):
+  - `uint32_t btnFallbackNode[4]` (offset 184; 0 = sem fallback).
+  - `uint8_t btnFallbackOutId[4]` (offset 200; id local da saída no nó alvo).
+  - `uint16_t remoteFallbackMs` (offset 204; T_FALLBACK; 0 ⇒ default compilado).
+  - `uint8_t btnFallbackKind` (offset 206; 2 bits/entrada × 4: 0=válvula, 1=GPO, 3=nenhum).
+  - `uint8_t pad3` (offset 207; padding explícito).
+  - Total **184→208 B**. `version=8`. Migrar v1..v7→v8 (`migrateIrrigationSettings`),
+    `IRRIGATION_SETTINGS_V7_SIZE=184`, atualizar `static_assert`s.
+- **Ripple** (roteiro conhecido das fases anteriores): `StationEntry.blob` 184→208 ·
+  `STATION_ENTRY` serialize +24 · `StationRegistry::SERIALIZED_MAX` · `gwBuildBackup` (emite os
   campos novos por estação) · `extractLight` tolera campos v8 extras (key-seek ignora chaves
   desconhecidas).
 - **`RemoteButtonTable`** inalterada (associações só no gateway). A rota de fallback é
