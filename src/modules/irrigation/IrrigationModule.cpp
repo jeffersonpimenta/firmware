@@ -15,6 +15,7 @@
 #include "configuration.h"
 #include "gps/RTC.h"
 #include "modules/irrigation/IrrigationBoardDefaults.h"
+#include "modules/irrigation/RemoteButtonEdge.h"
 #include "main.h"
 #include "mesh/Channels.h"
 #include "mesh/wifi/WiFiAPClient.h" // Fase 8b: triggerNtpUpdate/ntpLastRunMs (free functions)
@@ -451,6 +452,10 @@ void IrrigationModule::handleCmdValvula(const meshtastic_MeshPacket &mp, const H
         return;
     }
 
+    // P2P fallback: TOGGLE resolvido no alvo — inverte a saída local.
+    if (cmd.action == IrrigationProto::ACTION_TOGGLE)
+        cmd.action = remoteToggleAction(valves.isOpen(cmd.valveId));
+
     if (safeMode && cmd.action == 1) {
         sendAck(mp.from, h.seq, ACK_NACK, REASON_SAFE_MODE);
         auditEvent(AuditOrigin::PAINEL, AuditAction::CMD_REJEITADO, REASON_SAFE_MODE, AuditResult::NACK, mp.from, h.seq);
@@ -508,6 +513,9 @@ void IrrigationModule::handleCmdGpo(const meshtastic_MeshPacket &mp, const Heade
         auditEvent(AuditOrigin::PAINEL, AuditAction::CMD_REJEITADO, REASON_BAD_PAYLOAD, AuditResult::NACK, mp.from, h.seq);
         return;
     }
+
+    if (cmd.action == IrrigationProto::ACTION_TOGGLE)
+        cmd.action = remoteToggleAction(gpos.isOn(cmd.gpoId));
 
     // Modo seguro: bloqueia ativação de saídas (§5.5). Desligar continua permitido.
     if (safeMode && cmd.action == 1) {
