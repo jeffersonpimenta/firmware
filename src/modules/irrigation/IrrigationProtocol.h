@@ -42,6 +42,10 @@ enum MsgType : uint8_t {
 
 enum AckStatus : uint8_t { ACK_OK = 0, ACK_NACK = 1 };
 
+// Ação de comando de saída (CmdValvula/CmdGpo): 0 = fechar, 1 = abrir.
+// 2 = TOGGLE: o nó alvo inverte a própria saída (modo remoto P2P fallback).
+constexpr uint8_t ACTION_TOGGLE = 2;
+
 enum NackReason : uint8_t {
     REASON_NONE = 0,
     REASON_BATTERY_LOW = 1,

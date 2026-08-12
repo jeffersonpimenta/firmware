@@ -475,6 +475,22 @@ static void test_remoteLed_roundTrip()
     TEST_ASSERT_EQUAL_UINT8(0b10, out.ledStates);
 }
 
+void test_cmdValvula_toggle_action_roundtrip()
+{
+    using namespace IrrigationProto;
+    uint8_t buf[32];
+    CmdValvula in{3, ACTION_TOGGLE, 0};
+    size_t n = encodeCmdValvula(buf, sizeof(buf), 42, in);
+    TEST_ASSERT_TRUE(n > 0);
+    Header h;
+    TEST_ASSERT_TRUE(decodeHeader(buf, n, h));
+    TEST_ASSERT_EQUAL_UINT8(MSG_CMD_VALVULA, h.type);
+    CmdValvula out;
+    TEST_ASSERT_TRUE(decodeCmdValvula(buf, n, out));
+    TEST_ASSERT_EQUAL_UINT8(3, out.valveId);
+    TEST_ASSERT_EQUAL_UINT8(ACTION_TOGGLE, out.action);
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -509,6 +525,7 @@ void setup()
     RUN_TEST(test_resyncPing_truncated_rejected);
     RUN_TEST(test_remoteTrigger_roundTrip);
     RUN_TEST(test_remoteLed_roundTrip);
+    RUN_TEST(test_cmdValvula_toggle_action_roundtrip);
     exit(UNITY_END());
 }
 
