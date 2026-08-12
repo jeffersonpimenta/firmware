@@ -380,8 +380,23 @@ ProcessMessage IrrigationModule::handleReceived(const meshtastic_MeshPacket &mp)
         // Task 6, decisão §3: gateway trata ACKs das estações.
         if ((IrrigationRole)settings.role == IrrigationRole::GATEWAY)
             handleGwAck(mp, h);
-        else
-            LOG_DEBUG("Irrigation: ACK from 0x%08x ignored (role=%d)", mp.from, settings.role);
+        else {
+            // Estação: trata ACK de comando direto P2P (fallback) para acionar LED de confirmação.
+            IrrigationProto::Ack ack;
+            if (decodeAck(mp.decoded.payload.bytes, mp.decoded.payload.size, ack)) {
+                for (uint8_t i = 0; i < IrrigationSettings::MAX_DIGITAL_IN; i++) {
+                    if (_pendingDirect[i].armed && _pendingDirect[i].seq == ack.ackedSeq) {
+                        bool ok = (ack.status == IrrigationProto::ACK_OK);
+                        uint8_t slot = _pendingDirect[i].ledSlot;
+                        if (slot <= 1)
+                            _remoteLed[slot].onLedState(ok, millis()); // SOLID no OK, OFF no NACK
+                        _pendingDirect[i].armed = false;
+                    }
+                }
+            } else {
+                LOG_DEBUG("Irrigation: ACK from 0x%08x ignored (role=%d)", mp.from, settings.role);
+            }
+        }
         break;
     case MSG_HEARTBEAT:
         // Task 6, decisão §3: gateway trata HBs das estações.
@@ -1085,6 +1100,44 @@ int32_t IrrigationModule::runOnce()
                     service->sendToMesh(p, RX_SRC_LOCAL, false);
                 else
                     packetPool.release(p);
+            }
+            if (settings.btnFallbackNode[i] != 0) {
+                _fallback.setWindow(settings.remoteFallbackMs ? settings.remoteFallbackMs
+                                                              : REMOTE_FALLBACK_DEFAULT_MS);
+                _fallback.arm(i, millis());
+            }
+        }
+    }
+
+    // P2P fallback: gatilhos sem REMOTE_LED a tempo → comando direto ao nó alvo.
+    {
+        uint8_t exp[IrrigationSettings::MAX_DIGITAL_IN];
+        size_t k = _fallback.takeExpired(millis(), exp, IrrigationSettings::MAX_DIGITAL_IN);
+        for (size_t j = 0; j < k; j++) {
+            uint8_t i = exp[j];
+            if (settings.btnFallbackNode[i] == 0)
+                continue;
+            uint8_t kind = btnFallbackKindOf(settings, i); // 0=válvula,1=GPO
+            meshtastic_MeshPacket *p = allocDataPacket();
+            p->to = settings.btnFallbackNode[i];
+            uint32_t seq = ++txSeq;
+            if (kind == 1) {
+                IrrigationProto::CmdGpo c{settings.btnFallbackOutId[i], IrrigationProto::ACTION_TOGGLE, 0};
+                p->decoded.payload.size = (uint16_t)IrrigationProto::encodeCmdGpo(
+                    p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), seq, c);
+            } else {
+                IrrigationProto::CmdValvula c{settings.btnFallbackOutId[i], IrrigationProto::ACTION_TOGGLE, 0};
+                p->decoded.payload.size = (uint16_t)IrrigationProto::encodeCmdValvula(
+                    p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), seq, c);
+            }
+            if (p->decoded.payload.size) {
+                service->sendToMesh(p, RX_SRC_LOCAL, false);
+                uint8_t slot = digitalInLedSlot(settings, i);
+                if (slot <= 1) {
+                    _pendingDirect[i] = {seq, slot, true};
+                }
+            } else {
+                packetPool.release(p);
             }
         }
     }
@@ -4117,6 +4170,8 @@ void IrrigationModule::handleRemoteLed(const meshtastic_MeshPacket &mp, const Ir
         return;
     for (uint8_t s = 0; s < 2; s++)
         _remoteLed[s].onLedState((rl.ledStates >> s) & 1u, millis());
+    for (uint8_t i = 0; i < IrrigationSettings::MAX_DIGITAL_IN; i++)
+        _fallback.clear(i);
 }
 
 // ---------------------------------------------------------------------------

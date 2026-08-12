@@ -26,6 +26,7 @@
 #include "modules/irrigation/WeatherClient.h"
 #include "modules/irrigation/RemoteButtonEdge.h"
 #include "modules/irrigation/RemoteLedFsm.h"
+#include "modules/irrigation/RemoteFallbackTracker.h"
 
 // Forward-decl da cola web (definida em IrrigationWebApi.h, incluída só no .cpp).
 namespace IrrigationWeb
@@ -405,6 +406,10 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     RemoteButtonEdge _btnEdge[IrrigationSettings::MAX_DIGITAL_IN];
     // FSM dos 2 LEDs de feedback local (gateway tem pinsRemoteLed[]; estação Task 7 reusa).
     RemoteLedFsm _remoteLed[2];
+    RemoteFallbackTracker _fallback{REMOTE_FALLBACK_DEFAULT_MS};
+    // casamento ACK direto → LED do fallback P2P: seq do comando direto emitido por slot de LED.
+    struct PendingDirect { uint32_t seq = 0; uint8_t ledSlot = 3; bool armed = false; };
+    PendingDirect _pendingDirect[IrrigationSettings::MAX_DIGITAL_IN];
     // Cache change-driven: último estado de LEDs por nó-gatilho (até 16 entradas).
     static constexpr size_t LED_CACHE_MAX = 16;
     struct LedCacheEntry { uint32_t node = 0; uint8_t states = 0; };
