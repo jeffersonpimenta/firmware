@@ -4,7 +4,7 @@
 
 enum class IrrigationRole : uint8_t { ESTACAO = 0, GATEWAY = 1, REPETIDOR = 2, SERVICO = 3 };
 
-// Layout do blob on-disk/radio (184 bytes, ABI-locked v7):
+// Layout do blob on-disk/radio (208 bytes, ABI-locked v8):
 //   0  magic(4) | 4  version(2) | 6  role(1) | 7  numValves(1)
 //   8  boundGateway(4) | 12 hbMinutes(2) | 14 vbatMinAbrirCentiV(2) | 16 maxOpenConfigS(2)
 //  18  cmdRatePerMin(1) | 19 pad0(1) | 20 pulseMs(2)
@@ -20,14 +20,15 @@ enum class IrrigationRole : uint8_t { ESTACAO = 0, GATEWAY = 1, REPETIDOR = 2, S
 // 176  vbatAvisoCentiV(2) | 178 vbatCriticaCentiV(2)
 // --- v7 (Modo Remoto) ---
 // 180  pinsRemoteLed[2](2) | 182 digitalInBtnMask(1) | 183 digitalInLedIdx(1)
-// Total = 184.
+// --- v8 (P2P fallback) --- 184 btnFallbackNode[4](16) | 200 btnFallbackOutId[4](4) | 204 remoteFallbackMs(2) | 206 btnFallbackKind(1) | 207 pad3(1) → 208
+// Total = 208.
 struct IrrigationSettings {
     static constexpr uint32_t MAGIC = 0x49525231; // "IRR1"
     static constexpr uint8_t MAX_VALVES = 8;
     static constexpr uint8_t MAX_DIGITAL_IN = 4;
 
     uint32_t magic = MAGIC;
-    uint16_t version = 7;
+    uint16_t version = 8;
     uint8_t role = (uint8_t)IrrigationRole::ESTACAO;
     uint8_t numValves = 2;
     uint32_t boundGateway = 0; // 0 = não pareado
@@ -100,6 +101,14 @@ struct IrrigationSettings {
     int8_t pinsRemoteLed[2] = {-1, -1}; // 2 LEDs dedicados de feedback (§modo remoto)
     uint8_t digitalInBtnMask = 0;       // bit i = entrada digital i é botoeira
     uint8_t digitalInLedIdx = 0xFF;     // 2 bits por entrada (0..3): slot de LED 0/1, 3=nenhum; default=tudo nenhum
+
+    // v8 (Modo Remoto P2P fallback): rota direta por entrada-botão, auto-compilada
+    // pelo gateway; usada quando o gateway não confirma o gatilho a tempo. Apêndice no FIM.
+    uint32_t btnFallbackNode[MAX_DIGITAL_IN] = {0, 0, 0, 0}; // 0 = sem fallback
+    uint8_t btnFallbackOutId[MAX_DIGITAL_IN] = {0, 0, 0, 0};  // id local da saída no nó alvo
+    uint16_t remoteFallbackMs = 0;  // T_FALLBACK; 0 => default compilado (REMOTE_FALLBACK_DEFAULT_MS)
+    uint8_t btnFallbackKind = 0xFF; // 2 bits/entrada: 0=válvula,1=GPO,3=nenhum (default tudo nenhum)
+    uint8_t pad3 = 0;               // padding explícito p/ sizeof múltiplo de 4 (offset 207)
 };
 
 static constexpr size_t IRRIGATION_SETTINGS_V1_SIZE = 40;
@@ -107,11 +116,14 @@ static constexpr size_t IRRIGATION_SETTINGS_V3_SIZE = 52;
 static constexpr size_t IRRIGATION_SETTINGS_V4_SIZE = 128;
 static constexpr size_t IRRIGATION_SETTINGS_V5_SIZE = 176;
 static constexpr size_t IRRIGATION_SETTINGS_V6_SIZE = 180;
+static constexpr size_t IRRIGATION_SETTINGS_V7_SIZE = 184;
 static_assert(sizeof(IrrigationSettings::SensorSlot) == 16, "SensorSlot é ABI on-disk");
 static_assert(sizeof(IrrigationSettings::LocalInterlock) == 12, "LocalInterlock é ABI on-disk");
 static_assert(offsetof(IrrigationSettings, localInterlocks) == 128, "ABI v5");
 
-// ABI lock v7: prefixo v6 (180 B) + pinsRemoteLed[2](2) + digitalInBtnMask(1) + digitalInLedIdx(1) = 184.
+// ABI lock v8: prefixo v7 (184 B) + btnFallbackNode[4](16) + btnFallbackOutId[4](4) +
+// remoteFallbackMs(2) + btnFallbackKind(1) + pad3(1) = 208.
+// Prefixo v7 = prefixo v6 (180 B) + pinsRemoteLed[2](2) + digitalInBtnMask(1) + digitalInLedIdx(1) = 184.
 // Prefixo v6 = prefixo v5 (176 B) + vbatAvisoCentiV(2) + vbatCriticaCentiV(2) = 180.
 // Prefixo v5 = prefixo v4 (128 B) + localInterlocks[4×12](48) = 176.
 // Prefixo v4: magic(4)+version(2)+role(1)+numValves(1)+boundGateway(4)+hbMinutes(2)+
@@ -125,7 +137,11 @@ static_assert(offsetof(IrrigationSettings, vbatCriticaCentiV) == 178, "ABI v6");
 static_assert(offsetof(IrrigationSettings, pinsRemoteLed) == 180, "ABI v7");
 static_assert(offsetof(IrrigationSettings, digitalInBtnMask) == 182, "ABI v7");
 static_assert(offsetof(IrrigationSettings, digitalInLedIdx) == 183, "ABI v7");
-static_assert(sizeof(IrrigationSettings) == 184, "on-disk settings format is ABI-dependent; bump version on layout change");
+static_assert(offsetof(IrrigationSettings, btnFallbackNode) == 184, "ABI v8");
+static_assert(offsetof(IrrigationSettings, btnFallbackOutId) == 200, "ABI v8");
+static_assert(offsetof(IrrigationSettings, remoteFallbackMs) == 204, "ABI v8");
+static_assert(offsetof(IrrigationSettings, btnFallbackKind) == 206, "ABI v8");
+static_assert(sizeof(IrrigationSettings) == 208, "on-disk settings format is ABI-dependent; bump version on layout change");
 
 // Pino de offsets do apêndice v4: drift silencioso de layout vira erro de compilação.
 static_assert(offsetof(IrrigationSettings, pinsGpo) == 52, "ABI v4");
@@ -147,7 +163,13 @@ inline uint8_t digitalInLedSlot(const IrrigationSettings &s, uint8_t i)
     return (uint8_t)((s.digitalInLedIdx >> (2u * i)) & 0x3u);
 }
 
-// Blob v1, v2, v3, v4, v5, v6 ou v7 → struct v7. false = magic/versão/tamanho inválido (out fica intacto).
+constexpr uint16_t REMOTE_FALLBACK_DEFAULT_MS = 1800; // ~1,8 s
+inline uint8_t btnFallbackKindOf(const IrrigationSettings &s, uint8_t i)
+{
+    return (uint8_t)((s.btnFallbackKind >> (2u * i)) & 0x3u);
+}
+
+// Blob v1, v2, v3, v4, v5, v6, v7 ou v8 → struct v8. false = magic/versão/tamanho inválido (out fica intacto).
 bool migrateIrrigationSettings(const uint8_t *raw, size_t n, IrrigationSettings &out);
 
 // false = arquivo ausente/corrompido; `s` fica com os defaults acima.

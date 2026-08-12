@@ -161,9 +161,9 @@ bool ZoneTable::deserialize(const uint8_t *buf, size_t n)
 }
 
 // ---- StationRegistry ----
-// node(4)+name(16)+desiredEpoch(4)+blob(184)+retries(1)+silencioAlertaMin(2)+lat(4)+lon(4)
-static constexpr size_t STATION_ENTRY = StationRegistry::SERIALIZED_ENTRY; // 219
-static_assert(STATION_ENTRY == 219, "STATION_ENTRY deve casar com o layout serializado (blob v7 = 184)");
+// node(4)+name(16)+desiredEpoch(4)+blob(208)+retries(1)+silencioAlertaMin(2)+lat(4)+lon(4)
+static constexpr size_t STATION_ENTRY = StationRegistry::SERIALIZED_ENTRY; // 243
+static_assert(STATION_ENTRY == 243, "STATION_ENTRY deve casar com o layout serializado (blob v8 = 208)");
 
 bool StationRegistry::upsert(const StationEntry &e)
 {

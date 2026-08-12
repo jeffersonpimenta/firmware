@@ -43,7 +43,7 @@ struct StationEntry {
     uint32_t node = 0;       // 0 = slot vazio
     char name[16] = {0};
     uint32_t desiredEpoch = 0;
-    uint8_t blob[184] = {0}; // config v7 desejada (push §5.4)
+    uint8_t blob[208] = {0}; // config v8 desejada (push §5.4)
     uint8_t retries = 3;
     uint16_t silencioAlertaMin = 35;
     int32_t lat = 0, lon = 0; // graus * 1e-5 (WGS84, §8.8)
@@ -54,9 +54,9 @@ class StationRegistry {
     static constexpr size_t MAX = 16;
     static constexpr uint32_t MAGIC = 0x49535431; // "IST1"
     // Tamanho serializado por entrada e teto do buffer completo (usado pelo IrrigationModule
-    // ao ler/gravar a tabela). node(4)+name(16)+desiredEpoch(4)+blob(184)+retries(1)+
-    // silencioAlertaMin(2)+lat(4)+lon(4) = 219.
-    static constexpr size_t SERIALIZED_ENTRY = 219;
+    // ao ler/gravar a tabela). node(4)+name(16)+desiredEpoch(4)+blob(208)+retries(1)+
+    // silencioAlertaMin(2)+lat(4)+lon(4) = 243.
+    static constexpr size_t SERIALIZED_ENTRY = 243;
     static constexpr size_t SERIALIZED_MAX = 6 + MAX * SERIALIZED_ENTRY;
     bool upsert(const StationEntry &e);  // por node; false = cheio
     bool removeByNode(uint32_t node);
