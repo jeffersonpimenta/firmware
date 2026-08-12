@@ -112,6 +112,38 @@ static void test_stations_upsertAdoptAndRoundTrip()
     TEST_ASSERT_EQUAL_UINT8(0, c.byNode(0xa1b2c3d4)->blob[175]);
 }
 
+static void test_stations_roundtrip_preserves_v8_tail_and_fields()
+{
+    // Regressão: os offsets pós-blob (retries/silencio/lat/lon) não podem invadir a
+    // região v8 do blob (bytes 184..207 = btnFallback*). ABI blob v8 = 208 B; STATION_ENTRY = 243.
+    StationRegistry r;
+    StationEntry e;
+    e.node = 0x0A0B0C0D;
+    e.desiredEpoch = 7;
+    e.retries = 0x5A;
+    e.silencioAlertaMin = 0x1234;
+    e.lat = 0x11223344;
+    e.lon = 0x55667788;
+    memset(e.blob, 0, sizeof(e.blob));
+    e.blob[184] = 0xDE; // primeiro byte v8 (btnFallbackNode[0] LSB)
+    e.blob[207] = 0xAD; // último byte do blob (pad3)
+    TEST_ASSERT_TRUE(r.upsert(e));
+
+    uint8_t buf[2048];
+    size_t n = r.serialize(buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    StationRegistry c;
+    TEST_ASSERT_TRUE(c.deserialize(buf, n));
+    const StationEntry *g = c.byNode(0x0A0B0C0D);
+    TEST_ASSERT_NOT_NULL(g);
+    TEST_ASSERT_EQUAL_UINT8(0xDE, g->blob[184]); // não clobbado por retries/silencio/lat/lon
+    TEST_ASSERT_EQUAL_UINT8(0xAD, g->blob[207]);
+    TEST_ASSERT_EQUAL_UINT8(0x5A, g->retries);
+    TEST_ASSERT_EQUAL_UINT16(0x1234, g->silencioAlertaMin);
+    TEST_ASSERT_EQUAL_HEX32(0x11223344u, (uint32_t)g->lat);
+    TEST_ASSERT_EQUAL_HEX32(0x55667788u, (uint32_t)g->lon);
+}
+
 static void test_stations_fullAndNodeZeroRejected()
 {
     StationRegistry r;
@@ -256,6 +288,7 @@ void setup()
     RUN_TEST(test_zones_fullRejects_andIdZeroRejected);
     RUN_TEST(test_zones_serializeRoundTrip);
     RUN_TEST(test_stations_upsertAdoptAndRoundTrip);
+    RUN_TEST(test_stations_roundtrip_preserves_v8_tail_and_fields);
     RUN_TEST(test_stations_fullAndNodeZeroRejected);
     RUN_TEST(test_stations_nodeAtCompacted);
     RUN_TEST(test_telemetryCache_upsertAndLookup);

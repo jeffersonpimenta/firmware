@@ -265,11 +265,11 @@ size_t StationRegistry::serialize(uint8_t *buf, size_t cap) const
         memcpy(buf + off, &e.node, 4);
         memcpy(buf + off + 4, e.name, 16);
         memcpy(buf + off + 20, &e.desiredEpoch, 4);
-        memcpy(buf + off + 24, e.blob, sizeof(e.blob));   // 184 bytes (v7)
-        buf[off + 208] = e.retries;
-        memcpy(buf + off + 209, &e.silencioAlertaMin, 2);
-        memcpy(buf + off + 211, &e.lat, 4);
-        memcpy(buf + off + 215, &e.lon, 4);
+        memcpy(buf + off + 24, e.blob, sizeof(e.blob));   // 208 bytes (v8)
+        buf[off + 232] = e.retries;                       // 24 + 208
+        memcpy(buf + off + 233, &e.silencioAlertaMin, 2);
+        memcpy(buf + off + 235, &e.lat, 4);
+        memcpy(buf + off + 239, &e.lon, 4);               // 239 + 4 = 243 = STATION_ENTRY
         off += STATION_ENTRY;
     }
     return need;
@@ -289,11 +289,11 @@ bool StationRegistry::deserialize(const uint8_t *buf, size_t n)
         memcpy(e.name, buf + off + 4, 16);
         e.name[15] = '\0';
         memcpy(&e.desiredEpoch, buf + off + 20, 4);
-        memcpy(e.blob, buf + off + 24, sizeof(e.blob)); // 184 bytes (v7)
-        e.retries = buf[off + 208];
-        memcpy(&e.silencioAlertaMin, buf + off + 209, 2);
-        memcpy(&e.lat, buf + off + 211, 4);
-        memcpy(&e.lon, buf + off + 215, 4);
+        memcpy(e.blob, buf + off + 24, sizeof(e.blob)); // 208 bytes (v8)
+        e.retries = buf[off + 232];                     // 24 + 208
+        memcpy(&e.silencioAlertaMin, buf + off + 233, 2);
+        memcpy(&e.lat, buf + off + 235, 4);
+        memcpy(&e.lon, buf + off + 239, 4);
         stations[i] = e;
     }
     return true;
