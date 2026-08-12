@@ -47,12 +47,43 @@ static void test_toggle_action()
     TEST_ASSERT_EQUAL_UINT8(0, remoteToggleAction(true));  // ligado → fechar
 }
 
+static void test_compileFallbackRoute_single_node()
+{
+    FallbackRoute r = compileFallbackRoute(/*zoneNode=*/0x11223344, /*zoneIndex=*/2,
+                                           /*zoneTipo=*/0, /*isGroup=*/false, /*fwOk=*/true);
+    TEST_ASSERT_EQUAL_UINT32(0x11223344, r.node);
+    TEST_ASSERT_EQUAL_UINT8(0, r.kind);      // válvula
+    TEST_ASSERT_EQUAL_UINT8(2, r.outputId);
+}
+
+static void test_compileFallbackRoute_group_is_empty()
+{
+    FallbackRoute r = compileFallbackRoute(0x11223344, 2, 0, /*isGroup=*/true, true);
+    TEST_ASSERT_EQUAL_UINT32(0, r.node);
+}
+
+static void test_compileFallbackRoute_old_fw_is_empty()
+{
+    FallbackRoute r = compileFallbackRoute(0x11223344, 2, 0, false, /*fwOk=*/false);
+    TEST_ASSERT_EQUAL_UINT32(0, r.node);
+}
+
+static void test_compileFallbackRoute_gpo_kind()
+{
+    FallbackRoute r = compileFallbackRoute(0xAABBCCDD, 1, /*zoneTipo=*/1, false, true);
+    TEST_ASSERT_EQUAL_UINT8(1, r.kind); // GPO
+}
+
 void setup()
 {
     UNITY_BEGIN();
     RUN_TEST(test_edge_debounce_risingOnce);
     RUN_TEST(test_led_fsm);
     RUN_TEST(test_toggle_action);
+    RUN_TEST(test_compileFallbackRoute_single_node);
+    RUN_TEST(test_compileFallbackRoute_group_is_empty);
+    RUN_TEST(test_compileFallbackRoute_old_fw_is_empty);
+    RUN_TEST(test_compileFallbackRoute_gpo_kind);
     exit(UNITY_END());
 }
 
