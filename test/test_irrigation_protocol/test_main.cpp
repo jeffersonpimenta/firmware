@@ -386,6 +386,30 @@ static void test_serviceFlag_setAndRead()
     TEST_ASSERT_EQUAL_UINT16(600, out.durationS);
 }
 
+// C1: comando direto de fallback P2P parte da botoeira (não é o gateway). Um alvo pareado
+// (boundGateway != 0) só autoriza o gateway OU um remetente marcado como serviço. Sem a marca
+// o peer é rejeitado; com a marca (o que a estação carimba) é aceito.
+static void test_p2p_toggle_peer_needs_service_flag_to_authorize()
+{
+    const uint32_t gateway = 0xAAAAAAAA;
+    const uint32_t botoeira = 0xBBBBBBBB; // peer, não é o gateway
+    uint8_t buf[MAX_PAYLOAD];
+    CmdValvula in = {1, ACTION_TOGGLE, 0};
+    size_t n = encodeCmdValvula(buf, sizeof(buf), 7, in);
+    TEST_ASSERT_GREATER_THAN(HEADER_LEN, n);
+
+    Header h0;
+    TEST_ASSERT_TRUE(decodeHeader(buf, n, h0));
+    // Sem marca: alvo pareado rejeita um peer que não é o gateway.
+    TEST_ASSERT_FALSE(senderAuthorizedBy(h0.flags, botoeira, gateway));
+
+    setServiceFlag(buf, n);
+    Header h1;
+    TEST_ASSERT_TRUE(decodeHeader(buf, n, h1));
+    // Com marca: autorizado (mecanismo que a estação usa no fallback direto).
+    TEST_ASSERT_TRUE(senderAuthorizedBy(h1.flags, botoeira, gateway));
+}
+
 static void test_resyncSeq_roundTrip()
 {
     uint8_t buf[MAX_PAYLOAD];
@@ -526,6 +550,7 @@ void setup()
     RUN_TEST(test_remoteTrigger_roundTrip);
     RUN_TEST(test_remoteLed_roundTrip);
     RUN_TEST(test_cmdValvula_toggle_action_roundtrip);
+    RUN_TEST(test_p2p_toggle_peer_needs_service_flag_to_authorize);
     exit(UNITY_END());
 }
 

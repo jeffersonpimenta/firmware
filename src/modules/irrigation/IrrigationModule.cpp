@@ -1131,6 +1131,11 @@ int32_t IrrigationModule::runOnce()
                     p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), seq, c);
             }
             if (p->decoded.payload.size) {
+                // Alvo pareado só aceita comando do gateway vinculado OU marcado como serviço
+                // (senderAuthorizedBy §11.5). A botoeira não é o gateway, então carimba
+                // FLAG_FROM_SERVICE — mesmo mecanismo que o gateway usa nos comandos dele.
+                // A PSK do canal continua sendo a fronteira de confiança real.
+                IrrigationProto::setServiceFlag(p->decoded.payload.bytes, p->decoded.payload.size);
                 service->sendToMesh(p, RX_SRC_LOCAL, false);
                 uint8_t slot = digitalInLedSlot(settings, i);
                 if (slot <= 1) {
