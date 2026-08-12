@@ -7,7 +7,7 @@ namespace IrrigationProto
 
 constexpr uint8_t VERSION = 1;
 constexpr uint16_t FLAG_FROM_SERVICE = 0x0001; // Header.flags: remetente é nó de serviço (§11.5)
-constexpr uint16_t APP_FW_VERSION = 0x0800;    // geração do firmware de irrigação (Fase 8a); p/ planejamento de OTA (§3.3/§11.4)
+constexpr uint16_t APP_FW_VERSION = 0x0900;    // geração do firmware de irrigação (P2P-fallback); p/ planejamento de OTA (§3.3/§11.4)
 constexpr size_t HEADER_LEN = 8;
 constexpr size_t MAX_PAYLOAD = 200;
 constexpr uint32_t MAX_OPEN_SECONDS = 120 * 60; // teto absoluto compilado (spec §4.2)

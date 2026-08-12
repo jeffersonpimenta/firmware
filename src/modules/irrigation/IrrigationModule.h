@@ -285,6 +285,9 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     bool routeZoneToGroup(uint8_t zoneId, bool open, uint16_t durationS);
     void gwSendMaintWindow(uint32_t node, uint16_t minutes); // Fase 6b Task 15: janela de manutenção do tamper
     void gwReconcileEpoch(uint32_t node, uint32_t remoteEpoch);
+    // P2P-fallback: preenche os campos de rota de fallback de `cfg` (config de UMA estação
+    // `stationNode`) a partir das botoeiras/zonas/grupos do gateway, no push de SET_CONFIG.
+    void gwOverlayFallbackRoute(uint32_t stationNode, IrrigationSettings &cfg);
     void commitPairing();
     void factoryReset();
     void logFarmKey(); // dumps primary PSK as base64 to serial (spec §11.2)

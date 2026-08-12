@@ -1576,6 +1576,8 @@ bool IrrigationModule::svcPortalWriteConfig(const IrrigationWeb::NodeConfigReq &
     IrrigationSettings blob = req.config;
     RouteDecision d = decideConfigRoute(false, req.config.configEpoch);
     blob.configEpoch = d.epochToWrite;
+    // P2P fallback: sobrepõe a rota compilada nesta cópia local antes de calcular o CRC.
+    gwOverlayFallbackRoute(req.node, blob);
     const uint8_t *raw = (const uint8_t *)&blob;
     uint16_t totalLen = (uint16_t)sizeof(IrrigationSettings);
     uint32_t crc = crc32(raw, totalLen);
@@ -3736,6 +3738,40 @@ void IrrigationModule::gwTick()
         gwPushRemoteLed();
 }
 
+// Preenche os campos de rota de fallback P2P de `cfg` (config de UMA estação `stationNode`)
+// a partir das associações de botoeira + zonas + grupos do gateway. Chamado no momento do
+// push de SET_CONFIG. Deixa campos zerados/"nenhum" quando não há fallback (zona grupo,
+// zona ausente, ou entrada sem associação).
+void IrrigationModule::gwOverlayFallbackRoute(uint32_t stationNode, IrrigationSettings &cfg)
+{
+    for (uint8_t i = 0; i < IrrigationSettings::MAX_DIGITAL_IN; i++) {
+        // default: sem fallback / "nenhum"
+        cfg.btnFallbackNode[i] = 0;
+        cfg.btnFallbackOutId[i] = 0;
+        cfg.btnFallbackKind = (uint8_t)((cfg.btnFallbackKind & ~(0x3u << (2 * i))) | (0x3u << (2 * i)));
+        const RemoteAssoc *hits[RemoteButtonTable::MAX];
+        size_t k = gateway.remoteButtons.findByTrigger(stationNode, i, hits, RemoteButtonTable::MAX);
+        if (k == 0)
+            continue;
+        const RemoteAssoc *a = hits[0];
+        if (!a->enabled)
+            continue;
+        const Zone *z = gateway.zones.byId(a->targetZoneId);
+        if (!z)
+            continue;
+        bool isGroup = (gateway.groups.byZone(z->id) != nullptr);
+        bool fwOk = true; // TODO(follow-up): gate on target node survey APP_FW_VERSION>=0x0900.
+                          // Old node receiving action==2 falls into the close path (safe direction).
+        FallbackRoute r = compileFallbackRoute(z->node, z->index, z->tipo, isGroup, fwOk);
+        if (r.node == 0)
+            continue; // grupo/zona inválida → mantém "nenhum"
+        cfg.btnFallbackNode[i] = r.node;
+        cfg.btnFallbackOutId[i] = r.outputId;
+        cfg.btnFallbackKind = (uint8_t)((cfg.btnFallbackKind & ~(0x3u << (2 * i))) | ((r.kind & 0x3u) << (2 * i)));
+    }
+    cfg.remoteFallbackMs = 0; // usa o default compilado (REMOTE_FALLBACK_DEFAULT_MS)
+}
+
 // Decisão §3: reconciliação de epoch com cooldown de 30 s.
 void IrrigationModule::gwReconcileEpoch(uint32_t node, uint32_t remoteEpoch)
 {
@@ -3777,8 +3813,16 @@ void IrrigationModule::gwReconcileEpoch(uint32_t node, uint32_t remoteEpoch)
     if (remoteEpoch < entry->desiredEpoch) {
         // Estação está atrás: envia SET_CONFIG com o blob desejado.
         epochCooldowns[slot].lastMs = now;
-        const uint8_t *blob = entry->blob;
-        uint16_t totalLen = sizeof(entry->blob);
+        // P2P fallback: sobrepõe a rota compilada nesta cópia local antes de calcular o CRC.
+        IrrigationSettings _cfgTx;
+        const uint8_t *blob;
+        uint16_t totalLen = (uint16_t)sizeof(entry->blob);
+        if (migrateIrrigationSettings(entry->blob, sizeof(entry->blob), _cfgTx)) {
+            gwOverlayFallbackRoute(entry->node, _cfgTx);
+            blob = (const uint8_t *)&_cfgTx;
+        } else {
+            blob = entry->blob; // blob inválido: empurra como está (comportamento anterior)
+        }
         uint32_t crc = crc32(blob, totalLen);
         uint8_t fragCount = (uint8_t)((totalLen + FRAG_DATA_MAX - 1) / FRAG_DATA_MAX);
         for (uint8_t i = 0; i < fragCount; i++) {
