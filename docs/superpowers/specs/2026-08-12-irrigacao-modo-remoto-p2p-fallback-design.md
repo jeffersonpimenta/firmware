@@ -34,7 +34,9 @@ central no caso normal.
 5. **Toggle resolvido no nó alvo.** Comando direto carrega **ação toggle**; o alvo inverte a
    **própria** saída (ele já é dono desse estado). Sem estado central. Se o gateway togglou a
    saída pouco antes de cair, a inversão parte do estado **real do alvo** — sem desync.
-6. **`T_FALLBACK` default ~1.5–2 s** (poucos airtimes de `REMOTE_TRIGGER`), ajustável em config.
+6. **`T_FALLBACK` default = 5 s** (decisão do usuário), ajustável em config. O timeout de
+   pisca do LED (`RemoteLedFsm::BLINK_TIMEOUT_MS`) fica acima disso (7 s) p/ manter o feedback
+   visual durante a janela de fallback + o ACK direto.
 
 ## Diagnóstico do estado atual (verificado no código)
 
@@ -178,7 +180,7 @@ central no caso normal.
   coberta por unidade — padrão das fases anteriores).
 - **Banca (obrigatória — rádio não é nativo-testável):**
   - Gateway no ar: botoeira → saída no outro nó, LED pisca→fixo (caminho normal inalterado).
-  - **Gateway desligado**: botoeira → após `T_FALLBACK`, comando direto → saída inverte no alvo
+  - **Gateway desligado**: botoeira → após `T_FALLBACK` (5 s), comando direto → saída inverte no alvo
     → ACK direto → LED fixo. Nova pressão desliga. Alvo aplica teto de duração.
   - Zona = grupo, gateway desligado: botoeira pressiona → sem fallback → LED expira p/ apagado.
   - Gateway volta: heartbeat reconcilia o estado togglado em P2P.

@@ -362,7 +362,7 @@ Em `IrrigationSettings.h`:
 4. Acrescente helpers e default:
 
 ```cpp
-constexpr uint16_t REMOTE_FALLBACK_DEFAULT_MS = 1800; // ~1,8 s (spec §T_FALLBACK)
+constexpr uint16_t REMOTE_FALLBACK_DEFAULT_MS = 5000; // 5 s (T_FALLBACK, decisão do usuário)
 inline uint8_t btnFallbackKindOf(const IrrigationSettings &s, uint8_t i)
 {
     return (uint8_t)((s.btnFallbackKind >> (2u * i)) & 0x3u);
@@ -691,7 +691,7 @@ git commit -m "style(irrigation): trunk fmt (P2P fallback)"
 
 Roteiro (spec §Plano de testes):
 1. Gateway no ar: botoeira → saída no outro nó, LED pisca→fixo (caminho normal inalterado).
-2. Gateway desligado: botoeira → após `T_FALLBACK` (~1,8 s), comando direto → saída inverte no alvo → ACK direto → LED fixo; nova pressão desliga; alvo aplica teto de duração.
+2. Gateway desligado: botoeira → após `T_FALLBACK` (5 s), comando direto → saída inverte no alvo → ACK direto → LED fixo; nova pressão desliga; alvo aplica teto de duração.
 3. Zona = grupo, gateway desligado: pressiona → sem fallback → LED expira p/ apagado.
 4. Gateway volta: heartbeat reconcilia o estado togglado em P2P.
 

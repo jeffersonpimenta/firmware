@@ -163,7 +163,7 @@ inline uint8_t digitalInLedSlot(const IrrigationSettings &s, uint8_t i)
     return (uint8_t)((s.digitalInLedIdx >> (2u * i)) & 0x3u);
 }
 
-constexpr uint16_t REMOTE_FALLBACK_DEFAULT_MS = 1800; // ~1,8 s
+constexpr uint16_t REMOTE_FALLBACK_DEFAULT_MS = 5000; // 5 s (T_FALLBACK, decisão do usuário)
 inline uint8_t btnFallbackKindOf(const IrrigationSettings &s, uint8_t i)
 {
     return (uint8_t)((s.btnFallbackKind >> (2u * i)) & 0x3u);

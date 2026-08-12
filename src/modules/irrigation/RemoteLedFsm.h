@@ -6,7 +6,9 @@
 class RemoteLedFsm {
   public:
     enum class State : uint8_t { OFF, BLINK, SOLID };
-    static constexpr uint32_t BLINK_TIMEOUT_MS = 5000;
+    // > REMOTE_FALLBACK_DEFAULT_MS (5 s): mantém o pisca durante a janela de fallback P2P
+    // + o ida-e-volta do ACK direto, evitando apagar-e-reacender no instante do disparo.
+    static constexpr uint32_t BLINK_TIMEOUT_MS = 7000;
     static constexpr uint32_t BLINK_PERIOD_MS = 250;
 
     void onPress(uint32_t nowMs) { st = State::BLINK; pressMs = nowMs; }
