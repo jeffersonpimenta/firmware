@@ -317,6 +317,10 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     void activateSettings(const IrrigationSettings &merged);
     void sendAck(uint32_t to, uint32_t ackedSeq, uint8_t status, uint8_t reason);
     void sendHeartbeat();
+    // Choke point de envio: aplica prioridade por tipo e o gate de airtime
+    // (HB/survey cedem sob congestionamento; comando/ACK/alarme sempre passam).
+    // Devolve true se enviado, false se barrado (pacote é liberado).
+    bool txPacket(meshtastic_MeshPacket *p);
     bool senderAuthorized(uint32_t from, uint16_t flags) const;
     uint16_t batteryCentiV() const;
 

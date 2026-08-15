@@ -1,5 +1,7 @@
 #include "modules/irrigation/IrrigationModule.h"
 #include "FSCommon.h"
+#include "airtime.h"
+#include "modules/irrigation/IrrigationAirtime.h"
 #include "modules/irrigation/AccessWindowPolicy.h"
 #include "modules/irrigation/IrrigationWebApi.h"
 #include "modules/irrigation/PortalApi.h"
@@ -602,7 +604,7 @@ void IrrigationModule::sendAck(uint32_t to, uint32_t ackedSeq, uint8_t status, u
         packetPool.release(p);
         return;
     }
-    service->sendToMesh(p, RX_SRC_LOCAL, false);
+    txPacket(p);
 }
 
 void IrrigationModule::handleResyncSeq(const meshtastic_MeshPacket &mp, const Header &h)
@@ -634,7 +636,7 @@ void IrrigationModule::handleResyncSeq(const meshtastic_MeshPacket &mp, const He
         packetPool.release(p);
         return;
     }
-    service->sendToMesh(p, RX_SRC_LOCAL, false);
+    txPacket(p);
 }
 
 void IrrigationModule::handlePingSurvey(const meshtastic_MeshPacket &mp, const Header &h)
@@ -695,7 +697,26 @@ void IrrigationModule::handlePingSurvey(const meshtastic_MeshPacket &mp, const H
         packetPool.release(p);
         return;
     }
+    txPacket(p);
+}
+
+bool IrrigationModule::txPacket(meshtastic_MeshPacket *p)
+{
+    // Tipo IrrigationProto vive em payload.bytes[1] (Header.type). arg do evento em bytes[8..].
+    uint8_t type = p->decoded.payload.size > 1 ? p->decoded.payload.bytes[1] : 0;
+    bool crit = false;
+    if (type == IrrigationProto::MSG_EVENTO && p->decoded.payload.size > IrrigationProto::HEADER_LEN)
+        crit = IrrigationAirtime::isCriticalEvent(p->decoded.payload.bytes[IrrigationProto::HEADER_LEN]);
+
+    p->priority = (meshtastic_MeshPacket_Priority)IrrigationAirtime::priorityForType(type, crit);
+
+    if (IrrigationAirtime::isGatedType(type) && airTime && !airTime->isTxAllowedChannelUtil(/*polite=*/true)) {
+        LOG_DEBUG("Irrigation tx gated (type=%u, chUtil high)", type);
+        packetPool.release(p);
+        return false;
+    }
     service->sendToMesh(p, RX_SRC_LOCAL, false);
+    return true;
 }
 
 void IrrigationModule::sendHeartbeat()
@@ -720,7 +741,7 @@ void IrrigationModule::sendHeartbeat()
         packetPool.release(p);
         return;
     }
-    service->sendToMesh(p, RX_SRC_LOCAL, false);
+    txPacket(p);
     sampler.noteReported(millis());
     LOG_DEBUG("Irrigation heartbeat sent, valves=0x%x vbat=%u cV", hb.valveStates, hb.vbatCentiV);
 }
@@ -929,7 +950,7 @@ void IrrigationModule::handleGetConfig(const meshtastic_MeshPacket &mp, const He
             packetPool.release(p);
             return;
         }
-        service->sendToMesh(p, RX_SRC_LOCAL, false);
+        txPacket(p);
     }
 }
 
@@ -991,7 +1012,7 @@ int32_t IrrigationModule::runOnce()
         p->decoded.payload.size =
             (uint16_t)encodePairAnnounce(p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), ++txSeq, pa);
         if (p->decoded.payload.size)
-            service->sendToMesh(p, RX_SRC_LOCAL, false);
+            txPacket(p);
         else
             packetPool.release(p);
     }
@@ -1097,7 +1118,7 @@ int32_t IrrigationModule::runOnce()
                 p->decoded.payload.size = (uint16_t)IrrigationProto::encodeRemoteTrigger(
                     p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), ++txSeq, rt);
                 if (p->decoded.payload.size)
-                    service->sendToMesh(p, RX_SRC_LOCAL, false);
+                    txPacket(p);
                 else
                     packetPool.release(p);
             }
@@ -1136,7 +1157,7 @@ int32_t IrrigationModule::runOnce()
                 // FLAG_FROM_SERVICE — mesmo mecanismo que o gateway usa nos comandos dele.
                 // A PSK do canal continua sendo a fronteira de confiança real.
                 IrrigationProto::setServiceFlag(p->decoded.payload.bytes, p->decoded.payload.size);
-                service->sendToMesh(p, RX_SRC_LOCAL, false);
+                txPacket(p);
                 uint8_t slot = digitalInLedSlot(settings, i);
                 if (slot <= 1) {
                     _pendingDirect[i] = {seq, slot, true};
@@ -1209,7 +1230,7 @@ void IrrigationModule::handlePairAnnounce(const meshtastic_MeshPacket &mp, const
         allowlist.remove(mp.from); // rollback: grant não foi enviado
         return;
     }
-    service->sendToMesh(p, RX_SRC_LOCAL, false);
+    txPacket(p);
     saveAllowlist();
 
     // Task 6, decisão §4: registrar a estação no StationRegistry no momento do pareamento.
@@ -1386,7 +1407,7 @@ void IrrigationModule::svcEmitProbe()
     }
     p->decoded.payload.size = sz;
     setServiceFlag(p->decoded.payload.bytes, p->decoded.payload.size);
-    service->sendToMesh(p, RX_SRC_LOCAL, false);
+    txPacket(p);
     LOG_INFO("Irrigation SERVICO: PING_SURVEY probe broadcast");
 }
 
@@ -1412,7 +1433,7 @@ void IrrigationModule::emitSurveyBeacon()
     p->decoded.payload.size = sz;
     if ((IrrigationRole)settings.role == IrrigationRole::SERVICO)
         setServiceFlag(p->decoded.payload.bytes, p->decoded.payload.size);
-    service->sendToMesh(p, RX_SRC_LOCAL, false);
+    txPacket(p);
 }
 
 bool IrrigationModule::portalStartSurvey(const IrrigationWeb::SurveyStartReq &r)
@@ -1453,7 +1474,7 @@ void IrrigationModule::svcSendResyncRequest(uint32_t node)
     }
     p->decoded.payload.size = sz;
     setServiceFlag(p->decoded.payload.bytes, p->decoded.payload.size);
-    service->sendToMesh(p, RX_SRC_LOCAL, false);
+    txPacket(p);
 }
 
 void IrrigationModule::svcExportToConsole()
@@ -1531,7 +1552,7 @@ bool IrrigationModule::svcPortalReadConfig(uint32_t node)
         return false;
     }
     setServiceFlag(p->decoded.payload.bytes, p->decoded.payload.size);
-    service->sendToMesh(p, RX_SRC_LOCAL, false);
+    txPacket(p);
     svc->logService("get_config", node, gwTimeAdopted());
     return true;
 }
@@ -1606,7 +1627,7 @@ bool IrrigationModule::svcPortalWriteConfig(const IrrigationWeb::NodeConfigReq &
             return false;
         }
         setServiceFlag(p->decoded.payload.bytes, p->decoded.payload.size);
-        service->sendToMesh(p, RX_SRC_LOCAL, false);
+        txPacket(p);
     }
     svc->logService("set_config_direct", req.node, gwTimeAdopted());
     return true;
@@ -1628,7 +1649,7 @@ bool IrrigationModule::svcPortalNodeAction(const IrrigationWeb::NodeAction &a)
             return false;
         }
         setServiceFlag(p->decoded.payload.bytes, p->decoded.payload.size);
-        service->sendToMesh(p, RX_SRC_LOCAL, false);
+        txPacket(p);
         svc->logService("pulse", a.node, gwTimeAdopted());
         return true;
     }
@@ -1643,7 +1664,7 @@ bool IrrigationModule::svcPortalNodeAction(const IrrigationWeb::NodeAction &a)
             return false;
         }
         setServiceFlag(p->decoded.payload.bytes, p->decoded.payload.size);
-        service->sendToMesh(p, RX_SRC_LOCAL, false);
+        txPacket(p);
         svc->logService("zone", a.node, gwTimeAdopted());
         return true;
     }
@@ -1798,7 +1819,7 @@ void IrrigationModule::sendEvento(uint8_t code, uint32_t arg)
         packetPool.release(p);
         return;
     }
-    service->sendToMesh(p, RX_SRC_LOCAL, false);
+    txPacket(p);
 }
 
 // Janela de acesso (spec 2026-08-11): traduz o SHORT press num nó elegível.
@@ -2596,7 +2617,7 @@ uint32_t IrrigationModule::gwSendValveCmd(uint32_t node, uint8_t index, uint8_t 
         packetPool.release(p);
         return 0;
     }
-    service->sendToMesh(p, RX_SRC_LOCAL, false);
+    txPacket(p);
     gateway.tracker.track(usedSeq, node, zoneId, action, durationS, attempts, millis());
     LOG_DEBUG("Irrigation GW: sent cmd zone=%u node=0x%08x action=%u dur=%u", zoneId, node, action, durationS);
     return usedSeq;
@@ -2616,7 +2637,7 @@ void IrrigationModule::gwSendMaintWindow(uint32_t node, uint16_t minutes)
         packetPool.release(p);
         return;
     }
-    service->sendToMesh(p, RX_SRC_LOCAL, false);
+    txPacket(p);
     LOG_INFO("Irrigation GW: CMD_MAINT enviado para 0x%08x (%u min)", node, minutes);
 }
 
@@ -3351,7 +3372,7 @@ bool IrrigationModule::portalRunNetCommand(const IrrigationWeb::NetCommand &c)
                    c.zoneId, AuditResult::NACK);
         return false;
     }
-    service->sendToMesh(p, RX_SRC_LOCAL, false);
+    txPacket(p);
     // §8.9: TX despachado ao gateway — OK = rádio TX enviado (sem confirmação end-to-end aqui).
     auditEvent(AuditOrigin::PORTAL_CAMPO, c.action == 1 ? AuditAction::ABRIR : AuditAction::FECHAR,
                c.zoneId, AuditResult::OK);
@@ -3706,7 +3727,7 @@ void IrrigationModule::gwTick()
                 packetPool.release(p);
                 gateway.alerts.push({AlertType::CMD_FAIL, r.node, 0xFF, millis()}); // 0xFF = falha interna de encode
             } else {
-                service->sendToMesh(p, RX_SRC_LOCAL, false);
+                txPacket(p);
                 gateway.tracker.retrack(txSeq, r, millis());
             }
         } else { // FAILED
@@ -3848,7 +3869,7 @@ void IrrigationModule::gwReconcileEpoch(uint32_t node, uint32_t remoteEpoch)
                 packetPool.release(p);
                 return;
             }
-            service->sendToMesh(p, RX_SRC_LOCAL, false);
+            txPacket(p);
         }
         LOG_INFO("Irrigation GW: pushed config epoch=%u to node=0x%08x", entry->desiredEpoch, node);
     } else if (remoteEpoch > entry->desiredEpoch) {
@@ -3861,7 +3882,7 @@ void IrrigationModule::gwReconcileEpoch(uint32_t node, uint32_t remoteEpoch)
             packetPool.release(p);
             return;
         }
-        service->sendToMesh(p, RX_SRC_LOCAL, false);
+        txPacket(p);
         LOG_INFO("Irrigation GW: GET_CONFIG from node=0x%08x (remote epoch=%u > desired=%u)", node, remoteEpoch,
                  entry->desiredEpoch);
     }
@@ -4389,7 +4410,7 @@ void IrrigationModule::gwPushRemoteLed()
             packetPool.release(p);
             continue;
         }
-        service->sendToMesh(p, RX_SRC_LOCAL, false);
+        txPacket(p);
     }
 }
 
