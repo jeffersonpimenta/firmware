@@ -128,7 +128,7 @@ static_assert(sizeof(IrrigationSettings::LocalInterlock) == 12, "LocalInterlock 
 static_assert(offsetof(IrrigationSettings, localInterlocks) == 128, "ABI v5");
 
 // ABI lock v8: prefixo v7 (184 B) + btnFallbackNode[4](16) + btnFallbackOutId[4](4) +
-// remoteFallbackMs(2) + btnFallbackKind(1) + pad3(1) = 208.
+// remoteFallbackMs(2) + btnFallbackKind(1) + hbTrafficFlags(1) = 208.
 // Prefixo v7 = prefixo v6 (180 B) + pinsRemoteLed[2](2) + digitalInBtnMask(1) + digitalInLedIdx(1) = 184.
 // Prefixo v6 = prefixo v5 (176 B) + vbatAvisoCentiV(2) + vbatCriticaCentiV(2) = 180.
 // Prefixo v5 = prefixo v4 (128 B) + localInterlocks[4×12](48) = 176.
