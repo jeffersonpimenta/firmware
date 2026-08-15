@@ -362,6 +362,8 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     LocalAck pendingLocalAck[8];
     uint8_t pendingLocalAckCount = 0;
     uint32_t lastHeartbeatMs = 0;
+    uint32_t hbJitterMs = 0;           // offset de jitter atual (reavaliado no epoch)
+    uint32_t hbSeedEpoch = 0xFFFFFFFF; // epoch com que hbJitterMs foi semeado
     uint32_t lastGatewayRxMs = 0; // last millis() we received a packet from boundGateway
     // Enlace (repetidor): última métrica de rx do gateway + ring de histórico p/ o portal.
     int8_t linkSnrQ = 0;

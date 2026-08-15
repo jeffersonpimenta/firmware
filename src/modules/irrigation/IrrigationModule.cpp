@@ -1091,9 +1091,23 @@ int32_t IrrigationModule::runOnce()
         sendHeartbeat();
     }
 
-    if (!Throttle::isWithinTimespanMs(lastHeartbeatMs, (uint32_t)settings.hbMinutes * 60 * 1000)) {
-        lastHeartbeatMs = millis();
-        sendHeartbeat();
+    {
+        uint32_t baseMs = (uint32_t)settings.hbMinutes * 60u * 1000u;
+        float chUtil = airTime ? airTime->channelUtilizationPercent() : 0.0f;
+        uint8_t factor = IrrigationAirtime::hbBackoffFactor(chUtil);
+        uint32_t effectiveMs = baseMs * factor;
+
+        // Re-semeia o jitter quando o epoch muda (descorrelaciona flood de cena).
+        if (settings.configEpoch != hbSeedEpoch) {
+            hbSeedEpoch = settings.configEpoch;
+            uint32_t win = IrrigationAirtime::hbWindowMs(effectiveMs);
+            hbJitterMs = IrrigationAirtime::hbJitterOffsetMs(nodeDB->getNodeNum(), settings.configEpoch, win);
+        }
+
+        if (!Throttle::isWithinTimespanMs(lastHeartbeatMs, effectiveMs + hbJitterMs)) {
+            lastHeartbeatMs = millis();
+            sendHeartbeat();
+        }
     }
 
     // --- Botoeira local da estação (Modo Remoto Task 7) ---
