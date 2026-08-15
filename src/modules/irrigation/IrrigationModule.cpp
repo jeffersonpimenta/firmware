@@ -285,6 +285,21 @@ IrrigationModule::IrrigationModule()
         svcStore->ensureDir();
         svc = new ServiceController(*svcStore);
     }
+    // Telemetria nativa é redundante com o heartbeat de irrigação; alonga o intervalo
+    // em RAM (não persiste) para desocupar airtime. Só quando não configurado pelo usuário.
+    {
+        IrrigationRole r = (IrrigationRole)settings.role;
+        bool irrigRole = (r == IrrigationRole::ESTACAO || r == IrrigationRole::GATEWAY || r == IrrigationRole::REPETIDOR);
+        if (irrigRole) {
+            const uint32_t kLongIntervalS = 24u * 60u * 60u; // 24 h
+            if (moduleConfig.telemetry.device_update_interval == 0 ||
+                moduleConfig.telemetry.device_update_interval < kLongIntervalS)
+                moduleConfig.telemetry.device_update_interval = kLongIntervalS;
+            if (moduleConfig.telemetry.environment_update_interval != 0 &&
+                moduleConfig.telemetry.environment_update_interval < kLongIntervalS)
+                moduleConfig.telemetry.environment_update_interval = kLongIntervalS;
+        }
+    }
     // §8.9: carrega o mini-log sobrevivente de reboot e registra o boot.
     loadAuditLog();
     auditEvent(AuditOrigin::SISTEMA, AuditAction::REBOOT, /*target=*/0, AuditResult::OK);
