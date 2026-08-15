@@ -1094,13 +1094,13 @@ int32_t IrrigationModule::runOnce()
     {
         uint32_t baseMs = (uint32_t)settings.hbMinutes * 60u * 1000u;
         float chUtil = airTime ? airTime->channelUtilizationPercent() : 0.0f;
-        uint8_t factor = IrrigationAirtime::hbBackoffFactor(chUtil);
+        uint8_t factor = settings.hbBackoffEnabled() ? IrrigationAirtime::hbBackoffFactor(chUtil) : 1;
         uint32_t effectiveMs = baseMs * factor;
 
         // Re-semeia o jitter quando o epoch muda (descorrelaciona flood de cena).
         if (settings.configEpoch != hbSeedEpoch) {
             hbSeedEpoch = settings.configEpoch;
-            uint32_t win = IrrigationAirtime::hbWindowMs(effectiveMs);
+            uint32_t win = settings.hbJitterEnabled() ? IrrigationAirtime::hbWindowMs(effectiveMs) : 0;
             hbJitterMs = IrrigationAirtime::hbJitterOffsetMs(nodeDB->getNodeNum(), settings.configEpoch, win);
         }
 

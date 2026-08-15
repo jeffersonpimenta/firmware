@@ -108,7 +108,13 @@ struct IrrigationSettings {
     uint8_t btnFallbackOutId[MAX_DIGITAL_IN] = {0, 0, 0, 0};  // id local da saída no nó alvo
     uint16_t remoteFallbackMs = 0;  // T_FALLBACK; 0 => default compilado (REMOTE_FALLBACK_DEFAULT_MS)
     uint8_t btnFallbackKind = 0xFF; // 2 bits/entrada: 0=válvula,1=GPO,3=nenhum (default tudo nenhum)
-    uint8_t pad3 = 0;               // padding explícito p/ sizeof múltiplo de 4 (offset 207)
+    // v8+ (reuso de pad @207, ABI preservada): bits de tráfego de airtime.
+    // Semântica INVERTIDA (0 = habilitado) p/ blobs antigos (pad3=0) já significarem tudo ON.
+    static constexpr uint8_t HBFLAG_DISABLE_BACKOFF = 1 << 0;
+    static constexpr uint8_t HBFLAG_DISABLE_JITTER = 1 << 1;
+    uint8_t hbTrafficFlags = 0; // @207 — reuso do antigo pad3
+    bool hbBackoffEnabled() const { return (hbTrafficFlags & HBFLAG_DISABLE_BACKOFF) == 0; }
+    bool hbJitterEnabled() const { return (hbTrafficFlags & HBFLAG_DISABLE_JITTER) == 0; }
 };
 
 static constexpr size_t IRRIGATION_SETTINGS_V1_SIZE = 40;
