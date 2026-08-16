@@ -21,6 +21,7 @@ enum class AuditAction : uint8_t {
     CMD_REJEITADO, // comando NACKado antes do despacho (motivo em target = NackReason)
     ESPELHO,       // toggle/mapeamento do modo espelho (bypass de painel — safety-relevant)
     CMD_SUPRIMIDO, // abertura suprimida por regra meteorológica (target = zoneId)
+    OTA_ARM,       // entrou em modo atualização (OTA/BLE) pelo portal — para o app, força-fecha antes
 };
 enum class AuditResult : uint8_t { OK = 0, NACK, TIMEOUT };
 
