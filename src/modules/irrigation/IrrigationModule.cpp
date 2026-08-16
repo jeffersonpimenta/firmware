@@ -3246,7 +3246,6 @@ bool IrrigationModule::otaCycleActive()
     otaCycleDecompose(anyValve, anyGpo, groupActive);
     return anyValve || anyGpo || groupActive;
 }
-#endif // defined(ARCH_ESP32) && !MESHTASTIC_EXCLUDE_WEBSERVER
 
 void IrrigationModule::portalFillOtaStatus(IrrigationWeb::OtaStatusCtx &c)
 {
@@ -3288,7 +3287,7 @@ bool IrrigationModule::portalOtaArm(const IrrigationWeb::OtaArmReq &r)
         LOG_ERROR("Irrigation: trySwitchToOTA falhou");
         return false;
     }
-    MeshtasticOTA::saveConfig(&config.network, meshtastic_OTAMode_OTA_BLE, r.hash);
+    MeshtasticOTA::saveConfig(&config.network, meshtastic_OTAMode_OTA_BLE, (uint8_t *)r.hash);
     auditEvent(AuditOrigin::PAINEL, AuditAction::OTA_ARM, 0, AuditResult::OK);
     LOG_INFO("Irrigation: OTA armado (BLE), reboot no loader em 2 s");
     rebootAtMsec = millis() + 2000;
