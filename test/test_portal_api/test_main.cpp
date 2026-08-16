@@ -458,6 +458,60 @@ static void test_parseWifiConnect_missingPskKey()
     TEST_ASSERT_EQUAL_STRING("", p.psk);
 }
 
+static void test_otaArmAllowed_gate()
+{
+    TEST_ASSERT_TRUE(otaArmAllowed(false, false, false)); // livre
+    TEST_ASSERT_FALSE(otaArmAllowed(true, false, false)); // valvula aberta
+    TEST_ASSERT_FALSE(otaArmAllowed(false, true, false)); // gpo ligado
+    TEST_ASSERT_FALSE(otaArmAllowed(false, false, true)); // grupo/scheduler ativo
+}
+
+static void test_parseOtaArm_optional_hash()
+{
+    OtaArmReq a = {};
+    const char *no = "{}";
+    ParseResult pr = parseOtaArm(no, strlen(no), a);
+    TEST_ASSERT_TRUE(pr.ok);
+    TEST_ASSERT_FALSE(a.hasHash);
+
+    OtaArmReq b = {};
+    const char *yes = "{\"hash\":\"00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff\"}";
+    ParseResult pr2 = parseOtaArm(yes, strlen(yes), b);
+    TEST_ASSERT_TRUE(pr2.ok);
+    TEST_ASSERT_TRUE(b.hasHash);
+    TEST_ASSERT_EQUAL_UINT8(0x00, b.hash[0]);
+    TEST_ASSERT_EQUAL_UINT8(0x11, b.hash[1]);
+    TEST_ASSERT_EQUAL_UINT8(0xff, b.hash[31]);
+
+    OtaArmReq c = {};
+    const char *bad = "{\"hash\":\"xyz\"}";
+    ParseResult pr3 = parseOtaArm(bad, strlen(bad), c);
+    TEST_ASSERT_FALSE(pr3.ok);
+}
+
+static void test_buildOtaStatus_json()
+{
+    OtaStatusCtx c = {};
+    c.fwVersion = "2.5.0.irrig";
+    c.loaderPresent = true;
+    c.loaderBle = true;
+    c.cycleActive = false;
+    char buf[256];
+    size_t n = buildOtaStatus(c, buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_TRUE(contains(buf, "\"fwVersion\":\"2.5.0.irrig\""));
+    TEST_ASSERT_TRUE(contains(buf, "\"loaderPresent\":true"));
+    TEST_ASSERT_TRUE(contains(buf, "\"loaderBle\":true"));
+    TEST_ASSERT_TRUE(contains(buf, "\"cycleActive\":false"));
+    TEST_ASSERT_TRUE(contains(buf, "\"canArm\":true"));
+
+    OtaStatusCtx c2 = c;
+    c2.cycleActive = true;
+    char buf2[256];
+    buildOtaStatus(c2, buf2, sizeof(buf2));
+    TEST_ASSERT_TRUE(contains(buf2, "\"canArm\":false"));
+}
+
 void setup()
 {
     UNITY_BEGIN();
@@ -500,6 +554,9 @@ void setup()
     RUN_TEST(test_parseWifiToggle_rejectsMissing);
     RUN_TEST(test_buildWifiScan_truncationReturnsZero);
     RUN_TEST(test_parseWifiConnect_missingPskKey);
+    RUN_TEST(test_otaArmAllowed_gate);
+    RUN_TEST(test_parseOtaArm_optional_hash);
+    RUN_TEST(test_buildOtaStatus_json);
     UNITY_END();
 }
 

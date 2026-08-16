@@ -309,4 +309,51 @@ ParseResult parseWifiToggle(const char *json, size_t len, WifiToggleReq &out)
     return r;
 }
 
+bool otaArmAllowed(bool anyValveOpen, bool anyGpoOn, bool groupActive)
+{
+    return !(anyValveOpen || anyGpoOn || groupActive);
+}
+
+// hex 1 char -> 0..15, ou -1
+static int hexNib(char ch)
+{
+    if (ch >= '0' && ch <= '9') return ch - '0';
+    if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
+    if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
+    return -1;
+}
+
+ParseResult parseOtaArm(const char *json, size_t len, OtaArmReq &out)
+{
+    out = OtaArmReq{};
+    ParseResult r;
+    JsonReader rd(json, len);
+    char hex[65] = {0};
+    if (rd.getStr("hash", hex, sizeof(hex))) {
+        if (strlen(hex) != 64) { r.fail("hash deve ter 64 hex chars"); return r; }
+        for (int i = 0; i < 32; i++) {
+            int hi = hexNib(hex[i * 2]);
+            int lo = hexNib(hex[i * 2 + 1]);
+            if (hi < 0 || lo < 0) { r.fail("hash hex invalido"); return r; }
+            out.hash[i] = (uint8_t)((hi << 4) | lo);
+        }
+        out.hasHash = true;
+    }
+    return r;
+}
+
+size_t buildOtaStatus(const OtaStatusCtx &c, char *buf, size_t cap)
+{
+    bool canArm = c.loaderPresent && c.loaderBle && !c.cycleActive;
+    JsonWriter w(buf, cap);
+    w.beginObject();
+    w.keyStr("fwVersion", c.fwVersion);
+    w.keyBool("loaderPresent", c.loaderPresent);
+    w.keyBool("loaderBle", c.loaderBle);
+    w.keyBool("cycleActive", c.cycleActive);
+    w.keyBool("canArm", canArm);
+    w.endObject();
+    return w.done();
+}
+
 } // namespace IrrigationWeb

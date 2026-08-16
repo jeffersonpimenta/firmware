@@ -143,4 +143,21 @@ size_t buildWifiConnect(const WifiConnectCtx &ctx, char *buf, size_t cap);
 struct WifiToggleReq { bool enabled = false; };
 ParseResult parseWifiToggle(const char *json, size_t len, WifiToggleReq &out);
 
+// --- OTA local por contato (BLE-via-app) ---
+bool otaArmAllowed(bool anyValveOpen, bool anyGpoOn, bool groupActive);
+
+struct OtaArmReq {
+    bool hasHash = false;
+    uint8_t hash[32] = {0};
+};
+ParseResult parseOtaArm(const char *json, size_t len, OtaArmReq &out);
+
+struct OtaStatusCtx {
+    const char *fwVersion = "";
+    bool loaderPresent = false;
+    bool loaderBle = false;
+    bool cycleActive = false;
+};
+size_t buildOtaStatus(const OtaStatusCtx &c, char *buf, size_t cap);
+
 } // namespace IrrigationWeb
