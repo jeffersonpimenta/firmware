@@ -192,7 +192,6 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     // Wizard de 1º boot (§6): grava o papel escolhido (+ PSK da fazenda se GATEWAY) e reinicia.
     bool portalProvision(const IrrigationWeb::ProvisionReq &r);
     // OTA local por contato (BLE) — §3.3/§9. ESP32/webserver-only.
-    bool otaCycleActive();
     bool portalOtaArm(const IrrigationWeb::OtaArmReq &r);
     void portalFillOtaStatus(IrrigationWeb::OtaStatusCtx &c);
     PortalSession &portalSession() { return portal; }
@@ -274,6 +273,11 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     void svcSendResyncRequest(uint32_t node);  // §11.5 RESYNC_SEQ REQUEST (FROM_SERVICE)
     void svcExportToConsole();                 // §11.7 despeja o envelope do cofre no serial (bancada)
     void handleGwAck(const meshtastic_MeshPacket &mp, const IrrigationProto::Header &h);
+    // OTA local por contato (BLE) — §3.3/§9. ESP32/webserver-only. Helper privado: decompõe o estado de ciclo.
+#if defined(ARCH_ESP32) && !MESHTASTIC_EXCLUDE_WEBSERVER
+    void otaCycleDecompose(bool &anyValve, bool &anyGpo, bool &groupActive);
+    bool otaCycleActive();
+#endif
     // Núcleo de confirmação de comando: tracker + motor de grupos + alerta no NACK.
     // Chamado pelo ACK de rádio (handleGwAck) e pelo drive local (ACK sintético no gwTick).
     void confirmCommand(uint32_t node, uint32_t seq, uint8_t reason, bool ok);

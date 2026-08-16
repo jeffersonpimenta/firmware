@@ -3206,29 +3206,47 @@ bool IrrigationModule::portalProvision(const IrrigationWeb::ProvisionReq &r)
 
 #if defined(ARCH_ESP32) && !MESHTASTIC_EXCLUDE_WEBSERVER
 
-bool IrrigationModule::otaCycleActive()
+void IrrigationModule::otaCycleDecompose(bool &anyValve, bool &anyGpo, bool &groupActive)
 {
     // Válvulas locais abertas?
+    anyValve = false;
     for (uint8_t i = 0; i < settings.numValves; i++)
-        if (valves.isOpen(i))
-            return true;
+        if (valves.isOpen(i)) {
+            anyValve = true;
+            break;
+        }
     // GPOs locais ligados?
+    anyGpo = false;
     uint8_t ng = countGpos(settings);
     for (uint8_t i = 0; i < ng; i++)
-        if (gpos.isOn(i))
-            return true;
+        if (gpos.isOn(i)) {
+            anyGpo = true;
+            break;
+        }
     // Gateway: grupo hidráulico ou programa em execução?
+    groupActive = false;
     if (gwIsGateway()) {
         if (gateway.scheduler.runningProgramId() != 0)
-            return true;
-        for (size_t gi = 0; gi < gateway.groups.count(); gi++) {
-            const HydraulicGroup *grp = gateway.groups.groupAt(gi);
-            if (grp && gateway.groupEngine.openConfirmedCount(grp->id) > 0)
-                return true;
+            groupActive = true;
+        if (!groupActive) {
+            for (size_t gi = 0; gi < gateway.groups.count(); gi++) {
+                const HydraulicGroup *grp = gateway.groups.groupAt(gi);
+                if (grp && gateway.groupEngine.openConfirmedCount(grp->id) > 0) {
+                    groupActive = true;
+                    break;
+                }
+            }
         }
     }
-    return false;
 }
+
+bool IrrigationModule::otaCycleActive()
+{
+    bool anyValve, anyGpo, groupActive;
+    otaCycleDecompose(anyValve, anyGpo, groupActive);
+    return anyValve || anyGpo || groupActive;
+}
+#endif // defined(ARCH_ESP32) && !MESHTASTIC_EXCLUDE_WEBSERVER
 
 void IrrigationModule::portalFillOtaStatus(IrrigationWeb::OtaStatusCtx &c)
 {
@@ -3247,22 +3265,8 @@ void IrrigationModule::portalFillOtaStatus(IrrigationWeb::OtaStatusCtx &c)
 bool IrrigationModule::portalOtaArm(const IrrigationWeb::OtaArmReq &r)
 {
     // Gate: nunca entrar em OTA com ciclo ativo (o loader não roda o fail-safe de 120 min).
-    bool anyValve = false, anyGpo = false;
-    for (uint8_t i = 0; i < settings.numValves; i++)
-        anyValve = anyValve || valves.isOpen(i);
-    uint8_t ng = countGpos(settings);
-    for (uint8_t i = 0; i < ng; i++)
-        anyGpo = anyGpo || gpos.isOn(i);
-    bool groupActive = false;
-    if (gwIsGateway()) {
-        if (gateway.scheduler.runningProgramId() != 0)
-            groupActive = true;
-        for (size_t gi = 0; gi < gateway.groups.count() && !groupActive; gi++) {
-            const HydraulicGroup *grp = gateway.groups.groupAt(gi);
-            if (grp && gateway.groupEngine.openConfirmedCount(grp->id) > 0)
-                groupActive = true;
-        }
-    }
+    bool anyValve, anyGpo, groupActive;
+    otaCycleDecompose(anyValve, anyGpo, groupActive);
     if (!IrrigationWeb::otaArmAllowed(anyValve, anyGpo, groupActive)) {
         LOG_WARN("Irrigation: OTA recusado — ciclo ativo");
         return false;
@@ -3284,7 +3288,7 @@ bool IrrigationModule::portalOtaArm(const IrrigationWeb::OtaArmReq &r)
         LOG_ERROR("Irrigation: trySwitchToOTA falhou");
         return false;
     }
-    MeshtasticOTA::saveConfig(&config.network, meshtastic_OTAMode_OTA_BLE, (uint8_t *)r.hash);
+    MeshtasticOTA::saveConfig(&config.network, meshtastic_OTAMode_OTA_BLE, r.hash);
     auditEvent(AuditOrigin::PAINEL, AuditAction::OTA_ARM, 0, AuditResult::OK);
     LOG_INFO("Irrigation: OTA armado (BLE), reboot no loader em 2 s");
     rebootAtMsec = millis() + 2000;
