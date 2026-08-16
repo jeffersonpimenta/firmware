@@ -230,6 +230,7 @@ document.querySelectorAll("nav.tabs button").forEach((b) =>
     document.querySelectorAll(".panel").forEach((t) => t.classList.add("hidden"));
     document.getElementById("tab-" + b.dataset.tab).classList.remove("hidden");
     if (b.dataset.tab === "mais") { refreshEnlace(); loadCoords(); }
+    if (b.dataset.tab === "firmware") refreshFirmware();
   })
 );
 
@@ -287,7 +288,7 @@ function initService() {
   svcInit = true;
   document.querySelectorAll(".svc-only").forEach((b) => b.classList.remove("hidden"));
   // Esconde as abas de nó/rede-local; o device SERVICO usa Clientes/Rede(cliente)/Log.
-  document.querySelectorAll('nav.tabs button:not(.svc-only):not(.survey-tab)').forEach((b) => b.classList.add("hidden"));
+  document.querySelectorAll('nav.tabs button:not(.svc-only):not(.survey-tab):not(.firmware-tab)').forEach((b) => b.classList.add("hidden"));
   document.querySelector('[data-tab="svcclients"]').click();
   document.getElementById("hdrName").textContent = "Dispositivo de Serviço";
   document.getElementById("hdrSub").textContent = "Cofre multi-cliente";
@@ -444,6 +445,43 @@ document.getElementById("svcLogRefresh").addEventListener("click", loadSvcLog);
 document.getElementById("exportBtn").addEventListener("click", exportVault);
 document.getElementById("importBtn").addEventListener("click", () => importVault(false));
 document.getElementById("importReplaceBtn").addEventListener("click", () => importVault(true));
+
+// ── Aba Firmware — status OTA + armar atualização BLE ───────────────────────
+async function refreshFirmware() {
+  try {
+    const r = await fetch("/api/portal/ota/status");
+    if (!r.ok) return;
+    const s = await r.json();
+    document.getElementById("fw-version").textContent = s.fwVersion || "—";
+    const loader = document.getElementById("fw-loader");
+    if (!s.loaderPresent) loader.textContent = "OTA indisponível: loader ausente.";
+    else if (!s.loaderBle) loader.textContent = "OTA indisponível: loader sem suporte BLE.";
+    else if (s.cycleActive) loader.textContent = "Feche as zonas ativas antes de atualizar.";
+    else loader.textContent = "Pronto para atualizar via BLE.";
+    document.getElementById("fw-arm").disabled = !s.canArm;
+  } catch (e) {}
+}
+
+document.getElementById("fw-arm").addEventListener("click", async () => {
+  if (!confirm("Entrar em modo atualização? O nó vai reiniciar e ficar alguns minutos fora do ar."))
+    return;
+  const btn = document.getElementById("fw-arm");
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/portal/ota", { method: "POST", body: "{}" });
+    if (r.ok) {
+      document.getElementById("fw-loader").textContent =
+        "Modo atualização armado. Use o app Meshtastic (BLE) para enviar o .bin.";
+    } else {
+      const j2 = await r.json().catch(() => ({}));
+      document.getElementById("fw-loader").textContent =
+        "Falha: " + ((j2.errors && j2.errors[0]) || "erro");
+      btn.disabled = false;
+    }
+  } catch (e) {
+    btn.disabled = false;
+  }
+});
 
 // ── Fase 8d — modo cobertura (site survey §8.5) ─────────────────────────────
 const svBase = () => (lastRole === 3 ? "/api/portal/service/survey" : "/api/portal/survey");

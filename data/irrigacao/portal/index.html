@@ -125,6 +125,21 @@
       </div>
     </section>
 
+    <section id="tab-firmware" class="panel hidden">
+      <div class="card stack">
+        <h2>Atualização de firmware</h2>
+        <p>Versão atual: <strong id="fw-version">—</strong></p>
+        <p id="fw-loader" class="muted">Verificando loader…</p>
+        <button type="button" id="fw-arm" disabled>Entrar em modo atualização (BLE)</button>
+        <p class="muted">
+          Após confirmar, o nó reinicia em modo atualização. Abra o app
+          <strong>Meshtastic</strong> oficial, conecte por Bluetooth a este nó e envie
+          o arquivo <code>.bin</code>. O nó fica ~5–15 min atualizando e volta sozinho.
+          <strong>Feche todas as zonas antes de atualizar.</strong>
+        </p>
+      </div>
+    </section>
+
     <section id="tab-mais" class="panel hidden">
       <!-- Lista principal do "Mais" -->
       <div id="mais-list">
@@ -157,6 +172,7 @@
     <button data-tab="net" class="tab">Rede</button>
     <button data-tab="survey" class="tab survey-tab">Cobertura</button>
     <button data-tab="mais" class="tab node-mais hidden">Mais</button>
+    <button data-tab="firmware" class="tab firmware-tab">Firmware</button>
     <button data-tab="svcclients" class="tab svc-only hidden">Clientes</button>
     <button data-tab="svcnet" class="tab svc-only hidden">Rede&nbsp;(cli.)</button>
     <button data-tab="svclog" class="tab svc-only hidden">Log</button>
