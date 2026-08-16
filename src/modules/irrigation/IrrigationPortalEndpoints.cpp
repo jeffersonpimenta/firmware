@@ -251,6 +251,44 @@ static void hProvision(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, "{\"ok\":true,\"reboot\":true}");
 }
 
+static void hOtaStatus(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!irrigationModule) {
+        res->setStatusCode(404);
+        return;
+    }
+    OtaStatusCtx c = {};
+    irrigationModule->portalFillOtaStatus(c);
+    char buf[256];
+    if (!buildOtaStatus(c, buf, sizeof(buf))) {
+        res->setStatusCode(500);
+        return;
+    }
+    sendJson(res, buf);
+}
+
+static void hOtaArm(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!irrigationModule) {
+        res->setStatusCode(404);
+        return;
+    }
+    char body[128];
+    size_t nb = readBody(req, body, sizeof(body));
+    OtaArmReq r;
+    ParseResult pr = parseOtaArm(body, nb, r);
+    if (!pr.ok) {
+        sendParseErrors(res, pr);
+        return;
+    }
+    if (!irrigationModule->portalOtaArm(r)) {
+        sendJson(res, "{\"errors\":[\"OTA recusado (ciclo ativo ou loader ausente/sem BLE)\"]}", 400);
+        return;
+    }
+    sendJson(res, "{\"ok\":true,\"reboot\":true}");
+}
+
 // ── Wi-Fi management (§7) ────────────────────────────────────────────────────
 // WiFi só existe no gateway (nós são bateria/solar — não provisionam WiFi nem varrem redes).
 // Todos os endpoints WiFi respondem 404 fora do gateway.
@@ -406,6 +444,8 @@ void registerIrrigationPortalHandlers(HTTPServer *server)
     server->registerNode(new ResourceNode("/api/portal/survey/start", "POST", &hSurveyStart));
     server->registerNode(new ResourceNode("/api/portal/survey/stop", "POST", &hSurveyStop));
     server->registerNode(new ResourceNode("/api/portal/link", "GET", &hLink));
+    server->registerNode(new ResourceNode("/api/portal/ota/status", "GET", &hOtaStatus));
+    server->registerNode(new ResourceNode("/api/portal/ota", "POST", &hOtaArm));
     server->registerNode(new ResourceNode("/api/portal/wifi", "GET", &hWifiStatus));
     server->registerNode(new ResourceNode("/api/portal/wifi/scan", "POST", &hWifiScanStart));
     server->registerNode(new ResourceNode("/api/portal/wifi/scan", "GET", &hWifiScanResult));
