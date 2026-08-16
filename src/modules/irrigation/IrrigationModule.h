@@ -49,6 +49,9 @@ struct WifiConnectCtx;
 struct WifiToggleReq;
 // Modo Remoto
 struct RemoteUpsertReq;
+// OTA local por contato (BLE) — §3.3/§9. ESP32/webserver-only.
+struct OtaArmReq;
+struct OtaStatusCtx;
 }
 
 // Saída de nível (relé/MOSFET) dos GPOs.
@@ -188,6 +191,10 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     bool portalSetCoords(const IrrigationWeb::PortalCoords &c); // persiste settings (coordenada é local, não mexe em epoch)
     // Wizard de 1º boot (§6): grava o papel escolhido (+ PSK da fazenda se GATEWAY) e reinicia.
     bool portalProvision(const IrrigationWeb::ProvisionReq &r);
+    // OTA local por contato (BLE) — §3.3/§9. ESP32/webserver-only.
+    bool otaCycleActive();
+    bool portalOtaArm(const IrrigationWeb::OtaArmReq &r);
+    void portalFillOtaStatus(IrrigationWeb::OtaStatusCtx &c);
     PortalSession &portalSession() { return portal; }
     // Acesso de leitura ao mini-log de auditoria (Task 10: portal de campo). §8.9
     const AuditLog &auditLogRef() const { return audit; }
