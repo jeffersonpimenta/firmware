@@ -1,0 +1,4 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "HT-RA62")(type "KiCad")(uri "${KIPRJMOD}/lib/HT-RA62.kicad_sym")(options "")(descr ""))
+)
