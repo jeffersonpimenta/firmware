@@ -3,6 +3,7 @@
 #if defined(ARCH_ESP32) && !MESHTASTIC_EXCLUDE_WEBSERVER
 
 #include "main.h" // owner
+#include "mesh/http/WebServer.h" // initWebServer / webServerPortalMode / webServerThread
 #include "modules/irrigation/IrrigationModule.h"
 #include <DNSServer.h>
 #include <WiFi.h>
@@ -28,12 +29,23 @@ static void bringUp()
     WiFi.mode(staConfigured() ? WIFI_AP_STA : WIFI_AP); // AP_STA mantém o STA da base vivo
     WiFi.softAP(ssid, IRRIGATION_PORTAL_PIN);
     sDns.start(53, "*", WiFi.softAPIP()); // DNS cativo: resolve tudo para o device
+    // Sobe o web server HTTP:80 independente do WiFi Meshtastic (config.network pode estar off).
+    // secureServer fica null (sem cert SSL) → só HTTP; suficiente para o painel/portal cativo.
+    webServerPortalMode = true;
+    static bool sWebServerInited = false;
+    if (!sWebServerInited) {
+        initWebServer();
+        sWebServerInited = true;
+    }
+    if (webServerThread)
+        webServerThread->enable();
     LOG_INFO("Irrigation portal: AP up (%s), mode=%s", ssid, staConfigured() ? "AP_STA" : "AP");
     sApUp = true;
 }
 
 static void tearDown()
 {
+    webServerPortalMode = false; // web server volta a seguir a política do WiFi Meshtastic
     sDns.stop();
     WiFi.softAPdisconnect(true);
     if (staConfigured())

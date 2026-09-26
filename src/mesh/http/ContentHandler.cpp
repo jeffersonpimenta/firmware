@@ -100,7 +100,8 @@ void registerHandlers(HTTPServer *insecureServer, HTTPSServer *secureServer)
 
     ResourceNode *nodeRoot = new ResourceNode("/*", "GET", &handleStatic);
 
-    // Secure nodes
+    // Secure nodes — pulados quando secureServer == nullptr (portal AP serve só HTTP:80, sem cert SSL).
+    if (secureServer) {
     secureServer->registerNode(nodeAPIv1ToRadioOptions);
     secureServer->registerNode(nodeAPIv1ToRadio);
     secureServer->registerNode(nodeAPIv1FromRadioOptions);
@@ -128,7 +129,13 @@ void registerHandlers(HTTPServer *insecureServer, HTTPSServer *secureServer)
     // Portal do device SERVICO (Fase 8c): /api/portal/service/* respondem só quando role==SERVICO.
     registerIrrigationServicePortalHandlers(secureServer);
 #endif
+    // Estáticos multi-nível (ex.: /irrigacao/portal/app.js): "*" casa 1 segmento, então
+    // registramos profundidades extras apontando pro mesmo handleStatic (que usa o path cru).
+    secureServer->registerNode(new ResourceNode("/*/*", "GET", &handleStatic));
+    secureServer->registerNode(new ResourceNode("/*/*/*", "GET", &handleStatic));
+    secureServer->registerNode(new ResourceNode("/*/*/*/*", "GET", &handleStatic));
     secureServer->registerNode(nodeRoot); // This has to be last
+    }
 
     // Insecure nodes
     insecureServer->registerNode(nodeAPIv1ToRadioOptions);
@@ -158,6 +165,11 @@ void registerHandlers(HTTPServer *insecureServer, HTTPSServer *secureServer)
     // Portal do device SERVICO (Fase 8c): /api/portal/service/* respondem só quando role==SERVICO.
     registerIrrigationServicePortalHandlers(insecureServer);
 #endif
+    // Estáticos multi-nível (ex.: /irrigacao/portal/app.js): "*" casa 1 segmento, então
+    // registramos profundidades extras apontando pro mesmo handleStatic (que usa o path cru).
+    insecureServer->registerNode(new ResourceNode("/*/*", "GET", &handleStatic));
+    insecureServer->registerNode(new ResourceNode("/*/*/*", "GET", &handleStatic));
+    insecureServer->registerNode(new ResourceNode("/*/*/*/*", "GET", &handleStatic));
     insecureServer->registerNode(nodeRoot); // This has to be last
 }
 
@@ -466,8 +478,48 @@ void handleStatic(HTTPRequest *req, HTTPResponse *res)
     // Print the first parameter value
     if (params->getPathParameter(0, parameter1)) {
 
+        // O wildcard "*" da lib casa só UM segmento; para caminhos multi-nível
+        // (ex.: /irrigacao/portal/index.html) reconstruímos o path a partir da request crua,
+        // descartando query string e a "/" inicial.
+        {
+            std::string reqPath = req->getRequestString();
+            size_t qm = reqPath.find('?');
+            if (qm != std::string::npos)
+                reqPath = reqPath.substr(0, qm);
+            if (!reqPath.empty() && reqPath[0] == '/')
+                reqPath.erase(0, 1);
+            parameter1 = reqPath;
+        }
+
+#if !MESHTASTIC_EXCLUDE_IRRIGATION
+        // Portal cativo de irrigação: quando o softAP do portal está no ar, qualquer navegação que
+        // NÃO seja um arquivo existente (raiz "/", sondas de captive-portal tipo /generate_204 e
+        // /hotspot-detect.html, path desconhecido) redireciona pro portal. Assets reais (/irrigacao/*,
+        // /static/*) seguem servidos normalmente abaixo. Dispara o popup de "entrar na rede" no celular.
+        if (webServerPortalMode) {
+            bool haveFile = false;
+            if (!parameter1.empty() && parameter1 != "/") {
+                concurrency::LockGuard g(spiLock);
+                haveFile = FSCom.exists(("/" + parameter1).c_str()) || FSCom.exists(("/" + parameter1 + ".gz").c_str()) ||
+                           FSCom.exists(("/static/" + parameter1).c_str()) ||
+                           FSCom.exists(("/static/" + parameter1 + ".gz").c_str());
+            }
+            if (!haveFile) {
+                res->setStatusCode(302);
+                res->setStatusText("Found");
+                res->setHeader("Location", "http://192.168.4.1/irrigacao/portal/index.html");
+                res->setHeader("Content-Length", "0");
+                return;
+            }
+        }
+#endif
+
         std::string filename = "/static/" + parameter1;
         std::string filenameGzip = "/static/" + parameter1 + ".gz";
+        // Painel de irrigação e afins vivem na raiz do LittleFS (ex.: /irrigacao/*), não em /static/.
+        // Fallback: se não achar sob /static/, tenta o caminho cru a partir da raiz.
+        std::string filenameRoot = "/" + parameter1;
+        std::string filenameRootGzip = "/" + parameter1 + ".gz";
 
         // Try to open the file
         File file;
@@ -491,6 +543,19 @@ void handleStatic(HTTPRequest *req, HTTPResponse *res)
             res->setHeader("Content-Encoding", "gzip");
             if (!file.available()) {
                 LOG_WARN("File not available - %s", filenameGzip.c_str());
+            }
+        } else if (FSCom.exists(filenameRoot.c_str())) {
+            filename = filenameRoot; // para o content-type ser deduzido pela extensão certa
+            file = FSCom.open(filenameRoot.c_str());
+            if (!file.available()) {
+                LOG_WARN("File not available - %s", filenameRoot.c_str());
+            }
+        } else if (FSCom.exists(filenameRootGzip.c_str())) {
+            filename = filenameRoot;
+            file = FSCom.open(filenameRootGzip.c_str());
+            res->setHeader("Content-Encoding", "gzip");
+            if (!file.available()) {
+                LOG_WARN("File not available - %s", filenameRootGzip.c_str());
             }
         } else {
             has_set_content_type = true;

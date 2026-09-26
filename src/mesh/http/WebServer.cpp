@@ -68,9 +68,13 @@ static HTTPServer *insecureServer;
 volatile bool isWebServerReady;
 volatile bool isCertReady;
 
+// Setado pelo captive portal de irrigação quando seu softAP está no ar: faz o web server
+// rodar mesmo com config.network.wifi_enabled==false (portal é independente do WiFi Meshtastic).
+volatile bool webServerPortalMode = false;
+
 static void handleWebResponse()
 {
-    if (isWifiAvailable()) {
+    if (isWifiAvailable() || webServerPortalMode) {
 
         if (isWebServerReady) {
             // Check heap before HTTPS processing - SSL requires significant memory
@@ -196,10 +200,16 @@ WebServerThread *webServerThread;
 
 WebServerThread::WebServerThread() : concurrency::OSThread("WebServer")
 {
-    if (!config.network.wifi_enabled && !config.network.eth_enabled) {
+    if (!config.network.wifi_enabled && !config.network.eth_enabled && !webServerPortalMode) {
         disable();
     }
     lastActivityTime = millis();
+}
+
+void WebServerThread::enable()
+{
+    enabled = true;
+    setInterval(ACTIVE_INTERVAL_MS);
 }
 
 void WebServerThread::markActivity()
@@ -229,7 +239,7 @@ int32_t WebServerThread::getAdaptiveInterval()
 
 int32_t WebServerThread::runOnce()
 {
-    if (!config.network.wifi_enabled && !config.network.eth_enabled) {
+    if (!config.network.wifi_enabled && !config.network.eth_enabled && !webServerPortalMode) {
         disable();
     }
 
@@ -247,7 +257,9 @@ void initWebServer()
     LOG_DEBUG("Init Web Server");
 
     // We can now use the new certificate to setup our server as usual.
-    secureServer = new HTTPSServer(cert, 443, MAX_HTTPS_CONNECTIONS);
+    // cert pode ser null quando iniciado pelo portal AP de irrigação (HTTP-only, sem SSL) — pula HTTPS.
+    if (cert)
+        secureServer = new HTTPSServer(cert, 443, MAX_HTTPS_CONNECTIONS);
     insecureServer = new HTTPServer();
 
     registerHandlers(insecureServer, secureServer);

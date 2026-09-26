@@ -322,7 +322,7 @@ IrrigationModule::IrrigationModule()
     // janela Portal AP + BLE no boot; ela fecha por inatividade e, na borda de
     // fechamento, o BLE é liberado de vez (ver runOnce). Fora do regime elegível
     // (fábrica/gateway/serviço) o comportamento antigo é preservado.
-    if (AccessWindowPolicy::eligible((IrrigationRole)settings.role, provisioned))
+    if (!provisioned || AccessWindowPolicy::eligible((IrrigationRole)settings.role, provisioned))
         portal.requestOpen(millis());
 }
 

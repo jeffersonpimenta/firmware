@@ -10,6 +10,9 @@
 void initWebServer();
 void createSSLCert();
 
+// Setado pelo portal AP de irrigação: mantém o web server ativo mesmo com WiFi Meshtastic desligado.
+extern volatile bool webServerPortalMode;
+
 class WebServerThread : private concurrency::OSThread
 {
   private:
@@ -19,6 +22,8 @@ class WebServerThread : private concurrency::OSThread
     WebServerThread();
     uint32_t requestRestart = 0;
     void markActivity();
+    // Força habilitar a thread (usado pelo portal AP, que roda o web server sem WiFi Meshtastic).
+    void enable();
 
   protected:
     virtual int32_t runOnce() override;
