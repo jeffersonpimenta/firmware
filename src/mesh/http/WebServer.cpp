@@ -254,6 +254,11 @@ int32_t WebServerThread::runOnce()
 
 void initWebServer()
 {
+    // Idempotente: WiFiAPClient e o portal AP de irrigação podem ambos chamar initWebServer().
+    // Sem esta guarda o segundo chamador re-registra handlers e re-binda a porta 80 (vaza o
+    // HTTPServer antigo e falha o bind). isWebServerReady já sinaliza que o server subiu.
+    if (isWebServerReady)
+        return;
     LOG_DEBUG("Init Web Server");
 
     // We can now use the new certificate to setup our server as usual.

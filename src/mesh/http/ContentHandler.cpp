@@ -8,6 +8,7 @@
 #include "mesh/http/WebServer.h"
 #if HAS_WIFI
 #include "mesh/wifi/WiFiAPClient.h"
+#include <WiFi.h> // WiFi.softAPIP() no redirect do portal cativo
 #endif
 #include "Power.h"
 #include "SPILock.h"
@@ -56,12 +57,12 @@ using namespace httpsserver;
 
 // We need to specify some content-type mapping, so the resources get delivered with the
 // right content type and are displayed correctly in the browser
-char const *contentTypes[][2] = {{".txt", "text/plain"},     {".html", "text/html"},
-                                 {".js", "text/javascript"}, {".png", "image/png"},
-                                 {".jpg", "image/jpg"},      {".gz", "application/gzip"},
-                                 {".gif", "image/gif"},      {".json", "application/json"},
-                                 {".css", "text/css"},       {".ico", "image/vnd.microsoft.icon"},
-                                 {".svg", "image/svg+xml"},  {"", ""}};
+char const *contentTypes[][2] = {{".txt", "text/plain"},          {".html", "text/html"},
+                                 {".json", "application/json"},    {".js", "text/javascript"},
+                                 {".png", "image/png"},            {".jpg", "image/jpg"},
+                                 {".gz", "application/gzip"},       {".gif", "image/gif"},
+                                 {".css", "text/css"},             {".ico", "image/vnd.microsoft.icon"},
+                                 {".svg", "image/svg+xml"},         {"", ""}};
 
 // const char *certificate = NULL; // change this as needed, leave as is for no TLS check (yolo security)
 
@@ -134,6 +135,7 @@ void registerHandlers(HTTPServer *insecureServer, HTTPSServer *secureServer)
     secureServer->registerNode(new ResourceNode("/*/*", "GET", &handleStatic));
     secureServer->registerNode(new ResourceNode("/*/*/*", "GET", &handleStatic));
     secureServer->registerNode(new ResourceNode("/*/*/*/*", "GET", &handleStatic));
+    secureServer->registerNode(new ResourceNode("/*/*/*/*/*", "GET", &handleStatic));
     secureServer->registerNode(nodeRoot); // This has to be last
     }
 
@@ -170,6 +172,7 @@ void registerHandlers(HTTPServer *insecureServer, HTTPSServer *secureServer)
     insecureServer->registerNode(new ResourceNode("/*/*", "GET", &handleStatic));
     insecureServer->registerNode(new ResourceNode("/*/*/*", "GET", &handleStatic));
     insecureServer->registerNode(new ResourceNode("/*/*/*/*", "GET", &handleStatic));
+    insecureServer->registerNode(new ResourceNode("/*/*/*/*/*", "GET", &handleStatic));
     insecureServer->registerNode(nodeRoot); // This has to be last
 }
 
@@ -507,7 +510,12 @@ void handleStatic(HTTPRequest *req, HTTPResponse *res)
             if (!haveFile) {
                 res->setStatusCode(302);
                 res->setStatusText("Found");
-                res->setHeader("Location", "http://192.168.4.1/irrigacao/portal/index.html");
+#if HAS_WIFI
+                std::string loc = "http://" + std::string(WiFi.softAPIP().toString().c_str()) + "/irrigacao/portal/index.html";
+#else
+                std::string loc = "http://192.168.4.1/irrigacao/portal/index.html";
+#endif
+                res->setHeader("Location", loc);
                 res->setHeader("Content-Length", "0");
                 return;
             }
