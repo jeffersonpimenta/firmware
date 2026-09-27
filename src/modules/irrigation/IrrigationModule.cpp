@@ -984,10 +984,20 @@ int32_t IrrigationModule::runOnce()
     // (config.bluetooth.enabled=false em RAM → deinit → release da RAM). O AP já
     // foi derrubado pelo próprio portalApLoop() quando apShouldBeUp() virou false.
     {
-        bool eligible = AccessWindowPolicy::eligible((IrrigationRole)settings.role, provisioned);
+        IrrigationRole role = (IrrigationRole)settings.role;
+        bool eligible = AccessWindowPolicy::eligible(role, provisioned);
         bool up = portal.apShouldBeUp();
-        if (AccessWindowPolicy::shouldTearDownBle(eligible, up, apWasUp, bleReleasedThisBoot)) {
-            LOG_INFO("Irrigation: access window closed — tearing down BLE (RAM release, sticky until reboot)");
+        // Estação/repetidor (elegível): derruba o BLE na BORDA DE FECHAMENTO da janela —
+        // durante a janela AP+BLE convivem por design.
+        // Gateway/serviço: WiFi (portal AP) é a interface principal e no ESP32-S3 WiFi e
+        // BLE dividem o rádio 2.4 GHz; a coexistência derruba o AP (portal pouco
+        // responsivo, abas com "load failed", desconexão frequente). Então derruba o BLE
+        // assim que o AP SOBE. Em ambos os casos o release é sticky até o próximo reboot.
+        bool wifiPrimary = (role == IrrigationRole::GATEWAY || role == IrrigationRole::SERVICO);
+        bool tearNow = AccessWindowPolicy::shouldTearDownBle(eligible, up, apWasUp, bleReleasedThisBoot) ||
+                       (wifiPrimary && up && !bleReleasedThisBoot);
+        if (tearNow) {
+            LOG_INFO("Irrigation: tearing down BLE (free 2.4GHz for WiFi AP; sticky until reboot)");
             config.bluetooth.enabled = false; // RAM only — flash mantém enabled=true p/ o próximo boot.
             if (nimbleBluetooth)
                 nimbleBluetooth->deinit();
