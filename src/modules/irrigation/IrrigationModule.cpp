@@ -318,12 +318,13 @@ IrrigationModule::IrrigationModule()
     // The class is defined later in this translation unit; new'd here so it owns its own lifetime.
     if (settings.pinBtn >= 0 || settings.pinLed >= 0)
         new IrrigationUiThread(this, settings.pinBtn, settings.pinLed);
-    // Janela de acesso (spec 2026-08-11): estação/repetidor provisionados abrem a
-    // janela Portal AP + BLE no boot; ela fecha por inatividade e, na borda de
-    // fechamento, o BLE é liberado de vez (ver runOnce). Fora do regime elegível
-    // (fábrica/gateway/serviço) o comportamento antigo é preservado.
-    if (!provisioned || AccessWindowPolicy::eligible((IrrigationRole)settings.role, provisioned))
-        portal.requestOpen(millis());
+    // Janela de acesso (spec 2026-08-11): TODO papel abre a janela Portal AP + BLE no
+    // boot por um prazo determinado (PortalSession::PORTAL_TIMEOUT_MS); ela fecha por
+    // inatividade e reabre a cada reboot. Sem isto, um gateway/serviço provisionado numa
+    // placa sem botão (ex.: XIAO S3, pinBtn<0) ficava inalcançável pós-provisionamento.
+    // O teardown de BLE na borda de fechamento segue restrito ao regime elegível
+    // (estação/repetidor), via AccessWindowPolicy no runOnce.
+    portal.requestOpen(millis());
 }
 
 bool IrrigationModule::wantPacket(const meshtastic_MeshPacket *p)
