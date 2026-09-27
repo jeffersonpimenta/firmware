@@ -494,6 +494,11 @@ void handleStatic(HTTPRequest *req, HTTPResponse *res)
             parameter1 = reqPath;
         }
 
+        // Assets de irrigacao mudam a cada reflash; forca revalidacao para nao servir
+        // app.js/index.html/css velhos do cache do browser (portal cativo).
+        if (parameter1.rfind("irrigacao", 0) == 0)
+            res->setHeader("Cache-Control", "no-cache");
+
 #if !MESHTASTIC_EXCLUDE_IRRIGATION
         // Portal cativo de irrigação: quando o softAP do portal está no ar, qualquer navegação que
         // NÃO seja um arquivo existente (raiz "/", sondas de captive-portal tipo /generate_204 e

@@ -23,6 +23,7 @@ inline void sendJson(httpsserver::HTTPResponse *res, const char *body, int statu
     res->setStatusCode(status);
     res->setHeader("Content-Type", "application/json");
     res->setHeader("Access-Control-Allow-Origin", "*");
+    res->setHeader("Cache-Control", "no-store"); // estado dinamico: nunca cachear
     res->print(body);
 }
 
