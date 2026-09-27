@@ -99,10 +99,10 @@ struct ArduinoSensorReader : ISensorReader {
 ArduinoSensorReader sensorReader;
 } // namespace
 
-// Flag em RTC slow memory da janela BLE sob demanda (spec 2026-09-27): retida em reboot
-// de software, zerada em power-on/brownout (fail-safe: perda de energia volta ao normal).
-// 0 = normal; 5/10/15 = pedir janela BLE de N min no proximo boot.
-RTC_DATA_ATTR static uint8_t sBleWindowMinutes = 0;
+// Arquivo-flag da janela BLE sob demanda (spec 2026-09-27). A RTC slow memory NÃO
+// sobrevive ao esp_restart nesta placa (bootCount reinicia a cada reboot), então a flag
+// vai pro LittleFS. Consumida (apagada) no boot → power-loss/crash volta ao modo normal.
+static const char *BLE_WINDOW_PATH = "/prefs/ble_window.dat";
 
 static IrrigationSettings loadIrrigationSettingsOrDefault()
 {
@@ -332,9 +332,16 @@ IrrigationModule::IrrigationModule()
     // Janela BLE sob demanda: consome a flag RTC no boot. Se ativa, NAO abre o portal
     // (sem WiFi) e o BLE nao e derrubado no runOnce -> device vira no Meshtastic BLE.
     {
-        uint8_t reqMin = sBleWindowMinutes;
-        sBleWindowMinutes = 0; // consumo unico: reboot/power-loss seguinte volta ao normal
-        bleWindowActive = (reqMin != 0);
+        uint8_t reqMin = 0;
+#ifdef FSCom
+        auto bwf = FSCom.open(BLE_WINDOW_PATH, FILE_O_READ);
+        if (bwf) {
+            bwf.read(&reqMin, 1);
+            bwf.close();
+            FSCom.remove(BLE_WINDOW_PATH); // consumo único: apaga ao ler (fail-safe)
+        }
+#endif
+        bleWindowActive = (reqMin == 5 || reqMin == 10 || reqMin == 15);
         if (bleWindowActive)
             bleWindowDeadlineMs = millis() + (uint32_t)reqMin * 60000u;
     }
@@ -1372,7 +1379,13 @@ void IrrigationModule::commitPairing()
 // (full credential removal requires the Phase-5 portal — documented limitation).
 void IrrigationModule::startBleWindow(uint8_t minutes)
 {
-    sBleWindowMinutes = minutes; // consumida no proximo boot
+#ifdef FSCom
+    auto f = FSCom.open(BLE_WINDOW_PATH, FILE_O_WRITE);
+    if (f) {
+        f.write(&minutes, 1);
+        f.close();
+    }
+#endif
     LOG_INFO("Irrigation: janela BLE de %u min pedida; reboot em 3 s", (unsigned)minutes);
     rebootAtMsec = millis() + 3000;
 }
