@@ -3602,9 +3602,11 @@ function renderSistema() {
      <div class="card">
        <div class="sens-hdr"><span class="name">Bluetooth (BLE)</span></div>
        <div class="sub maint-sub">Abre uma janela BLE sob demanda para emparelhar via app. <b>O Wi-Fi/portal cai durante a janela</b> e volta sozinho ao fim do tempo.</div>
-       <button class="btn solid big syslink" data-ble="5">🔵 BLE 5 min</button>
-       <button class="btn solid big syslink" data-ble="10">🔵 BLE 10 min</button>
-       <button class="btn solid big syslink" data-ble="15">🔵 BLE 15 min</button>
+       <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:8px">
+         <button class="btn solid big syslink" data-ble="5">BLE 5 min</button>
+         <button class="btn solid big syslink" data-ble="10">BLE 10 min</button>
+         <button class="btn solid big syslink" data-ble="15">BLE 15 min</button>
+       </div>
      </div>`;
 
   const btn = view.querySelector('#dlBackup');
