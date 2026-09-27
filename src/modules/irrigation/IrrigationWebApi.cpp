@@ -40,9 +40,20 @@ void JsonWriter::str(const char *v)
 void JsonWriter::num(int64_t v)
 {
     sep_();
+    // Conversão manual: a libc "nano" do ESP32 não formata %lld e imprime "ld"
+    // literal, gerando JSON inválido (JSON.parse estoura no browser). Monta o
+    // decimal à mão para não depender da config de printf da toolchain.
     char t[24];
-    snprintf(t, sizeof(t), "%lld", (long long)v);
-    puts_(t);
+    char *p = t + sizeof(t);
+    *--p = '\0';
+    uint64_t u = (v < 0) ? (uint64_t)(-(v + 1)) + 1ULL : (uint64_t)v; // trata INT64_MIN sem UB
+    do {
+        *--p = (char)('0' + (int)(u % 10));
+        u /= 10;
+    } while (u);
+    if (v < 0)
+        *--p = '-';
+    puts_(p);
     _needComma = true;
 }
 void JsonWriter::boolean(bool v)
