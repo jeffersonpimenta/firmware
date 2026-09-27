@@ -2157,60 +2157,57 @@ bool IrrigationModule::loadGatewayState()
     size_t n = 0;
     bool ok = true;
 
+    // Buffers de (de)serialização vão pro heap: somados na stack passavam de ~5 KB
+    // (SERIALIZED_MAX=3894 + zonas + programas) e estouravam o canário da stack do
+    // loopTask no boot do gateway (bootloop / Double exception). Um único buffer do
+    // tamanho do maior bloco, reutilizado, resolve.
+    constexpr size_t CAP = StationRegistry::SERIALIZED_MAX;
+    uint8_t *buf = (uint8_t *)malloc(CAP);
+    if (!buf)
+        return false;
+
     // Stations
-    {
-        uint8_t buf[StationRegistry::SERIALIZED_MAX];
-        if (stagedRead(GW_STATIONS_PATH, buf, sizeof(buf), n))
-            ok &= gateway.stations.deserialize(buf, n);
-    }
+    if (stagedRead(GW_STATIONS_PATH, buf, StationRegistry::SERIALIZED_MAX, n))
+        ok &= gateway.stations.deserialize(buf, n);
     // Zones
-    {
-        uint8_t buf[6 + ZoneTable::MAX * 29];
-        if (stagedRead(GW_ZONES_PATH, buf, sizeof(buf), n))
-            ok &= gateway.zones.deserialize(buf, n);
-    }
+    if (stagedRead(GW_ZONES_PATH, buf, 6 + ZoneTable::MAX * 29, n))
+        ok &= gateway.zones.deserialize(buf, n);
     // Programs
-    {
-        uint8_t buf[700];
-        if (stagedRead(GW_PROGRAMS_PATH, buf, sizeof(buf), n))
-            ok &= gateway.scheduler.deserialize(buf, n);
-    }
+    if (stagedRead(GW_PROGRAMS_PATH, buf, 700, n))
+        ok &= gateway.scheduler.deserialize(buf, n);
     // Mirror (only flag)
-    {
-        uint8_t buf[16];
-        if (stagedRead(GW_MIRROR_PATH, buf, sizeof(buf), n))
-            ok &= gateway.mirror.deserialize(buf, n);
-    }
+    if (stagedRead(GW_MIRROR_PATH, buf, 16, n))
+        ok &= gateway.mirror.deserialize(buf, n);
+
+    free(buf);
     return ok;
 }
 
 bool IrrigationModule::saveGatewayState()
 {
     bool ok = true;
-    // Stations
+    // Mesmo motivo do loadGatewayState: buffer único no heap em vez de ~5 KB de stack.
+    constexpr size_t CAP = StationRegistry::SERIALIZED_MAX;
+    uint8_t *buf = (uint8_t *)malloc(CAP);
+    if (!buf)
+        return false;
     {
-        uint8_t buf[StationRegistry::SERIALIZED_MAX];
-        size_t n = gateway.stations.serialize(buf, sizeof(buf));
+        size_t n = gateway.stations.serialize(buf, StationRegistry::SERIALIZED_MAX);
         ok &= stagedWrite(GW_STATIONS_TMP, GW_STATIONS_PATH, buf, n);
     }
-    // Zones
     {
-        uint8_t buf[6 + ZoneTable::MAX * 29];
-        size_t n = gateway.zones.serialize(buf, sizeof(buf));
+        size_t n = gateway.zones.serialize(buf, 6 + ZoneTable::MAX * 29);
         ok &= stagedWrite(GW_ZONES_TMP, GW_ZONES_PATH, buf, n);
     }
-    // Programs
     {
-        uint8_t buf[700];
-        size_t n = gateway.scheduler.serialize(buf, sizeof(buf));
+        size_t n = gateway.scheduler.serialize(buf, 700);
         ok &= stagedWrite(GW_PROGRAMS_TMP, GW_PROGRAMS_PATH, buf, n);
     }
-    // Mirror
     {
-        uint8_t buf[16];
-        size_t n = gateway.mirror.serialize(buf, sizeof(buf));
+        size_t n = gateway.mirror.serialize(buf, 16);
         ok &= stagedWrite(GW_MIRROR_TMP, GW_MIRROR_PATH, buf, n);
     }
+    free(buf);
     ok &= saveRemoteButtons(); // Modo Remoto: persiste associações botoeira→saída
     return ok;
 }
