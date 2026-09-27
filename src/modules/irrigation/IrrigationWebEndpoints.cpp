@@ -132,7 +132,10 @@ static void hStations(HTTPRequest *req, HTTPResponse *res)
         }
     }
 
-    char buf[8192]; // Fase 9: campos extras (rssi/hb/limiares/outputs) por estação
+    // static: 8 KB na stack do web server (loopTask, ~8 KB) estourava e crashava o
+    // handler ("load failed" na aba Estações). Handlers rodam single-thread no OSThread
+    // do web server, então buffer estático reutilizado é seguro (sem reentrância).
+    static char buf[8192]; // Fase 9: campos extras (rssi/hb/limiares/outputs) por estação
     if (!buildStations(views, n, buf, sizeof(buf))) {
         res->setStatusCode(500);
         return;
@@ -518,7 +521,7 @@ static void hSensorsGet(HTTPRequest *req, HTTPResponse *res)
         }
     }
 
-    char buf[4096];
+    static char buf[4096]; // static: evita estourar a stack do web server (ver hStations)
     size_t n = buildSensorsGateway(views, nViews, buf, sizeof(buf));
     if (!n) {
         res->setStatusCode(500);
@@ -601,7 +604,9 @@ static void hAudit(HTTPRequest *req, HTTPResponse *res)
     res->setStatusCode(200);
     res->setHeader("Content-Type", wantCsv ? "text/csv" : "application/json");
     res->setHeader("Access-Control-Allow-Origin", "*");
-    res->print(buf);
+    // Escreve por tamanho: toJson/toCsv devolvem n bytes SEM null-terminar; print()
+    // usaria strlen e vazaria lixo do heap após o ']' (JSON inválido no browser).
+    res->write((uint8_t *)buf, n);
     free(buf);
 }
 

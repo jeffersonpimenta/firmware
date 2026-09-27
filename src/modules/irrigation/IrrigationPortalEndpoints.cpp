@@ -127,6 +127,11 @@ static void hLog(HTTPRequest *req, HTTPResponse *res)
         res->setStatusCode(500);
         return;
     }
+    // buildPortalLog devolve n bytes sem null-terminar; sendJson usa strlen e vazaria
+    // lixo do heap após o JSON. Termina explicitamente antes de enviar.
+    if (n >= cap)
+        n = cap - 1;
+    buf[n] = '\0';
     sendJson(res, buf);
     free(buf);
 }
