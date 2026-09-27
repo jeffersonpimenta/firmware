@@ -610,6 +610,25 @@ static void hAudit(HTTPRequest *req, HTTPResponse *res)
     free(buf);
 }
 
+// POST /api/irrigation/system/ble-window — janela BLE sob demanda (5/10/15 min): WiFi off,
+// BLE on por N min; device reboota e volta sozinho ao normal. Ver spec 2026-09-27.
+static void hBleWindow(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!gwReady()) { res->setStatusCode(404); return; }
+    char body[128];
+    size_t nb = readBody(req, body, sizeof(body));
+    JsonReader rd(body, nb);
+    int64_t minutes = 0;
+    if (!rd.getInt("minutes", minutes) || (minutes != 5 && minutes != 10 && minutes != 15)) {
+        sendJson(res, "{\"ok\":false,\"errors\":[\"minutes deve ser 5, 10 ou 15\"]}", 400);
+        return;
+    }
+    char out[64];
+    snprintf(out, sizeof(out), "{\"ok\":true,\"minutes\":%d}", (int)minutes);
+    sendJson(res, out); // responde antes do reboot
+    irrigationModule->startBleWindow((uint8_t)minutes);
+}
+
 // POST /api/irrigation/maint — abre/fecha janela de manutenção de tamper numa estação
 static void hMaint(HTTPRequest *req, HTTPResponse *res)
 {
@@ -1257,6 +1276,7 @@ void registerIrrigationHandlers(HTTPServer *server)
     server->registerNode(new ResourceNode("/api/irrigation/sensors/name", "POST", &hSensorsName));
     server->registerNode(new ResourceNode("/api/irrigation/audit", "GET", &hAudit));
     server->registerNode(new ResourceNode("/api/irrigation/maint", "POST", &hMaint));
+    server->registerNode(new ResourceNode("/api/irrigation/system/ble-window", "POST", &hBleWindow));
     // Fase 7b: grupos hidráulicos
     server->registerNode(new ResourceNode("/api/irrigation/groups", "GET", &hGroupsGet));
     server->registerNode(new ResourceNode("/api/irrigation/groups/status", "GET", &hGroupsStatus));

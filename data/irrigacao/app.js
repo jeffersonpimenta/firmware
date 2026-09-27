@@ -3598,6 +3598,13 @@ function renderSistema() {
        <input type="file" id="restoreFile" accept=".json,application/json" class="sub">
        <button class="btn solid big syslink" id="doRestore">⬆ Restaurar backup (.json)</button>
        <div class="sub" id="restoreStatus"></div>
+     </div>
+     <div class="card">
+       <div class="sens-hdr"><span class="name">Bluetooth (BLE)</span></div>
+       <div class="sub maint-sub">Abre uma janela BLE sob demanda para emparelhar via app. <b>O Wi-Fi/portal cai durante a janela</b> e volta sozinho ao fim do tempo.</div>
+       <button class="btn solid big syslink" data-ble="5">🔵 BLE 5 min</button>
+       <button class="btn solid big syslink" data-ble="10">🔵 BLE 10 min</button>
+       <button class="btn solid big syslink" data-ble="15">🔵 BLE 15 min</button>
      </div>`;
 
   const btn = view.querySelector('#dlBackup');
@@ -3608,6 +3615,16 @@ function renderSistema() {
   const rFile = view.querySelector('#restoreFile');
   const rStatus = view.querySelector('#restoreStatus');
   rBtn.addEventListener('click', () => restoreBackup(rBtn, rFile, rStatus));
+
+  view.querySelectorAll('[data-ble]').forEach((b) =>
+    b.addEventListener('click', () => {
+      const minutes = num(b.dataset.ble);
+      // O Wi-Fi/portal cai ao abrir a janela BLE, então só disparamos o POST
+      // (a resposta não chega) e avisamos o usuário.
+      postJson('/system/ble-window', { minutes }).catch(() => {});
+      alert('O WiFi/portal vai cair agora e voltar sozinho em ' + minutes + ' min. Reconecte ao portal depois.');
+    })
+  );
 }
 
 // ===== Rádio: helpers puros de render (Enlace + Cobertura) =====

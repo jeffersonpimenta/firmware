@@ -99,6 +99,11 @@ struct ArduinoSensorReader : ISensorReader {
 ArduinoSensorReader sensorReader;
 } // namespace
 
+// Flag em RTC slow memory da janela BLE sob demanda (spec 2026-09-27): retida em reboot
+// de software, zerada em power-on/brownout (fail-safe: perda de energia volta ao normal).
+// 0 = normal; 5/10/15 = pedir janela BLE de N min no proximo boot.
+RTC_DATA_ATTR static uint8_t sBleWindowMinutes = 0;
+
 static IrrigationSettings loadIrrigationSettingsOrDefault()
 {
     IrrigationSettings s;
@@ -324,7 +329,17 @@ IrrigationModule::IrrigationModule()
     // placa sem botão (ex.: XIAO S3, pinBtn<0) ficava inalcançável pós-provisionamento.
     // O teardown de BLE na borda de fechamento segue restrito ao regime elegível
     // (estação/repetidor), via AccessWindowPolicy no runOnce.
-    portal.requestOpen(millis());
+    // Janela BLE sob demanda: consome a flag RTC no boot. Se ativa, NAO abre o portal
+    // (sem WiFi) e o BLE nao e derrubado no runOnce -> device vira no Meshtastic BLE.
+    {
+        uint8_t reqMin = sBleWindowMinutes;
+        sBleWindowMinutes = 0; // consumo unico: reboot/power-loss seguinte volta ao normal
+        bleWindowActive = (reqMin != 0);
+        if (bleWindowActive)
+            bleWindowDeadlineMs = millis() + (uint32_t)reqMin * 60000u;
+    }
+    if (!bleWindowActive)
+        portal.requestOpen(millis());
 }
 
 bool IrrigationModule::wantPacket(const meshtastic_MeshPacket *p)
@@ -994,8 +1009,10 @@ int32_t IrrigationModule::runOnce()
         // responsivo, abas com "load failed", desconexão frequente). Então derruba o BLE
         // assim que o AP SOBE. Em ambos os casos o release é sticky até o próximo reboot.
         bool wifiPrimary = (role == IrrigationRole::GATEWAY || role == IrrigationRole::SERVICO);
-        bool tearNow = AccessWindowPolicy::shouldTearDownBle(eligible, up, apWasUp, bleReleasedThisBoot) ||
-                       (wifiPrimary && up && !bleReleasedThisBoot);
+        // Durante a janela BLE sob demanda o BLE fica ON (WiFi off): nao derruba.
+        bool tearNow = !bleWindowActive &&
+                       (AccessWindowPolicy::shouldTearDownBle(eligible, up, apWasUp, bleReleasedThisBoot) ||
+                        (wifiPrimary && up && !bleReleasedThisBoot));
         if (tearNow) {
             LOG_INFO("Irrigation: tearing down BLE (free 2.4GHz for WiFi AP; sticky until reboot)");
             config.bluetooth.enabled = false; // RAM only — flash mantém enabled=true p/ o próximo boot.
@@ -1005,6 +1022,11 @@ int32_t IrrigationModule::runOnce()
             bleReleasedThisBoot = true;
         }
         apWasUp = up;
+        // Auto-retorno da janela BLE: expirou -> reboot (flag ja consumida -> boot normal).
+        if (bleWindowActive && (int32_t)(millis() - bleWindowDeadlineMs) >= 0) {
+            LOG_INFO("Irrigation: janela BLE expirada - reboot para restaurar WiFi/portal");
+            rebootAtMsec = millis() + 100;
+        }
     }
 #endif
     // Fail-safe tick roda em TODOS os papéis: num nó mal-configurado nunca deve
@@ -1348,6 +1370,13 @@ void IrrigationModule::commitPairing()
 
 // Decision §3: factory reset clears irrigation prefs only; channel PSK remains
 // (full credential removal requires the Phase-5 portal — documented limitation).
+void IrrigationModule::startBleWindow(uint8_t minutes)
+{
+    sBleWindowMinutes = minutes; // consumida no proximo boot
+    LOG_INFO("Irrigation: janela BLE de %u min pedida; reboot em 3 s", (unsigned)minutes);
+    rebootAtMsec = millis() + 3000;
+}
+
 void IrrigationModule::factoryReset()
 {
     // pulsos saem no pin map atual; depois do wipe os pinos viram -1 e nada mais fecha fisicamente.

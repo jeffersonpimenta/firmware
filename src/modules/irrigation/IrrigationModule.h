@@ -191,6 +191,7 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     bool portalSetCoords(const IrrigationWeb::PortalCoords &c); // persiste settings (coordenada é local, não mexe em epoch)
     // Wizard de 1º boot (§6): grava o papel escolhido (+ PSK da fazenda se GATEWAY) e reinicia.
     bool portalProvision(const IrrigationWeb::ProvisionReq &r);
+    void startBleWindow(uint8_t minutes); // janela BLE sob demanda: grava flag RTC + reboot
     // OTA local por contato (BLE) — §3.3/§9. ESP32/webserver-only.
     bool portalOtaArm(const IrrigationWeb::OtaArmReq &r);
     void portalFillOtaStatus(IrrigationWeb::OtaStatusCtx &c);
@@ -388,6 +389,8 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     // Janela de acesso (Portal AP + BLE) nos nós de campo — spec 2026-08-11.
     bool bleReleasedThisBoot = false; // BLE já foi liberado (RAM) nesta sessão; release é sticky até reboot.
     bool apWasUp = false;             // nível anterior de portal.apShouldBeUp() p/ detectar a borda OPEN->CLOSED.
+    bool bleWindowActive = false;     // janela BLE sob demanda ativa neste boot (WiFi off, BLE on)
+    uint32_t bleWindowDeadlineMs = 0; // fim da janela BLE -> reboot de retorno
     bool bootHeartbeatPending = true;
     // Controle de LOG_WARN de RTC (1×/h para não spam)
     uint32_t lastRtcWarnMs = 0;
