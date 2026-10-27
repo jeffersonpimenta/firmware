@@ -21,6 +21,11 @@ struct StationTelemetry {
     // Alimenta gwZoneIsOpen para zonas remotas.
     uint8_t valveStates = 0; // bit i = válvula i aberta
     uint8_t gpoStates = 0;   // bit i = GPO i ligado
+    // Task 8: config de entrada relatada pela estação (alimenta o GET /acionamento da UI).
+    // digitalInMode[i] é o InputMode carregado como uint8_t; inputCount=0 => estação não relatou.
+    uint8_t inputCount = 0;
+    uint8_t digitalInActiveLow = 0; // bitmask: bit i = entrada i ativo-baixo
+    uint8_t digitalInMode[IrrigationProto::HB_MAX_INPUTS] = {};
 };
 
 // Último heartbeat por estação (só RAM; não persiste — reconstrói ao ouvir de novo).

@@ -338,6 +338,69 @@ static void test_heartbeat_sensor_count_overflow_rejected()
     TEST_ASSERT_FALSE(decodeHeartbeat(buf, n, out));
 }
 
+static void test_heartbeat_input_block_roundtrip()
+{
+    Heartbeat hb = {};
+    hb.configEpoch = 11;
+    hb.sensorCount = 1;
+    hb.sensors[0] = {0, 1, 152};
+    hb.inputCount = 4;
+    hb.digitalInActiveLow = 0b0101;
+    hb.digitalInMode[0] = 1; // FOLLOW
+    hb.digitalInMode[1] = 3; // EDGE_TOGGLE
+    hb.digitalInMode[2] = 0; // DISABLED
+    hb.digitalInMode[3] = 5; // EDGE_CLOSE
+    uint8_t buf[96];
+    size_t n = encodeHeartbeat(buf, sizeof(buf), 1, hb);
+    TEST_ASSERT_TRUE(n > 0);
+    Heartbeat out;
+    TEST_ASSERT_TRUE(decodeHeartbeat(buf, n, out));
+    TEST_ASSERT_EQUAL_UINT8(1, out.sensorCount);
+    TEST_ASSERT_EQUAL_UINT8(4, out.inputCount);
+    TEST_ASSERT_EQUAL_UINT8(0b0101, out.digitalInActiveLow);
+    TEST_ASSERT_EQUAL_UINT8(1, out.digitalInMode[0]);
+    TEST_ASSERT_EQUAL_UINT8(3, out.digitalInMode[1]);
+    TEST_ASSERT_EQUAL_UINT8(0, out.digitalInMode[2]);
+    TEST_ASSERT_EQUAL_UINT8(5, out.digitalInMode[3]);
+}
+
+static void test_heartbeat_legacy_payload_decodes_zero_inputs()
+{
+    // Payload sem bloco de entrada (só sensores): inputCount volta 0.
+    Heartbeat hb = {};
+    hb.sensorCount = 1;
+    hb.sensors[0] = {0, 1, 152};
+    hb.inputCount = 0; // não emite o bloco de entrada
+    uint8_t buf[96];
+    size_t n = encodeHeartbeat(buf, sizeof(buf), 1, hb);
+    TEST_ASSERT_TRUE(n > 0);
+    Heartbeat out;
+    TEST_ASSERT_TRUE(decodeHeartbeat(buf, n, out));
+    TEST_ASSERT_EQUAL_UINT8(1, out.sensorCount);
+    TEST_ASSERT_EQUAL_UINT8(0, out.inputCount);
+}
+
+static void test_heartbeat_input_count_overflow_rejected()
+{
+    // Encoder satura inputCount a HB_MAX_INPUTS; um count forjado > HB_MAX_INPUTS é rejeitado.
+    Heartbeat hb = {};
+    hb.sensorCount = 0;
+    hb.inputCount = 9; // acima do teto
+    uint8_t buf[96];
+    size_t n = encodeHeartbeat(buf, sizeof(buf), 1, hb);
+    TEST_ASSERT_TRUE(n > 0);
+    Heartbeat out;
+    TEST_ASSERT_TRUE(decodeHeartbeat(buf, n, out));
+    TEST_ASSERT_EQUAL_UINT8(HB_MAX_INPUTS, out.inputCount); // encoder saturou
+
+    // Forja o byte de contagem (último emitido antes dos 4 modos) para > HB_MAX_INPUTS.
+    // Layout do bloco de entrada: [activeLow][count][mode0..mode_{count-1}].
+    // Com count=4, count está em buf[n-5]; forja para 5 e o decode deve recusar.
+    buf[n - 5] = 5;
+    Heartbeat bad;
+    TEST_ASSERT_FALSE(decodeHeartbeat(buf, n, bad));
+}
+
 static void test_evento_tamper_roundtrip()
 {
     uint8_t buf[MAX_PAYLOAD];
@@ -554,6 +617,9 @@ void setup()
     RUN_TEST(test_heartbeat_sensor_block_truncated_rejected);
     RUN_TEST(test_heartbeat_legacy_payload_decodes_zero_sensors);
     RUN_TEST(test_heartbeat_sensor_count_overflow_rejected);
+    RUN_TEST(test_heartbeat_input_block_roundtrip);
+    RUN_TEST(test_heartbeat_legacy_payload_decodes_zero_inputs);
+    RUN_TEST(test_heartbeat_input_count_overflow_rejected);
     RUN_TEST(test_evento_tamper_roundtrip);
     RUN_TEST(test_cmd_maint_roundtrip);
     RUN_TEST(test_serviceFlag_setAndRead);

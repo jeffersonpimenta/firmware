@@ -134,6 +134,14 @@ size_t encodeHeartbeat(uint8_t *buf, size_t len, uint32_t seq, const Heartbeat &
         w.u8(m.sensors[i].tipo);
         w.i16(m.sensors[i].valueCenti);
     }
+    // Task 8: bloco de entradas digitais (trailing, após sensores). inputCount=0 => omitido.
+    uint8_t icnt = m.inputCount > HB_MAX_INPUTS ? HB_MAX_INPUTS : m.inputCount;
+    if (icnt > 0) {
+        w.u8(m.digitalInActiveLow);
+        w.u8(icnt);
+        for (uint8_t i = 0; i < icnt; i++)
+            w.u8(m.digitalInMode[i]);
+    }
     return w.ok ? w.pos : 0;
 }
 
@@ -195,6 +203,10 @@ bool decodeHeartbeat(const uint8_t *buf, size_t len, Heartbeat &out)
         return false;
     // Bloco de sensores é opcional (payloads de firmware anterior não o têm)
     out.sensorCount = 0;
+    out.inputCount = 0;
+    out.digitalInActiveLow = 0;
+    for (uint8_t i = 0; i < HB_MAX_INPUTS; i++)
+        out.digitalInMode[i] = 0;
     if (r.pos >= len)
         return true;
     uint8_t cnt = r.u8();
@@ -205,7 +217,19 @@ bool decodeHeartbeat(const uint8_t *buf, size_t len, Heartbeat &out)
         out.sensors[i].tipo = r.u8();
         out.sensors[i].valueCenti = r.i16();
     }
-    out.sensorCount = r.ok ? cnt : 0;
+    if (!r.ok)
+        return false;
+    out.sensorCount = cnt;
+    // Task 8: bloco de entradas digitais opcional (trailing, após sensores).
+    if (r.pos >= len)
+        return true;
+    out.digitalInActiveLow = r.u8();
+    uint8_t icnt = r.u8();
+    if (!r.ok || icnt > HB_MAX_INPUTS)
+        return false;
+    for (uint8_t i = 0; i < icnt; i++)
+        out.digitalInMode[i] = r.u8();
+    out.inputCount = r.ok ? icnt : 0;
     return r.ok;
 }
 

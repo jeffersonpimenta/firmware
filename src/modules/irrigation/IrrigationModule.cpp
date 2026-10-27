@@ -772,6 +772,11 @@ void IrrigationModule::sendHeartbeat()
     hb.sensorCount = (uint8_t)sampler.readings(rs);
     for (uint8_t i = 0; i < hb.sensorCount; i++)
         hb.sensors[i] = rs[i];
+    // Task 8: relata a config de entrada ao gateway (digitalInMode[]+polaridade) p/ o grid agregado da UI.
+    hb.inputCount = IrrigationSettings::MAX_DIGITAL_IN;
+    hb.digitalInActiveLow = settings.digitalInActiveLow;
+    for (uint8_t i = 0; i < IrrigationSettings::MAX_DIGITAL_IN && i < IrrigationProto::HB_MAX_INPUTS; i++)
+        hb.digitalInMode[i] = (uint8_t)settings.digitalInMode[i];
 
     meshtastic_MeshPacket *p = allocDataPacket();
     p->to = settings.boundGateway ? settings.boundGateway : NODENUM_BROADCAST;
@@ -4074,6 +4079,11 @@ void IrrigationModule::handleGwHeartbeat(const meshtastic_MeshPacket &mp, const 
     // Modo Remoto (Task 6 fix): estado real das saídas — alimenta gwZoneIsOpen para zonas remotas.
     tel.valveStates = hb.valveStates;
     tel.gpoStates = hb.gpoStates;
+    // Task 8: config de entrada relatada pela estação (alimenta o GET /acionamento da UI).
+    tel.inputCount = hb.inputCount;
+    tel.digitalInActiveLow = hb.digitalInActiveLow;
+    for (uint8_t i = 0; i < hb.inputCount && i < IrrigationProto::HB_MAX_INPUTS; i++)
+        tel.digitalInMode[i] = hb.digitalInMode[i];
     gateway.telemetry.update(tel);
 
     // Fase 7a: reporta o estado real das saídas (bitmaps do HB) ao motor de grupos.
@@ -4536,6 +4546,38 @@ void IrrigationModule::gwRecomputeNodeBtnConfig(uint32_t node)
         const StationTelemetry *tel = gateway.telemetry.byNode(node);
         gwReconcileEpoch(node, tel ? tel->configEpoch : 0);
     }
+}
+
+bool IrrigationModule::gwPushStationInputConfig(uint32_t node,
+                                                const uint8_t modes[IrrigationSettings::MAX_DIGITAL_IN],
+                                                uint8_t activeLow)
+{
+    if (node == nodeDB->getNodeNum()) {
+        // Nó local: grava direto nos settings do próprio gateway e aplica.
+        for (uint8_t i = 0; i < IrrigationSettings::MAX_DIGITAL_IN; i++)
+            settings.digitalInMode[i] = (InputMode)modes[i];
+        settings.digitalInActiveLow = activeLow;
+        settings.configEpoch += 1; // força reconfiguração local das políticas de entrada
+        saveIrrigationSettings(settings);
+        return true;
+    }
+
+    // Estação remota: muta blob desejado + bump epoch + re-push SET_CONFIG (reusa configEpoch).
+    StationEntry *e = gateway.stations.mutableByNode(node);
+    if (!e || e->desiredEpoch == 0)
+        return false; // sem config adotada ainda: nada a empurrar (§5.4)
+    IrrigationSettings cfg;
+    if (!migrateIrrigationSettings(e->blob, sizeof(e->blob), cfg))
+        return false;
+    for (uint8_t i = 0; i < IrrigationSettings::MAX_DIGITAL_IN; i++)
+        cfg.digitalInMode[i] = (InputMode)modes[i];
+    cfg.digitalInActiveLow = activeLow;
+    memcpy(e->blob, &cfg, sizeof(e->blob));
+    e->desiredEpoch += 1;
+    saveGatewayState();
+    const StationTelemetry *tel = gateway.telemetry.byNode(node);
+    gwReconcileEpoch(node, tel ? tel->configEpoch : 0); // push imediato (respeita cooldown)
+    return true;
 }
 
 void IrrigationModule::gwPushStationBtnConfig(const RemoteAssoc &a)

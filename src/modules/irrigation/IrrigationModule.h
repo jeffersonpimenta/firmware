@@ -456,6 +456,11 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     void gwPushStationBtnConfig(const RemoteAssoc &a);
     // Recomputa e grava btnMask/ledIdx para um nó-gatilho a partir da tabela inteira.
     void gwRecomputeNodeBtnConfig(uint32_t node);
+    // Task 8: grava digitalInMode[4]+polaridade de uma estação (ou do próprio gateway) e
+    // empurra via SET_CONFIG reusando configEpoch (bump desiredEpoch + gwReconcileEpoch).
+    // modes[] traz InputMode como uint8_t; retorna false se o nó não é conhecido.
+    bool gwPushStationInputConfig(uint32_t node, const uint8_t modes[IrrigationSettings::MAX_DIGITAL_IN],
+                                  uint8_t activeLow);
     // Abertura/fechamento pelo caminho manual (extrai helper para reuso sem duplicar coreografia).
     void gwRunCommandOpen(uint8_t zoneId);
     void gwRunCommandClose(uint8_t zoneId);

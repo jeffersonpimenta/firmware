@@ -13,6 +13,7 @@ constexpr size_t MAX_PAYLOAD = 200;
 constexpr uint32_t MAX_OPEN_SECONDS = 120 * 60; // teto absoluto compilado (spec §4.2)
 constexpr uint8_t FRAG_DATA_MAX = 160;
 constexpr uint8_t HB_MAX_SENSORS = 4;
+constexpr uint8_t HB_MAX_INPUTS = 4; // Task 8: entradas digitais relatadas no heartbeat (IrrigationSettings::MAX_DIGITAL_IN)
 
 // true = remetente autorizado a comandar (§4.2, §11.5). Puro: sem estado.
 inline bool senderAuthorizedBy(uint16_t flags, uint32_t from, uint32_t boundGateway)
@@ -141,6 +142,13 @@ struct Heartbeat {
     // Bloco de sensores opcional (trailing); ausente em payloads de firmware anterior
     uint8_t sensorCount = 0;
     SensorReading sensors[HB_MAX_SENSORS] = {};
+    // Task 8: bloco de entradas digitais opcional (trailing, após os sensores).
+    // Carrega a config de entrada da estação para o gateway montar o grid agregado.
+    // digitalInMode[i] é o InputMode (enum de InputActuationPolicy.h) carregado como uint8_t;
+    // a camada de protocolo não depende daquele header. inputCount=0 => bloco ausente.
+    uint8_t inputCount = 0;
+    uint8_t digitalInActiveLow = 0; // bitmask: bit i = entrada i ativo-baixo
+    uint8_t digitalInMode[HB_MAX_INPUTS] = {};
 };
 
 struct SetConfig {
