@@ -6,7 +6,17 @@
 class LedPatternController
 {
   public:
-    enum class Mode : uint8_t { NORMAL, NO_GATEWAY, CONFIG_PENDING, PAIRING, OUTPUT_OPEN, BATTERY_SOS };
+    enum class Mode : uint8_t {
+        NORMAL,
+        NO_GATEWAY,
+        CONFIG_PENDING,
+        PAIRING,
+        OUTPUT_OPEN,
+        BATTERY_SOS,
+        CMD_INFLIGHT,
+        CMD_OK,
+        CMD_FAIL
+    };
     void setMode(Mode m) { mode = m; }
     Mode currentMode() const { return mode; }
     bool ledOn(uint32_t nowMs) const;

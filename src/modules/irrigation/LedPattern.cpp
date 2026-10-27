@@ -50,6 +50,16 @@ bool LedPatternController::ledOn(uint32_t nowMs) const
         return true;
     case Mode::BATTERY_SOS:
         return sosPattern(t);
+    case Mode::CMD_INFLIGHT:
+        return ((nowMs / 150u) & 1u) != 0; // pisca rapido: 150 ms on/off
+    case Mode::CMD_OK: {
+        uint32_t tc = nowMs % 1000u;
+        return tc < 120u || (tc >= 240u && tc < 360u); // 2 pulsos curtos
+    }
+    case Mode::CMD_FAIL: {
+        uint32_t tf = nowMs % 1200u;
+        return tf < 100u || (tf >= 200u && tf < 300u) || (tf >= 400u && tf < 500u); // rajada de 3
+    }
     }
     return false;
 }
