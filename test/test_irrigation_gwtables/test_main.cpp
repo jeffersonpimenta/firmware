@@ -81,41 +81,57 @@ static void test_stations_upsertAdoptAndRoundTrip()
     TEST_ASSERT_TRUE(r.upsert(e));
     TEST_ASSERT_EQUAL_UINT32(5, r.byNode(0xa1b2c3d4)->desiredEpoch);
 
-    // Monta blob v4 válido (128 B) para adoptConfig migrar p/ v5 canônico (176 B).
-    uint8_t newBlob[sizeof(StationEntry::blob)];
-    memset(newBlob, 0, sizeof(newBlob));
-    IrrigationSettings v4src;
-    v4src.version = 4;
-    v4src.numValves = 3;
-    v4src.configEpoch = 9;
-    memcpy(newBlob, &v4src, IRRIGATION_SETTINGS_V4_SIZE);
-    uint16_t ver4 = 4;
-    memcpy(newBlob + 4, &ver4, 2); // garante version=4 no blob
+    // Greenfield v9: adoptConfig aceita apenas blob com magic IRR2 e tamanho 212 B.
+    uint8_t newBlob[sizeof(IrrigationSettings)];
+    IrrigationSettings v9src;
+    v9src.numValves = 3;
+    v9src.configEpoch = 9;
+    memcpy(newBlob, &v9src, sizeof(v9src));
 
-    r.adoptConfig(0xa1b2c3d4, newBlob, IRRIGATION_SETTINGS_V4_SIZE, 9); // regra do maior epoch
+    r.adoptConfig(0xa1b2c3d4, newBlob, sizeof(newBlob), 9); // regra do maior epoch
     TEST_ASSERT_EQUAL_UINT32(9, r.byNode(0xa1b2c3d4)->desiredEpoch);
-    // Após migração p/ v5, magic deve estar nos primeiros 4 bytes do blob
+    // Apos adocao v9, magic IRR2 deve estar nos primeiros 4 bytes do blob
     uint32_t blobMagic = 0;
     memcpy(&blobMagic, r.byNode(0xa1b2c3d4)->blob, 4);
     TEST_ASSERT_EQUAL_HEX32(IrrigationSettings::MAGIC, blobMagic);
-    // Confirmação de cauda: blob[175] deve sobreviver ao roundtrip (cobre os 176 B)
-    TEST_ASSERT_EQUAL_UINT8(0, r.byNode(0xa1b2c3d4)->blob[175]);
+    // Confirmacao de cauda: blob[211] (ultimo byte v9) deve ser 0
+    TEST_ASSERT_EQUAL_UINT8(0, r.byNode(0xa1b2c3d4)->blob[211]);
 
-    uint8_t buf[2048];
+    uint8_t buf[4096];
     size_t n = r.serialize(buf, sizeof(buf));
     TEST_ASSERT_GREATER_THAN(0, n);
     StationRegistry c;
     TEST_ASSERT_TRUE(c.deserialize(buf, n));
     TEST_ASSERT_EQUAL_UINT32(9, c.byNode(0xa1b2c3d4)->desiredEpoch);
     TEST_ASSERT_EQUAL_STRING("Pasto", c.byNode(0xa1b2c3d4)->name);
-    // Cauda do blob preservada após serializar/desserializar
-    TEST_ASSERT_EQUAL_UINT8(0, c.byNode(0xa1b2c3d4)->blob[175]);
+    // Cauda do blob preservada apos serializar/desserializar
+    TEST_ASSERT_EQUAL_UINT8(0, c.byNode(0xa1b2c3d4)->blob[211]);
+}
+
+static void test_stations_adoptConfig_rejects_legacy_blob()
+{
+    // adoptConfig rejeita blob IRR1 (legado) — no-op, epoch nao muda.
+    StationRegistry r;
+    StationEntry e;
+    e.node = 0xBEEFCAFE;
+    e.desiredEpoch = 5;
+    TEST_ASSERT_TRUE(r.upsert(e));
+
+    // Blob com magic IRR1 (v4, 128 B) — sera rejeitado
+    uint8_t legacyBlob[IRRIGATION_SETTINGS_V4_SIZE];
+    memset(legacyBlob, 0, sizeof(legacyBlob));
+    uint32_t irr1 = 0x49525231u;
+    uint16_t ver4 = 4;
+    memcpy(legacyBlob, &irr1, 4);
+    memcpy(legacyBlob + 4, &ver4, 2);
+    r.adoptConfig(0xBEEFCAFE, legacyBlob, sizeof(legacyBlob), 9);    // epoch > 5 mas magic invalido
+    TEST_ASSERT_EQUAL_UINT32(5, r.byNode(0xBEEFCAFE)->desiredEpoch); // no-op
 }
 
 static void test_stations_roundtrip_preserves_v8_tail_and_fields()
 {
-    // Regressão: os offsets pós-blob (retries/silencio/lat/lon) não podem invadir a
-    // região v8 do blob (bytes 184..207 = btnFallback*). ABI blob v8 = 208 B; STATION_ENTRY = 243.
+    // Regressao: os offsets pos-blob (retries/silencio/lat/lon) nao podem invadir a
+    // regiao v9 do blob (bytes 208..211 = digitalInMode[]). ABI blob v9 = 212 B; STATION_ENTRY = 247.
     StationRegistry r;
     StationEntry e;
     e.node = 0x0A0B0C0D;
@@ -288,6 +304,7 @@ void setup()
     RUN_TEST(test_zones_fullRejects_andIdZeroRejected);
     RUN_TEST(test_zones_serializeRoundTrip);
     RUN_TEST(test_stations_upsertAdoptAndRoundTrip);
+    RUN_TEST(test_stations_adoptConfig_rejects_legacy_blob);
     RUN_TEST(test_stations_roundtrip_preserves_v8_tail_and_fields);
     RUN_TEST(test_stations_fullAndNodeZeroRejected);
     RUN_TEST(test_stations_nodeAtCompacted);

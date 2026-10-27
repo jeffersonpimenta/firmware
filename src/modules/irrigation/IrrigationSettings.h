@@ -1,10 +1,11 @@
 #pragma once
+#include "modules/irrigation/InputActuationPolicy.h"
 #include <cstddef>
 #include <stdint.h>
 
 enum class IrrigationRole : uint8_t { ESTACAO = 0, GATEWAY = 1, REPETIDOR = 2, SERVICO = 3 };
 
-// Layout do blob on-disk/radio (208 bytes, ABI-locked v8):
+// Layout do blob on-disk/radio (212 bytes, ABI-locked v9, magic IRR2):
 //   0  magic(4) | 4  version(2) | 6  role(1) | 7  numValves(1)
 //   8  boundGateway(4) | 12 hbMinutes(2) | 14 vbatMinAbrirCentiV(2) | 16 maxOpenConfigS(2)
 //  18  cmdRatePerMin(1) | 19 pad0(1) | 20 pulseMs(2)
@@ -13,22 +14,25 @@ enum class IrrigationRole : uint8_t { ESTACAO = 0, GATEWAY = 1, REPETIDOR = 2, S
 // --- v4 (Fase 6a) ---
 //  52  pinsGpo[2](2) | 54 pinTamper(1) | 55 hwFlags(1)
 //  56  latE7(4) | 60 lonE7(4)
-//  64  sensores[4]×16(64)
+//  64  sensores[4]x16(64)
 // --- v5 (Fase 6b) ---
-// 128  localInterlocks[4]×12(48)
+// 128  localInterlocks[4]x12(48)
 // --- v6 (Fase 9) ---
 // 176  vbatAvisoCentiV(2) | 178 vbatCriticaCentiV(2)
 // --- v7 (Modo Remoto) ---
-// 180  pinsRemoteLed[2](2) | 182 digitalInBtnMask(1) | 183 digitalInLedIdx(1)
-// --- v8 (P2P fallback) --- 184 btnFallbackNode[4](16) | 200 btnFallbackOutId[4](4) | 204 remoteFallbackMs(2) | 206 btnFallbackKind(1) | 207 pad3(1) → 208
-// Total = 208.
+// 180  pinsRemoteLed[2](2) | 182 digitalInBtnMask(1) | 183 digitalInLedIdx(1) [deprec. Task7]
+// --- v8 (P2P fallback) --- 184 btnFallbackNode[4](16) | 200 btnFallbackOutId[4](4) | 204 remoteFallbackMs(2) | 206
+// btnFallbackKind(1) | 207 hbTrafficFlags(1) -> 208
+// --- v9 (Fonte de Acionamento, magic IRR2) ---
+// 208  digitalInMode[4](4) -> 212
+// Total = 212. Blobs IRR1 (v1..v8) sao rejeitados pelo migrate (greenfield).
 struct IrrigationSettings {
-    static constexpr uint32_t MAGIC = 0x49525231; // "IRR1"
+    static constexpr uint32_t MAGIC = 0x49525232; // "IRR2" (greenfield v9: digitalInMode[])
     static constexpr uint8_t MAX_VALVES = 8;
     static constexpr uint8_t MAX_DIGITAL_IN = 4;
 
     uint32_t magic = MAGIC;
-    uint16_t version = 8;
+    uint16_t version = 9;
     uint8_t role = (uint8_t)IrrigationRole::ESTACAO;
     uint8_t numValves = 2;
     uint32_t boundGateway = 0; // 0 = não pareado
@@ -115,6 +119,11 @@ struct IrrigationSettings {
     uint8_t hbTrafficFlags = 0; // @207 — reuso do antigo pad3
     bool hbBackoffEnabled() const { return (hbTrafficFlags & HBFLAG_DISABLE_BACKOFF) == 0; }
     bool hbJitterEnabled() const { return (hbTrafficFlags & HBFLAG_DISABLE_JITTER) == 0; }
+
+    // v9 (Refatoracao Fonte de Acionamento): modo de atuacao por entrada digital.
+    // Apendice no FIM - todos os offsets v8 preservados. Magic bumped para IRR2.
+    InputMode digitalInMode[MAX_DIGITAL_IN] = {InputMode::DISABLED, InputMode::DISABLED, InputMode::DISABLED,
+                                               InputMode::DISABLED};
 };
 
 static constexpr size_t IRRIGATION_SETTINGS_V1_SIZE = 40;
@@ -123,20 +132,23 @@ static constexpr size_t IRRIGATION_SETTINGS_V4_SIZE = 128;
 static constexpr size_t IRRIGATION_SETTINGS_V5_SIZE = 176;
 static constexpr size_t IRRIGATION_SETTINGS_V6_SIZE = 180;
 static constexpr size_t IRRIGATION_SETTINGS_V7_SIZE = 184;
+static constexpr size_t IRRIGATION_SETTINGS_V8_SIZE = 208; // prefixo v9; magic IRR1 (rejeitado pelo v9)
 static_assert(sizeof(IrrigationSettings::SensorSlot) == 16, "SensorSlot é ABI on-disk");
 static_assert(sizeof(IrrigationSettings::LocalInterlock) == 12, "LocalInterlock é ABI on-disk");
 static_assert(offsetof(IrrigationSettings, localInterlocks) == 128, "ABI v5");
 
-// ABI lock v8: prefixo v7 (184 B) + btnFallbackNode[4](16) + btnFallbackOutId[4](4) +
+// ABI lock v9: prefixo v8 (208 B) + digitalInMode[4](4) = 212.
+// Prefixo v8 = prefixo v7 (184 B) + btnFallbackNode[4](16) + btnFallbackOutId[4](4) +
 // remoteFallbackMs(2) + btnFallbackKind(1) + hbTrafficFlags(1) = 208.
 // Prefixo v7 = prefixo v6 (180 B) + pinsRemoteLed[2](2) + digitalInBtnMask(1) + digitalInLedIdx(1) = 184.
 // Prefixo v6 = prefixo v5 (176 B) + vbatAvisoCentiV(2) + vbatCriticaCentiV(2) = 180.
-// Prefixo v5 = prefixo v4 (128 B) + localInterlocks[4×12](48) = 176.
+// Prefixo v5 = prefixo v4 (128 B) + localInterlocks[4x12](48) = 176.
 // Prefixo v4: magic(4)+version(2)+role(1)+numValves(1)+boundGateway(4)+hbMinutes(2)+
 // vbatMinAbrirCentiV(2)+maxOpenConfigS(2)+cmdRatePerMin(1)+pad0(1)+pulseMs(2)+
 // pinsHbridgeA(8)+pinsHbridgeB(8)+pad1(2)+configEpoch(4)+pinsDigitalIn(4)+
 // digitalInActiveLow(1)+pinBtn(1)+pinLed(1)+pad2(1)+pinsGpo(2)+pinTamper(1)+hwFlags(1)+
-// latE7(4)+lonE7(4)+sensores[4×16](64) = 128. All padding explicit and zero-initialized.
+// latE7(4)+lonE7(4)+sensores[4x16](64) = 128. All padding explicit and zero-initialized.
+// Magic bumped to IRR2 (0x49525232) — blobs IRR1 (v1..v8) rejected, fall to defaults.
 // Bump version AND these asserts on any layout change.
 static_assert(offsetof(IrrigationSettings, vbatAvisoCentiV) == 176, "ABI v6");
 static_assert(offsetof(IrrigationSettings, vbatCriticaCentiV) == 178, "ABI v6");
@@ -147,7 +159,8 @@ static_assert(offsetof(IrrigationSettings, btnFallbackNode) == 184, "ABI v8");
 static_assert(offsetof(IrrigationSettings, btnFallbackOutId) == 200, "ABI v8");
 static_assert(offsetof(IrrigationSettings, remoteFallbackMs) == 204, "ABI v8");
 static_assert(offsetof(IrrigationSettings, btnFallbackKind) == 206, "ABI v8");
-static_assert(sizeof(IrrigationSettings) == 208, "on-disk settings format is ABI-dependent; bump version on layout change");
+static_assert(offsetof(IrrigationSettings, digitalInMode) == 208, "ABI v9 append");
+static_assert(sizeof(IrrigationSettings) == 212, "on-disk settings format is ABI-dependent; bump version on layout change");
 
 // Pino de offsets do apêndice v4: drift silencioso de layout vira erro de compilação.
 static_assert(offsetof(IrrigationSettings, pinsGpo) == 52, "ABI v4");
@@ -157,11 +170,12 @@ static_assert(offsetof(IrrigationSettings, latE7) == 56, "ABI v4");
 static_assert(offsetof(IrrigationSettings, lonE7) == 60, "ABI v4");
 static_assert(offsetof(IrrigationSettings, sensores) == 64, "ABI v4");
 
-// Helpers puros para campos v7 de entrada digital.
-// Retorna true se a entrada digital i é botoeira (bit i de digitalInBtnMask).
+// Helpers puros para campos de entrada digital.
+// Retorna true se a entrada digital i esta ativa (modo != DISABLED).
+// digitalInBtnMask mantido para compatibilidade (Task 7 remove).
 inline bool digitalInIsButton(const IrrigationSettings &s, uint8_t i)
 {
-    return i < IrrigationSettings::MAX_DIGITAL_IN && ((s.digitalInBtnMask >> i) & 1u);
+    return i < IrrigationSettings::MAX_DIGITAL_IN && s.digitalInMode[i] != InputMode::DISABLED;
 }
 // Retorna 0 ou 1 (slot de LED) ou 3 (nenhum).
 inline uint8_t digitalInLedSlot(const IrrigationSettings &s, uint8_t i)
@@ -175,7 +189,8 @@ inline uint8_t btnFallbackKindOf(const IrrigationSettings &s, uint8_t i)
     return (uint8_t)((s.btnFallbackKind >> (2u * i)) & 0x3u);
 }
 
-// Blob v1, v2, v3, v4, v5, v6, v7 ou v8 → struct v8. false = magic/versão/tamanho inválido (out fica intacto).
+// Greenfield v9 (magic IRR2): aceita apenas blob com MAGIC==IRR2 e size==sizeof(IrrigationSettings).
+// Qualquer blob com magic antigo (IRR1, v1..v8) e retorna false (out fica intacto, caller usa defaults).
 bool migrateIrrigationSettings(const uint8_t *raw, size_t n, IrrigationSettings &out);
 
 // false = arquivo ausente/corrompido; `s` fica com os defaults acima.

@@ -161,9 +161,9 @@ bool ZoneTable::deserialize(const uint8_t *buf, size_t n)
 }
 
 // ---- StationRegistry ----
-// node(4)+name(16)+desiredEpoch(4)+blob(208)+retries(1)+silencioAlertaMin(2)+lat(4)+lon(4)
-static constexpr size_t STATION_ENTRY = StationRegistry::SERIALIZED_ENTRY; // 243
-static_assert(STATION_ENTRY == 243, "STATION_ENTRY deve casar com o layout serializado (blob v8 = 208)");
+// node(4)+name(16)+desiredEpoch(4)+blob(212)+retries(1)+silencioAlertaMin(2)+lat(4)+lon(4)
+static constexpr size_t STATION_ENTRY = StationRegistry::SERIALIZED_ENTRY; // 247
+static_assert(STATION_ENTRY == 247, "STATION_ENTRY deve casar com o layout serializado (blob v9 = 212)");
 
 bool StationRegistry::upsert(const StationEntry &e)
 {
@@ -265,11 +265,11 @@ size_t StationRegistry::serialize(uint8_t *buf, size_t cap) const
         memcpy(buf + off, &e.node, 4);
         memcpy(buf + off + 4, e.name, 16);
         memcpy(buf + off + 20, &e.desiredEpoch, 4);
-        memcpy(buf + off + 24, e.blob, sizeof(e.blob));   // 208 bytes (v8)
-        buf[off + 232] = e.retries;                       // 24 + 208
-        memcpy(buf + off + 233, &e.silencioAlertaMin, 2);
-        memcpy(buf + off + 235, &e.lat, 4);
-        memcpy(buf + off + 239, &e.lon, 4);               // 239 + 4 = 243 = STATION_ENTRY
+        memcpy(buf + off + 24, e.blob, sizeof(e.blob)); // 212 bytes (v9)
+        buf[off + 236] = e.retries;                     // 24 + 212
+        memcpy(buf + off + 237, &e.silencioAlertaMin, 2);
+        memcpy(buf + off + 239, &e.lat, 4);
+        memcpy(buf + off + 243, &e.lon, 4); // 243 + 4 = 247 = STATION_ENTRY
         off += STATION_ENTRY;
     }
     return need;
@@ -289,11 +289,11 @@ bool StationRegistry::deserialize(const uint8_t *buf, size_t n)
         memcpy(e.name, buf + off + 4, 16);
         e.name[15] = '\0';
         memcpy(&e.desiredEpoch, buf + off + 20, 4);
-        memcpy(e.blob, buf + off + 24, sizeof(e.blob)); // 208 bytes (v8)
-        e.retries = buf[off + 232];                     // 24 + 208
-        memcpy(&e.silencioAlertaMin, buf + off + 233, 2);
-        memcpy(&e.lat, buf + off + 235, 4);
-        memcpy(&e.lon, buf + off + 239, 4);
+        memcpy(e.blob, buf + off + 24, sizeof(e.blob)); // 212 bytes (v9)
+        e.retries = buf[off + 236];                     // 24 + 212
+        memcpy(&e.silencioAlertaMin, buf + off + 237, 2);
+        memcpy(&e.lat, buf + off + 239, 4);
+        memcpy(&e.lon, buf + off + 243, 4);
         stations[i] = e;
     }
     return true;
