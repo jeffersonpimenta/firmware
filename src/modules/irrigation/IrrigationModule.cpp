@@ -3868,7 +3868,7 @@ void IrrigationModule::gwTick()
             uint8_t slot = digitalInLedSlot(settings, i);
             if (slot <= 1)
                 _remoteLed[slot].onPress(millis());
-            gwFireRemote(nodeDB->getNodeNum(), i);
+            gwFireRemote(nodeDB->getNodeNum(), i, RT_ACTION_TOGGLE);
         }
     }
 
@@ -4435,7 +4435,7 @@ void IrrigationModule::handleRemoteTrigger(const meshtastic_MeshPacket &mp, cons
     IrrigationProto::RemoteTrigger rt;
     if (!decodeRemoteTrigger(mp.decoded.payload.bytes, mp.decoded.payload.size, rt))
         return;
-    gwFireRemote(mp.from, rt.inputIdx);
+    gwFireRemote(mp.from, rt.inputIdx, rt.action);
 }
 
 // ---------------------------------------------------------------------------
@@ -4472,7 +4472,7 @@ void IrrigationModule::gwRunCommandClose(uint8_t zoneId)
     gwSendValveCmd(z->node, z->index, z->tipo, 0, 0, z->id, 1, AuditOrigin::MODO_REMOTO);
 }
 
-void IrrigationModule::gwFireRemote(uint32_t node, uint8_t inputIdx)
+void IrrigationModule::gwFireRemote(uint32_t node, uint8_t inputIdx, uint8_t action)
 {
     const RemoteAssoc *hits[RemoteButtonTable::MAX];
     size_t k = gateway.remoteButtons.findByTrigger(node, inputIdx, hits, RemoteButtonTable::MAX);
@@ -4482,9 +4482,8 @@ void IrrigationModule::gwFireRemote(uint32_t node, uint8_t inputIdx)
             continue;
         if (!gateway.zones.byId(a->targetZoneId))
             continue;
-        bool on = gwZoneIsOpen(a->targetZoneId);
-        uint8_t action = remoteToggleAction(on);
-        if (action == 1)
+        uint8_t act = resolveRemoteAction(action, gwZoneIsOpen(a->targetZoneId));
+        if (act == 1)
             gwRunCommandOpen(a->targetZoneId);
         else
             gwRunCommandClose(a->targetZoneId);

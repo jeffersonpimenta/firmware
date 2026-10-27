@@ -1,4 +1,5 @@
 #pragma once
+#include "modules/irrigation/IrrigationProtocol.h"
 #include <stdint.h>
 
 // Detector de borda de subida com debounce, para botoeiras (entradas digitais).
@@ -30,6 +31,18 @@ class RemoteButtonEdge {
 
 // Resolução do toggle: dada a saída atual, devolve a ação (1 = abrir, 0 = fechar).
 inline uint8_t remoteToggleAction(bool currentlyOn) { return currentlyOn ? 0u : 1u; }
+
+// Resolução de ação remota explícita.
+// action: RT_ACTION_TOGGLE=0, RT_ACTION_OPEN=1, RT_ACTION_CLOSE=2.
+// Retorna 1 = abrir, 0 = fechar.
+inline uint8_t resolveRemoteAction(uint8_t action, bool isOpen)
+{
+    if (action == IrrigationProto::RT_ACTION_OPEN)
+        return 1u;
+    if (action == IrrigationProto::RT_ACTION_CLOSE)
+        return 0u;
+    return isOpen ? 0u : 1u; // RT_ACTION_TOGGLE: inverte
+}
 
 // Rota de fallback P2P compilada pelo gateway para uma entrada-botão.
 struct FallbackRoute {

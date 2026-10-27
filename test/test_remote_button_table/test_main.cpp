@@ -1,5 +1,6 @@
 #include "Arduino.h"
 #include "TestUtil.h"
+#include "modules/irrigation/RemoteButtonEdge.h"
 #include "modules/irrigation/RemoteButtonTable.h"
 #include <string.h>
 #include <unity.h>
@@ -77,6 +78,20 @@ static void test_serialize_round_trip()
     TEST_ASSERT_EQUAL_UINT(0, t2.count());
 }
 
+static void test_resolve_remote_action()
+{
+    using namespace IrrigationProto;
+    // OPEN forces open regardless of current state
+    TEST_ASSERT_EQUAL_UINT8(1, resolveRemoteAction(RT_ACTION_OPEN, true));
+    TEST_ASSERT_EQUAL_UINT8(1, resolveRemoteAction(RT_ACTION_OPEN, false));
+    // CLOSE forces close regardless of current state
+    TEST_ASSERT_EQUAL_UINT8(0, resolveRemoteAction(RT_ACTION_CLOSE, true));
+    TEST_ASSERT_EQUAL_UINT8(0, resolveRemoteAction(RT_ACTION_CLOSE, false));
+    // TOGGLE inverts current state
+    TEST_ASSERT_EQUAL_UINT8(0, resolveRemoteAction(RT_ACTION_TOGGLE, true));  // open->close
+    TEST_ASSERT_EQUAL_UINT8(1, resolveRemoteAction(RT_ACTION_TOGGLE, false)); // closed->open
+}
+
 void setup()
 {
     UNITY_BEGIN();
@@ -84,6 +99,7 @@ void setup()
     RUN_TEST(test_findByTrigger_multi);
     RUN_TEST(test_full_and_idzero_rejected);
     RUN_TEST(test_serialize_round_trip);
+    RUN_TEST(test_resolve_remote_action);
     exit(UNITY_END());
 }
 
