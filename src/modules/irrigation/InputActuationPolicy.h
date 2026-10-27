@@ -20,6 +20,8 @@ class InputActuationPolicy
     InputMode mode() const { return _mode; }
 
   private:
+    // Returns the debounce threshold for the current mode.
+    // update() returns NONE immediately for DISABLED, so that path never reads this.
     uint32_t debounceMs() const { return _mode == InputMode::FOLLOW ? DEBOUNCE_LEVEL_MS : DEBOUNCE_EDGE_MS; }
     InputMode _mode = InputMode::DISABLED;
     bool _activeLow = false;

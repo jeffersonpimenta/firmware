@@ -84,6 +84,45 @@ static void test_edge_open_and_close_fixed()
     TEST_ASSERT_EQUAL(Intent::CLOSE, settle(pc, true, 1000, 75));
 }
 
+// EDGE_OPEN / EDGE_CLOSE: holding high does NOT re-fire; releasing then pressing again DOES.
+static void test_edge_open_rearm_after_release()
+{
+    InputActuationPolicy p;
+    p.configure(InputMode::EDGE_OPEN, false);
+
+    // (a) First press fires OPEN
+    TEST_ASSERT_EQUAL(Intent::OPEN, settle(p, true, 1000, 75));
+
+    // (b) Holding high (continued updates past debounce) must NOT fire again
+    TEST_ASSERT_EQUAL(Intent::NONE, settle(p, true, 2000, 75));
+    TEST_ASSERT_EQUAL(Intent::NONE, p.update(true, 3000));
+
+    // (c) Release (settle low) — no intent from falling edge in EDGE_OPEN
+    TEST_ASSERT_EQUAL(Intent::NONE, settle(p, false, 4000, 75));
+
+    // (d) Press again DOES fire OPEN
+    TEST_ASSERT_EQUAL(Intent::OPEN, settle(p, true, 5000, 75));
+}
+
+static void test_edge_close_rearm_after_release()
+{
+    InputActuationPolicy p;
+    p.configure(InputMode::EDGE_CLOSE, false);
+
+    // (a) First press fires CLOSE
+    TEST_ASSERT_EQUAL(Intent::CLOSE, settle(p, true, 1000, 75));
+
+    // (b) Holding high does NOT fire again
+    TEST_ASSERT_EQUAL(Intent::NONE, settle(p, true, 2000, 75));
+    TEST_ASSERT_EQUAL(Intent::NONE, p.update(true, 3000));
+
+    // (c) Release — no intent from falling edge in EDGE_CLOSE
+    TEST_ASSERT_EQUAL(Intent::NONE, settle(p, false, 4000, 75));
+
+    // (d) Press again DOES fire CLOSE
+    TEST_ASSERT_EQUAL(Intent::CLOSE, settle(p, true, 5000, 75));
+}
+
 static void test_glitch_shorter_than_debounce_ignored()
 {
     InputActuationPolicy p;
@@ -105,6 +144,8 @@ void setup()
     RUN_TEST(test_edge_both_rise_open_fall_close_no_renew);
     RUN_TEST(test_edge_toggle_once_per_press);
     RUN_TEST(test_edge_open_and_close_fixed);
+    RUN_TEST(test_edge_open_rearm_after_release);
+    RUN_TEST(test_edge_close_rearm_after_release);
     RUN_TEST(test_glitch_shorter_than_debounce_ignored);
     exit(UNITY_END());
 }
