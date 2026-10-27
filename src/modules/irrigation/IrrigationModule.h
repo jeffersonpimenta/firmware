@@ -425,7 +425,19 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     uint32_t tamperMaintUntilMs = 0;
 
     // ── Modo Remoto (Task 6/7) ────────────────────────────────────────────────
-    // Detector de borda de botão local (compartilhado gateway e estação).
+    // Política de acionamento por entrada (fonte): aplica polaridade, debounce,
+    // nível/borda e emite Intent. Substitui _btnEdge + mirror no sampling.
+    InputActuationPolicy _inputPolicy[IrrigationSettings::MAX_DIGITAL_IN];
+    // Epoch com que _inputPolicy[] foi (re)configurado. configure() reseta o debounce,
+    // então só reconfiguramos quando o epoch muda (ou na 1ª passagem).
+    uint32_t _inputPolicyEpoch = 0xFFFFFFFF;
+    // Última `action` resolvida por entrada (p/ o fallback P2P despachar com a mesma intenção).
+    uint8_t _inputLastAction[IrrigationSettings::MAX_DIGITAL_IN] = {0};
+    // Feedback transiente de comando no LED de status (CMD_INFLIGHT/CMD_OK/CMD_FAIL).
+    uint32_t _cmdFeedbackUntilMs = 0;
+    LedPatternController::Mode _cmdFeedbackMode = LedPatternController::Mode::CMD_OK;
+    void beginCmdFeedback(LedPatternController::Mode m);
+    // Detector de borda de botão local (órfão — removido na Task 7; mantido p/ compilar RemoteLedFsm).
     RemoteButtonEdge _btnEdge[IrrigationSettings::MAX_DIGITAL_IN];
     // FSM dos 2 LEDs de feedback local (gateway tem pinsRemoteLed[]; estação Task 7 reusa).
     RemoteLedFsm _remoteLed[2];

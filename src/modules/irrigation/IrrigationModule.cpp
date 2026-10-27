@@ -430,10 +430,10 @@ ProcessMessage IrrigationModule::handleReceived(const meshtastic_MeshPacket &mp)
                 for (uint8_t i = 0; i < IrrigationSettings::MAX_DIGITAL_IN; i++) {
                     if (_pendingDirect[i].armed && _pendingDirect[i].seq == ack.ackedSeq) {
                         bool ok = (ack.status == IrrigationProto::ACK_OK);
-                        uint8_t slot = _pendingDirect[i].ledSlot;
-                        if (slot <= 1)
-                            _remoteLed[slot].onLedState(ok, millis()); // SOLID no OK, OFF no NACK
+                        // Feedback de comando no LED de status: ACK do fallback P2P.
+                        beginCmdFeedback(ok ? LedPatternController::Mode::CMD_OK : LedPatternController::Mode::CMD_FAIL);
                         _pendingDirect[i].armed = false;
+                        _fallback.clear(i);
                     }
                 }
             } else {
@@ -1168,37 +1168,44 @@ int32_t IrrigationModule::runOnce()
         }
     }
 
-    // --- Botoeira local da estação (Modo Remoto Task 7) ---
+    // --- Fonte de acionamento local da estação (política na fonte) ---
+    // (Re)configura a política só quando o epoch muda: configure() reseta o debounce.
+    bool reconfigInputs = (settings.configEpoch != _inputPolicyEpoch);
+    if (reconfigInputs)
+        _inputPolicyEpoch = settings.configEpoch;
     for (uint8_t i = 0; i < IrrigationSettings::MAX_DIGITAL_IN; i++) {
-        if (settings.pinsDigitalIn[i] < 0 || !digitalInIsButton(settings, i))
+        if (settings.pinsDigitalIn[i] < 0 || settings.digitalInMode[i] == InputMode::DISABLED)
             continue;
 #ifndef ARCH_PORTDUINO
-        bool raw = (digitalRead(settings.pinsDigitalIn[i]) == HIGH);
+        bool rawHigh = (digitalRead(settings.pinsDigitalIn[i]) == HIGH);
 #else
-        bool raw = false;
+        bool rawHigh = false;
 #endif
         bool activeLow = (settings.digitalInActiveLow >> i) & 1;
-        bool pressed = activeLow ? !raw : raw;
-        if (_btnEdge[i].update(pressed, millis())) {
-            uint8_t slot = digitalInLedSlot(settings, i);
-            if (slot <= 1)
-                _remoteLed[slot].onPress(millis());
-            if (settings.boundGateway != 0) {
-                meshtastic_MeshPacket *p = allocDataPacket();
-                p->to = settings.boundGateway;
-                IrrigationProto::RemoteTrigger rt{i};
-                p->decoded.payload.size = (uint16_t)IrrigationProto::encodeRemoteTrigger(
-                    p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), ++txSeq, rt);
-                if (p->decoded.payload.size)
-                    txPacket(p);
-                else
-                    packetPool.release(p);
-            }
-            if (settings.btnFallbackNode[i] != 0) {
-                _fallback.setWindow(settings.remoteFallbackMs ? settings.remoteFallbackMs
-                                                              : REMOTE_FALLBACK_DEFAULT_MS);
-                _fallback.arm(i, millis());
-            }
+        if (reconfigInputs)
+            _inputPolicy[i].configure(settings.digitalInMode[i], activeLow);
+        InputActuationPolicy::Intent in = _inputPolicy[i].update(rawHigh, millis());
+        if (in == InputActuationPolicy::Intent::NONE)
+            continue;
+        uint8_t action = (in == InputActuationPolicy::Intent::OPEN)    ? RT_ACTION_OPEN
+                         : (in == InputActuationPolicy::Intent::CLOSE) ? RT_ACTION_CLOSE
+                                                                       : RT_ACTION_TOGGLE;
+        _inputLastAction[i] = action;
+        beginCmdFeedback(LedPatternController::Mode::CMD_INFLIGHT);
+        if (settings.boundGateway != 0) {
+            meshtastic_MeshPacket *p = allocDataPacket();
+            p->to = settings.boundGateway;
+            IrrigationProto::RemoteTrigger rt{i, action};
+            p->decoded.payload.size = (uint16_t)IrrigationProto::encodeRemoteTrigger(
+                p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), ++txSeq, rt);
+            if (p->decoded.payload.size)
+                txPacket(p);
+            else
+                packetPool.release(p);
+        }
+        if (settings.btnFallbackNode[i] != 0) {
+            _fallback.setWindow(settings.remoteFallbackMs ? settings.remoteFallbackMs : REMOTE_FALLBACK_DEFAULT_MS);
+            _fallback.arm(i, millis());
         }
     }
 
@@ -1211,15 +1218,21 @@ int32_t IrrigationModule::runOnce()
             if (settings.btnFallbackNode[i] == 0)
                 continue;
             uint8_t kind = btnFallbackKindOf(settings, i); // 0=válvula,1=GPO
+            // Mapeia a `action` resolvida (RT_ACTION_*) para a ação de comando de saída:
+            // RT_OPEN(1)->1(abrir), RT_CLOSE(2)->0(fechar), RT_TOGGLE(0)->2(toggle no alvo).
+            uint8_t rtAction = _inputLastAction[i];
+            uint8_t cmdAction = (rtAction == RT_ACTION_OPEN)    ? 1u
+                                : (rtAction == RT_ACTION_CLOSE) ? 0u
+                                                                : IrrigationProto::ACTION_TOGGLE;
             meshtastic_MeshPacket *p = allocDataPacket();
             p->to = settings.btnFallbackNode[i];
             uint32_t seq = ++txSeq;
             if (kind == 1) {
-                IrrigationProto::CmdGpo c{settings.btnFallbackOutId[i], IrrigationProto::ACTION_TOGGLE, 0};
+                IrrigationProto::CmdGpo c{settings.btnFallbackOutId[i], cmdAction, 0};
                 p->decoded.payload.size = (uint16_t)IrrigationProto::encodeCmdGpo(
                     p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), seq, c);
             } else {
-                IrrigationProto::CmdValvula c{settings.btnFallbackOutId[i], IrrigationProto::ACTION_TOGGLE, 0};
+                IrrigationProto::CmdValvula c{settings.btnFallbackOutId[i], cmdAction, 0};
                 p->decoded.payload.size = (uint16_t)IrrigationProto::encodeCmdValvula(
                     p->decoded.payload.bytes, sizeof(p->decoded.payload.bytes), seq, c);
             }
@@ -2013,10 +2026,28 @@ void IrrigationModule::onButtonEvent(ButtonGestureDetector::Event ev)
 // PAIRING > BATTERY_SOS > OUTPUT_OPEN > CONFIG_PENDING > NO_GATEWAY > NORMAL.
 // NO_GATEWAY heuristic: bound but never received a packet from the gateway since boot.
 // Refined in Phase 4 with a proper heartbeat timeout.
+// Feedback transiente de comando no LED de status. CMD_INFLIGHT decai em ~7 s
+// (cobre retries do fallback); CMD_OK/CMD_FAIL em ~4 s.
+void IrrigationModule::beginCmdFeedback(LedPatternController::Mode m)
+{
+    _cmdFeedbackMode = m;
+    _cmdFeedbackUntilMs = millis() + (m == LedPatternController::Mode::CMD_INFLIGHT ? 7000u : 4000u);
+}
+
 void IrrigationModule::refreshLedMode()
 {
     using Mode = LedPatternController::Mode;
     uint16_t vbat = batteryCentiV();
+    // Janela transiente de feedback de comando, priorizada acima da cadeia normal —
+    // mas segurança (PAIRING / BATTERY_SOS) ainda tem precedência.
+    if ((int32_t)(millis() - _cmdFeedbackUntilMs) < 0) {
+        bool pairing = (stationPairing.state() == StationPairing::State::WINDOW || gatewayPairing.windowOpen());
+        bool battSos = (vbat != 0 && vbat < settings.vbatMinAbrirCentiV);
+        if (!pairing && !battSos) {
+            led.setMode(_cmdFeedbackMode);
+            return;
+        }
+    }
     if (stationPairing.state() == StationPairing::State::WINDOW || gatewayPairing.windowOpen())
         led.setMode(Mode::PAIRING);
     else if (vbat != 0 && vbat < settings.vbatMinAbrirCentiV)
@@ -3816,60 +3847,33 @@ void IrrigationModule::gwTick()
         }
     }
 
-    // --- Espelho (mirror) ---
-    // Lê GPIO das entradas digitais com polaridade e monta bitmap.
-    uint8_t rawBitmap = 0;
+    // --- Fonte de acionamento local do gateway (política na fonte) ---
+    // (Re)configura só quando o epoch muda: configure() reseta o debounce.
+    bool reconfigInputs = (settings.configEpoch != _inputPolicyEpoch);
+    if (reconfigInputs)
+        _inputPolicyEpoch = settings.configEpoch;
     for (uint8_t i = 0; i < IrrigationSettings::MAX_DIGITAL_IN; i++) {
-        if (settings.pinsDigitalIn[i] < 0)
+        if (settings.pinsDigitalIn[i] < 0 || settings.digitalInMode[i] == InputMode::DISABLED)
             continue;
 #ifndef ARCH_PORTDUINO
-        bool raw = (digitalRead(settings.pinsDigitalIn[i]) == HIGH);
+        bool rawHigh = (digitalRead(settings.pinsDigitalIn[i]) == HIGH);
 #else
-        bool raw = false; // nativo: sem GPIO real
+        bool rawHigh = false; // nativo: sem GPIO real
 #endif
         bool activeLow = (settings.digitalInActiveLow >> i) & 1;
-        if (activeLow ? !raw : raw)
-            rawBitmap |= (1u << i);
-    }
-    // Drena ações do mirror até NONE.
-    for (;;) {
-        MirrorMode::Action ma = gateway.mirror.update(rawBitmap, millis());
-        if (ma.t == MirrorMode::Action::T::NONE)
-            break;
-        const Zone *z = gateway.zones.byFonte(ma.input);
-        if (!z) {
-            LOG_DEBUG("Irrigation GW: mirror input %u has no zone mapped — ignored", ma.input);
+        if (reconfigInputs)
+            _inputPolicy[i].configure(settings.digitalInMode[i], activeLow);
+        InputActuationPolicy::Intent in = _inputPolicy[i].update(rawHigh, millis());
+        if (in == InputActuationPolicy::Intent::NONE)
             continue;
-        }
-        if (!z->fonteEnabled)
-            continue; // associação pausada: espelho não comanda; scheduler controla
-        if (ma.t == MirrorMode::Action::T::OPEN) {
-            // bypass total: sem clamp de maxMin (estação clampa no teto compilado)
-            const StationEntry *stEntry = gateway.stations.byNode(z->node);
-            uint8_t attempts = (stEntry && stEntry->retries > 0) ? stEntry->retries : 3;
-            gwSendValveCmd(z->node, z->index, z->tipo, 1, MirrorMode::OPEN_S, z->id, attempts);
-        } else {
-            gwSendValveCmd(z->node, z->index, z->tipo, 0, 0, z->id, 1);
-        }
-    }
-
-    // --- Botoeira local do gateway (Modo Remoto Task 6 Step 6) ---
-    for (uint8_t i = 0; i < IrrigationSettings::MAX_DIGITAL_IN; i++) {
-        if (settings.pinsDigitalIn[i] < 0 || !digitalInIsButton(settings, i))
-            continue;
-#ifndef ARCH_PORTDUINO
-        bool raw = (digitalRead(settings.pinsDigitalIn[i]) == HIGH);
-#else
-        bool raw = false;
-#endif
-        bool activeLow = (settings.digitalInActiveLow >> i) & 1;
-        bool pressed = activeLow ? !raw : raw;
-        if (_btnEdge[i].update(pressed, millis())) {
-            uint8_t slot = digitalInLedSlot(settings, i);
-            if (slot <= 1)
-                _remoteLed[slot].onPress(millis());
-            gwFireRemote(nodeDB->getNodeNum(), i, RT_ACTION_TOGGLE);
-        }
+        uint8_t action = (in == InputActuationPolicy::Intent::OPEN)    ? RT_ACTION_OPEN
+                         : (in == InputActuationPolicy::Intent::CLOSE) ? RT_ACTION_CLOSE
+                                                                       : RT_ACTION_TOGGLE;
+        _inputLastAction[i] = action;
+        beginCmdFeedback(LedPatternController::Mode::CMD_INFLIGHT);
+        gwFireRemote(nodeDB->getNodeNum(), i, action);
+        // Acionamento local do gateway resolve de imediato: sinaliza confirmação.
+        beginCmdFeedback(LedPatternController::Mode::CMD_OK);
     }
 
     // --- Retries (tracker) ---
@@ -4412,8 +4416,8 @@ void IrrigationModule::handleRemoteLed(const meshtastic_MeshPacket &mp, const Ir
     IrrigationProto::RemoteLed rl;
     if (!decodeRemoteLed(mp.decoded.payload.bytes, mp.decoded.payload.size, rl))
         return;
-    for (uint8_t s = 0; s < 2; s++)
-        _remoteLed[s].onLedState((rl.ledStates >> s) & 1u, millis());
+    // O gateway confirmou o comando (estado real já está na zona); sinaliza no LED de status.
+    beginCmdFeedback(LedPatternController::Mode::CMD_OK);
     for (uint8_t i = 0; i < IrrigationSettings::MAX_DIGITAL_IN; i++)
         _fallback.clear(i);
 }
