@@ -210,8 +210,34 @@ Suíte nativa (`./bin/run-tests.sh`). Alvos:
 - **Protocolo** (`test_irrigation_protocol`): encode/decode de `RemoteTrigger`
   com `action`.
 
+## Specs relacionadas e contrato com a UI
+
+A UI **não** está nesta spec. Vai numa spec própria —
+`2026-10-27-irrigacao-fonte-de-acionamento-ui-design.md` — brainstormada em
+separado. As duas ficam **amarradas** por:
+
+- **Dependência de ordem**: firmware primeiro (define o contrato); UI depois
+  consome. A UI não mergeia antes do núcleo estar verde.
+- **Contrato compartilhado** (fonte da verdade = esta spec; a UI referencia):
+
+  | Superfície | Antes | Depois (contrato novo) |
+  |---|---|---|
+  | Config por entrada | `digitalInBtnMask` bit + `digitalInActiveLow` bit | `digitalInMode[i]` (`InputMode`) + `digitalInActiveLow` bit |
+  | LED | `pinsRemoteLed[2]`, `digitalInLedIdx` | **removidos** (feedback no LED de status) |
+  | Tabela | `RemoteButtonTable` upsert + mapping de espelho (`gwApplyMirrorMapping`) | **tabela única** Fonte de Acionamento (espelho = preset `FOLLOW`) |
+  | Protocolo exposto | `RemoteTrigger{inputIdx}` | `RemoteTrigger{inputIdx, action}` |
+
+- **Endpoints afetados** (a UI-spec detalha o JSON): `IrrigationWebApi` /
+  `ServicePortalApi` — campos `pinsRemoteLed`/`digitalInLedIdx` saem, entra
+  seletor `InputMode` por entrada; tela de Espelho funde na de Fonte de
+  Acionamento; `validateRemoteTriggers` estende para `action`.
+
+Qualquer mudança no contrato acima exige editar **esta** spec e sincronizar a
+UI-spec.
+
 ## Fora de escopo
 
 - Controle de Nível (`LevelControlEngine`) e Interlock — unificação futura.
 - Rename em massa de símbolos de código (decisão de implementação).
 - Qualquer feedback acústico/buzzer (o LED de status resolve).
+- UI / portal / endpoints JSON — spec própria (ver acima).
