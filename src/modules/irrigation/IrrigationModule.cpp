@@ -20,6 +20,7 @@
 #include "configuration.h"
 #include "gps/RTC.h"
 #include "modules/irrigation/IrrigationBoardDefaults.h"
+#include "modules/irrigation/RemoteButtonEdge.h" // remoteToggleAction/resolveRemoteAction/FallbackRoute (free fns)
 #include "main.h"
 #include "mesh/Channels.h"
 #include "mesh/wifi/WiFiAPClient.h" // Fase 8b: triggerNtpUpdate/ntpLastRunMs (free functions)
