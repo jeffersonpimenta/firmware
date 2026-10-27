@@ -1,7 +1,6 @@
 #include "Arduino.h"
 #include "TestUtil.h"
 #include "modules/irrigation/RemoteButtonEdge.h"
-#include "modules/irrigation/RemoteLedFsm.h"
 #include <unity.h>
 
 void setUp(void) {}
@@ -19,26 +18,6 @@ static void test_edge_debounce_risingOnce()
     TEST_ASSERT_FALSE(e.update(false, 320)); // estável baixo, rearma
     TEST_ASSERT_FALSE(e.update(true, 370));  // nova subida: inicia debounce
     TEST_ASSERT_TRUE(e.update(true, 425));   // estável ≥50ms → nova borda
-}
-
-static void test_led_fsm()
-{
-    RemoteLedFsm f;
-    TEST_ASSERT_EQUAL(RemoteLedFsm::State::OFF, f.state(0));
-    f.onPress(1000);
-    TEST_ASSERT_EQUAL(RemoteLedFsm::State::BLINK, f.state(1000));
-    // pisca: alterna com o tempo
-    bool a = f.ledOn(1000), b = f.ledOn(1000 + RemoteLedFsm::BLINK_PERIOD_MS);
-    TEST_ASSERT_NOT_EQUAL(a, b);
-    f.onLedState(true, 1200); // push do gateway = ligado
-    TEST_ASSERT_EQUAL(RemoteLedFsm::State::SOLID, f.state(1200));
-    TEST_ASSERT_TRUE(f.ledOn(9999));
-    f.onLedState(false, 1300); // saída desligou
-    TEST_ASSERT_EQUAL(RemoteLedFsm::State::OFF, f.state(1300));
-    // timeout: press sem push → apaga
-    f.onPress(2000);
-    TEST_ASSERT_EQUAL(RemoteLedFsm::State::BLINK, f.state(2000));
-    TEST_ASSERT_EQUAL(RemoteLedFsm::State::OFF, f.state(2000 + RemoteLedFsm::BLINK_TIMEOUT_MS + 1));
 }
 
 static void test_toggle_action()
@@ -78,7 +57,6 @@ void setup()
 {
     UNITY_BEGIN();
     RUN_TEST(test_edge_debounce_risingOnce);
-    RUN_TEST(test_led_fsm);
     RUN_TEST(test_toggle_action);
     RUN_TEST(test_compileFallbackRoute_single_node);
     RUN_TEST(test_compileFallbackRoute_group_is_empty);

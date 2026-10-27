@@ -24,8 +24,6 @@
 #include "modules/irrigation/ServicePortalApi.h" // Fase 8c: tipos/builders do portal SERVICO
 #include "modules/irrigation/LittleFsProfileStore.h"
 #include "modules/irrigation/WeatherClient.h"
-#include "modules/irrigation/RemoteButtonEdge.h"
-#include "modules/irrigation/RemoteLedFsm.h"
 #include "modules/irrigation/RemoteFallbackTracker.h"
 
 // Forward-decl da cola web (definida em IrrigationWebApi.h, incluída só no .cpp).
@@ -146,13 +144,6 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     bool gwImportTables(const char *json, size_t len, char *resp, size_t respCap);
     // Alertas não reconhecidos (§8.1–§8.3) p/ a Visão Geral do painel. Vazio ("[]") fora do gateway.
     size_t gwBuildAlerts(char *buf, size_t cap);
-    // Modo Espelhamento UI (Fase X): habilita/desabilita o espelho; edita/remove mapeamento porta→zona;
-    // serializa o estado ao vivo. Chamados pelos endpoints CI-only /api/irrigation/mirror/*.
-    void gwSetMirrorEnabled(bool enabled);
-    bool gwApplyMirrorMapping(int8_t input, uint8_t zoneId, bool invertido, bool habilitado,
-                              char *err, size_t errCap);
-    bool gwDeleteMirrorMapping(int8_t input);
-    size_t gwBuildMirror(char *buf, size_t cap);
 
     // Fase 8b: página Horário. gwBuildTimeStatus monta o TimeStatusCtx + serializa.
     size_t gwBuildTimeStatus(char *buf, size_t cap);
@@ -166,7 +157,6 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     bool gwApplyRemoteDelete(uint8_t id);                              // removeById + save + recompute cfg
     bool gwRunRemoteCommand(uint8_t targetZoneId);                     // toggle manual (botão "Acionar" da UI)
     // Modo Remoto (Task 8): acessores públicos chamados pelos endpoints CI-only /api/irrigation/remote/*.
-    // Espelham os mirror* (gwBuildMirror/gwApplyMirrorMapping/gwDeleteMirrorMapping).
     size_t remoteBuildStatus(char *buf, size_t cap);           // estado ao vivo (dedup por targetZoneId)
     bool   remoteApplyUpsert(const char *json, size_t n);     // parse → gwApplyRemoteUpsert
     bool   remoteApplyDelete(const char *json, size_t n);     // parse → gwApplyRemoteDelete
@@ -426,7 +416,7 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
 
     // ── Modo Remoto (Task 6/7) ────────────────────────────────────────────────
     // Política de acionamento por entrada (fonte): aplica polaridade, debounce,
-    // nível/borda e emite Intent. Substitui _btnEdge + mirror no sampling.
+    // nível/borda e emite Intent. Fonte única de acionamento por GPIO.
     InputActuationPolicy _inputPolicy[IrrigationSettings::MAX_DIGITAL_IN];
     // Epoch com que _inputPolicy[] foi (re)configurado. configure() reseta o debounce,
     // então só reconfiguramos quando o epoch muda (ou na 1ª passagem).
@@ -437,13 +427,9 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     uint32_t _cmdFeedbackUntilMs = 0;
     LedPatternController::Mode _cmdFeedbackMode = LedPatternController::Mode::CMD_OK;
     void beginCmdFeedback(LedPatternController::Mode m);
-    // Detector de borda de botão local (órfão — removido na Task 7; mantido p/ compilar RemoteLedFsm).
-    RemoteButtonEdge _btnEdge[IrrigationSettings::MAX_DIGITAL_IN];
-    // FSM dos 2 LEDs de feedback local (gateway tem pinsRemoteLed[]; estação Task 7 reusa).
-    RemoteLedFsm _remoteLed[2];
     RemoteFallbackTracker _fallback{REMOTE_FALLBACK_DEFAULT_MS};
-    // casamento ACK direto → LED do fallback P2P: seq do comando direto emitido por slot de LED.
-    struct PendingDirect { uint32_t seq = 0; uint8_t ledSlot = 3; bool armed = false; };
+    // casamento ACK direto → feedback de comando: seq do comando direto P2P emitido por entrada.
+    struct PendingDirect { uint32_t seq = 0; bool armed = false; };
     PendingDirect _pendingDirect[IrrigationSettings::MAX_DIGITAL_IN];
     // Cache change-driven: último estado de LEDs por nó-gatilho (até 16 entradas).
     static constexpr size_t LED_CACHE_MAX = 16;

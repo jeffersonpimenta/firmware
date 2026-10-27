@@ -172,7 +172,7 @@ static_assert(offsetof(IrrigationSettings, sensores) == 64, "ABI v4");
 
 // Helpers puros para campos de entrada digital.
 // Retorna true se a entrada digital i esta ativa (modo != DISABLED).
-// digitalInBtnMask mantido para compatibilidade (Task 7 remove).
+// digitalInBtnMask/digitalInLedIdx: campos ABI v7 preservados (push de config p/ estações).
 inline bool digitalInIsButton(const IrrigationSettings &s, uint8_t i)
 {
     return i < IrrigationSettings::MAX_DIGITAL_IN && s.digitalInMode[i] != InputMode::DISABLED;

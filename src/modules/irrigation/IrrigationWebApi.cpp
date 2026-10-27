@@ -241,7 +241,6 @@ size_t buildZones(const ZoneTable &zones, char *buf, size_t cap)
         w.keyNum("index", z->index);
         w.keyNum("maxMin", z->maxMin);
         w.keyNum("padraoMin", z->padraoMin);
-        w.keyNum("fonteInput", z->fonteInput);
         w.endObject();
     }
     w.endArray();
@@ -366,7 +365,7 @@ ParseResult parseZoneUpsert(const char *json, size_t len, Zone &out)
 {
     ParseResult r;
     JsonReader rd(json, len);
-    int64_t id = 0, node = 0, tipo = 0, index = 0, maxMin = 0, padraoMin = 0, fonte = -1;
+    int64_t id = 0, node = 0, tipo = 0, index = 0, maxMin = 0, padraoMin = 0;
     char name[16] = {0};
     if (!rd.getInt("id", id) || id < 1 || id > 255) r.fail("id invalido (1..255)");
     if (!rd.getStr("name", name, sizeof(name)) || name[0] == '\0') r.fail("nome vazio/ausente");
@@ -375,8 +374,6 @@ ParseResult parseZoneUpsert(const char *json, size_t len, Zone &out)
     if (!rd.getInt("index", index) || index < 0 || index > 7) r.fail("index fora de 0..7");
     if (!rd.getInt("maxMin", maxMin) || maxMin < 1 || maxMin > 120) r.fail("maxMin fora de 1..120");
     if (!rd.getInt("padraoMin", padraoMin) || padraoMin < 1 || padraoMin > maxMin) r.fail("padraoMin fora de 1..maxMin");
-    rd.getInt("fonteInput", fonte); // opcional; default -1
-    if (fonte < -1 || fonte > 3) r.fail("fonteInput fora de -1..3");
     if (!r.ok) return r;
     out = Zone{};
     out.id = (uint8_t)id;
@@ -386,7 +383,6 @@ ParseResult parseZoneUpsert(const char *json, size_t len, Zone &out)
     out.index = (uint8_t)index;
     out.maxMin = (uint16_t)maxMin;
     out.padraoMin = (uint16_t)padraoMin;
-    out.fonteInput = (int8_t)fonte;
     return r;
 }
 
@@ -889,10 +885,6 @@ bool validateGroupZones(const HydraulicGroup &g, const ZoneTable &zones, char *e
             snprintf(err, errCap, "zona %u inexistente", zid);
             return false;
         }
-        if (z->fonteInput >= 0) {
-            snprintf(err, errCap, "zona %u e espelho", zid);
-            return false;
-        }
         if (g.bombaZoneId != 0 && zid == g.bombaZoneId) {
             snprintf(err, errCap, "bomba %u nao pode ser membro", zid);
             return false;
@@ -1097,63 +1089,6 @@ ParseResult parseSurveyStart(const char *json, size_t len, SurveyStartReq &out)
         out.hasCoord = true;
     }
     return pr;
-}
-
-// ── Modo Espelhamento UI — web helpers ────────────────────────────────────────
-
-ParseResult parseMirrorToggle(const char *json, size_t len, bool &enabled)
-{
-    ParseResult r;
-    JsonReader rd(json, len);
-    if (!rd.getBool("enabled", enabled)) { r.fail("falta 'enabled'"); return r; }
-    return r;
-}
-
-ParseResult parseMirrorMapping(const char *json, size_t len, int8_t &input, uint8_t &zoneId,
-                               bool &invertido, bool &habilitado)
-{
-    ParseResult r;
-    JsonReader rd(json, len);
-    int64_t in = -1, zid = 0;
-    if (!rd.getInt("input", in) || in < 0 || in > 3) { r.fail("input fora de 0..3"); return r; }
-    if (!rd.getInt("zoneId", zid) || zid < 1 || zid > 255) { r.fail("zoneId invalido"); return r; }
-    bool inv = false, hab = true;
-    rd.getBool("invertido", inv);   // opcional (default false)
-    rd.getBool("habilitado", hab);  // opcional (default true)
-    input = (int8_t)in;
-    zoneId = (uint8_t)zid;
-    invertido = inv;
-    habilitado = hab;
-    return r;
-}
-
-size_t buildMirror(char *buf, size_t cap, bool enabled, const ZoneTable &zones,
-                   uint8_t digitalInActiveLow, const bool liveActive[4])
-{
-    JsonWriter w(buf, cap);
-    w.beginObject();
-    w.keyBool("enabled", enabled);
-    w.key("ports");
-    w.beginArray();
-    for (int i = 0; i < 4; i++) {
-        const Zone *z = zones.byFonte((int8_t)i);
-        w.beginObject();
-        w.keyNum("i", i);
-        w.keyBool("active", liveActive[i]);
-        w.keyBool("invertido", ((digitalInActiveLow >> i) & 1) != 0);
-        if (z) {
-            w.keyNum("zoneId", z->id);
-            w.keyStr("zoneName", z->name);
-            w.keyBool("habilitado", z->fonteEnabled != 0);
-            w.keyBool("driving", enabled && z->fonteEnabled != 0 && liveActive[i]);
-        } else {
-            w.keyNum("zoneId", 0);
-        }
-        w.endObject();
-    }
-    w.endArray();
-    w.endObject();
-    return w.done();
 }
 
 // ── Sistema restore — import de tabelas de configuração (§5.5) ───────────────

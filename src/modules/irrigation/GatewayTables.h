@@ -11,8 +11,6 @@ struct Zone {
     uint8_t index = 0;       // índice da saída na estação
     uint16_t maxMin = 120;
     uint16_t padraoMin = 20;
-    int8_t fonteInput = -1;  // 0-3 = entrada espelho do gateway; -1 = nenhuma
-    uint8_t fonteEnabled = 1; // 1 = associação de espelho ativa; 0 = pausada (fonteInput preservado)
 };
 
 // Uma zona cujo node é o próprio nó do gateway aciona a saída LOCAL (sem rádio).
@@ -25,11 +23,10 @@ inline bool isLocalTarget(uint32_t node, uint32_t selfNode)
 class ZoneTable {
   public:
     static constexpr size_t MAX = 24;
-    static constexpr uint32_t MAGIC = 0x495A4E32; // "IZN2"
+    static constexpr uint32_t MAGIC = 0x495A4E33; // "IZN3" (v3: sem fonteInput/fonteEnabled)
     bool upsert(const Zone &z);          // por id (1..255); false = cheia
     bool removeById(uint8_t id);
     const Zone *byId(uint8_t id) const;  // nullptr = ausente
-    const Zone *byFonte(int8_t input) const;
     const Zone *zoneAt(size_t index) const; // index-ésima zona ocupada; nullptr se >= count()
     size_t count() const;
     size_t serialize(uint8_t *buf, size_t cap) const;
@@ -64,7 +61,7 @@ class StationRegistry {
     StationEntry *mutableByNode(uint32_t node);
     const StationEntry *nodeAt(size_t index) const; // index-ésima entrada ocupada; nullptr se >= count()
     size_t count() const;
-    void adoptConfig(uint32_t node, const uint8_t *blobData, size_t blobLen, uint32_t epoch); // regra do maior epoch; migra p/ v7 canônico
+    void adoptConfig(uint32_t node, const uint8_t *blobData, size_t blobLen, uint32_t epoch); // regra do maior epoch; migra p/ v9 canônico
     size_t serialize(uint8_t *buf, size_t cap) const;
     bool deserialize(const uint8_t *buf, size_t n);
 

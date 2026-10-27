@@ -19,7 +19,7 @@ enum class AuditAction : uint8_t {
     CONFIG_EPOCH, SAFE_MODE_IN, SAFE_MODE_OUT, TAMPER, REBOOT,
     HIBERNA_IN, HIBERNA_OUT,
     CMD_REJEITADO, // comando NACKado antes do despacho (motivo em target = NackReason)
-    ESPELHO,       // toggle/mapeamento do modo espelho (bypass de painel — safety-relevant)
+    ESPELHO,       // [reservado ABI] ex-modo espelho; não mais emitido (Task 7). NÃO reordenar/remover.
     CMD_SUPRIMIDO, // abertura suprimida por regra meteorológica (target = zoneId)
     OTA_ARM,       // entrou em modo atualização (OTA/BLE) pelo portal — para o app, força-fecha antes
 };

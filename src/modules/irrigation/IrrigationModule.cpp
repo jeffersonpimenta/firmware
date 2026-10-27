@@ -20,7 +20,6 @@
 #include "configuration.h"
 #include "gps/RTC.h"
 #include "modules/irrigation/IrrigationBoardDefaults.h"
-#include "modules/irrigation/RemoteButtonEdge.h"
 #include "main.h"
 #include "mesh/Channels.h"
 #include "mesh/wifi/WiFiAPClient.h" // Fase 8b: triggerNtpUpdate/ntpLastRunMs (free functions)
@@ -43,8 +42,6 @@ static const char *GW_ZONES_PATH = "/prefs/irrigation-zones.dat";
 static const char *GW_ZONES_TMP = "/prefs/irrigation-zones.tmp";
 static const char *GW_PROGRAMS_PATH = "/prefs/irrigation-programs.dat";
 static const char *GW_PROGRAMS_TMP = "/prefs/irrigation-programs.tmp";
-static const char *GW_MIRROR_PATH = "/prefs/irrigation-mirror.dat";
-static const char *GW_MIRROR_TMP = "/prefs/irrigation-mirror.tmp";
 // Fase 6b: tabela de intertravamentos (arquivo separado — não mistura com o estado do scheduler).
 static const char *GW_INTERLOCKS_PATH = "/prefs/irrigation_interlocks.dat";
 static const char *GW_INTERLOCKS_TMP = "/prefs/irrigation_interlocks.tmp";
@@ -1087,17 +1084,6 @@ int32_t IrrigationModule::runOnce()
     if (surveyBeacon.tick(millis()))
         emitSurveyBeacon();
 
-    // --- Drive físico dos LEDs remotos — roda em TODOS os papéis (Task 7) ---
-    // Gateway: onPress() acionado no Task 6 coloca _remoteLed em BLINK; precisa renderizar aqui.
-    // Estação: recebe ACK do gateway e pisca confirmação ao operador.
-    for (uint8_t slot = 0; slot <= 1; slot++) {
-        if (settings.pinsRemoteLed[slot] < 0)
-            continue;
-#ifndef ARCH_PORTDUINO
-        digitalWrite(settings.pinsRemoteLed[slot], _remoteLed[slot].ledOn(millis()) ? HIGH : LOW);
-#endif
-    }
-
     if ((IrrigationRole)settings.role != IrrigationRole::ESTACAO) {
         if ((IrrigationRole)settings.role == IrrigationRole::GATEWAY)
             gwTick(); // Task 6, decisão §2: loop principal do gateway 1×/s
@@ -1243,10 +1229,8 @@ int32_t IrrigationModule::runOnce()
                 // A PSK do canal continua sendo a fronteira de confiança real.
                 IrrigationProto::setServiceFlag(p->decoded.payload.bytes, p->decoded.payload.size);
                 txPacket(p);
-                uint8_t slot = digitalInLedSlot(settings, i);
-                if (slot <= 1) {
-                    _pendingDirect[i] = {seq, slot, true};
-                }
+                // Arma o casamento ACK direto → feedback de comando no LED de status.
+                _pendingDirect[i] = {seq, true};
             } else {
                 packetPool.release(p);
             }
@@ -2253,14 +2237,11 @@ bool IrrigationModule::loadGatewayState()
     if (stagedRead(GW_STATIONS_PATH, buf, StationRegistry::SERIALIZED_MAX, n))
         ok &= gateway.stations.deserialize(buf, n);
     // Zones
-    if (stagedRead(GW_ZONES_PATH, buf, 6 + ZoneTable::MAX * 29, n))
+    if (stagedRead(GW_ZONES_PATH, buf, 6 + ZoneTable::MAX * 27, n))
         ok &= gateway.zones.deserialize(buf, n);
     // Programs
     if (stagedRead(GW_PROGRAMS_PATH, buf, 700, n))
         ok &= gateway.scheduler.deserialize(buf, n);
-    // Mirror (only flag)
-    if (stagedRead(GW_MIRROR_PATH, buf, 16, n))
-        ok &= gateway.mirror.deserialize(buf, n);
 
     free(buf);
     return ok;
@@ -2279,16 +2260,12 @@ bool IrrigationModule::saveGatewayState()
         ok &= stagedWrite(GW_STATIONS_TMP, GW_STATIONS_PATH, buf, n);
     }
     {
-        size_t n = gateway.zones.serialize(buf, 6 + ZoneTable::MAX * 29);
+        size_t n = gateway.zones.serialize(buf, 6 + ZoneTable::MAX * 27);
         ok &= stagedWrite(GW_ZONES_TMP, GW_ZONES_PATH, buf, n);
     }
     {
         size_t n = gateway.scheduler.serialize(buf, 700);
         ok &= stagedWrite(GW_PROGRAMS_TMP, GW_PROGRAMS_PATH, buf, n);
-    }
-    {
-        size_t n = gateway.mirror.serialize(buf, 16);
-        ok &= stagedWrite(GW_MIRROR_TMP, GW_MIRROR_PATH, buf, n);
     }
     free(buf);
     ok &= saveRemoteButtons(); // Modo Remoto: persiste associações botoeira→saída
@@ -3383,88 +3360,6 @@ size_t IrrigationModule::gwBuildAlerts(char *buf, size_t cap)
 }
 
 // ---------------------------------------------------------------------------
-// Modo Espelhamento UI (Fase X): glue methods para os endpoints CI-only.
-// ---------------------------------------------------------------------------
-
-void IrrigationModule::gwSetMirrorEnabled(bool enabled)
-{
-    gateway.mirror.setEnabled(enabled);
-    saveGatewayState();
-    auditEvent(AuditOrigin::PAINEL, AuditAction::ESPELHO, 0, AuditResult::OK);
-}
-
-bool IrrigationModule::gwApplyMirrorMapping(int8_t input, uint8_t zoneId, bool invertido,
-                                            bool habilitado, char *err, size_t errCap)
-{
-    const Zone *zc = gateway.zones.byId(zoneId);
-    if (!zc) {
-        snprintf(err, errCap, "zona %u inexistente", zoneId);
-        return false;
-    }
-    // Limpa a porta em qualquer outra zona (1 zona por porta).
-    const Zone *other = gateway.zones.byFonte(input);
-    if (other && other->id != zoneId) {
-        Zone upd = *other;
-        upd.fonteInput = -1;
-        gateway.zones.upsert(upd);
-    }
-    Zone z = *zc;
-    z.fonteInput = input;
-    z.fonteEnabled = habilitado ? 1 : 0;
-    if (!gateway.zones.upsert(z)) {
-        snprintf(err, errCap, "tabela de zonas cheia");
-        return false;
-    }
-    // Se a associação está sendo pausada (habilitado=false) e o mirror está ativo com
-    // esta porta activa, fecha a válvula imediatamente (evita aguardar o fail-safe de 120 s).
-    if (!habilitado && gateway.mirror.enabled() && gateway.mirror.inputActive((uint8_t)input)) {
-        gwSendValveCmd(z.node, z.index, z.tipo, 0, 0, z.id, 1);
-    }
-    // Polaridade: bit `input` de digitalInActiveLow nos settings do gateway.
-    if (invertido)
-        settings.digitalInActiveLow |= (uint8_t)(1u << input);
-    else
-        settings.digitalInActiveLow &= (uint8_t)~(1u << input);
-    saveIrrigationSettings(settings);
-    saveGatewayState();
-    auditEvent(AuditOrigin::PAINEL, AuditAction::ESPELHO, zoneId, AuditResult::OK);
-    return true;
-}
-
-bool IrrigationModule::gwDeleteMirrorMapping(int8_t input)
-{
-    const Zone *z = gateway.zones.byFonte(input);
-    if (!z)
-        return false;
-    uint8_t savedId = z->id;
-    // Captura os campos necessários antes de limpar a associação.
-    uint32_t savedNode  = z->node;
-    uint8_t  savedIndex = z->index;
-    uint8_t  savedTipo  = z->tipo;
-    int8_t   oldFonteInput = z->fonteInput;
-    Zone upd = *z;
-    upd.fonteInput = -1;
-    gateway.zones.upsert(upd);
-    // Se o mirror estava activo com esta porta activa, fecha a válvula imediatamente
-    // (evita aguardar o fail-safe de 120 s após a remoção da associação).
-    if (gateway.mirror.enabled() && gateway.mirror.inputActive((uint8_t)oldFonteInput)) {
-        gwSendValveCmd(savedNode, savedIndex, savedTipo, 0, 0, savedId, 1);
-    }
-    saveGatewayState();
-    auditEvent(AuditOrigin::PAINEL, AuditAction::ESPELHO, savedId, AuditResult::OK);
-    return true;
-}
-
-size_t IrrigationModule::gwBuildMirror(char *buf, size_t cap)
-{
-    bool live[4] = {false, false, false, false};
-    for (uint8_t i = 0; i < 4 && i < IrrigationSettings::MAX_DIGITAL_IN; i++)
-        live[i] = gateway.mirror.inputActive(i);
-    return IrrigationWeb::buildMirror(buf, cap, gateway.mirror.enabled(), gateway.zones,
-                                      settings.digitalInActiveLow, live);
-}
-
-// ---------------------------------------------------------------------------
 // Sistema restore — importa tabelas de config de um envelope de backup (§5.5).
 // NÃO toca PSK/canal, NÃO reinicializa, NÃO bump de epoch de estação.
 // ---------------------------------------------------------------------------
@@ -3753,11 +3648,6 @@ void IrrigationModule::gwTick()
                     continue;
             }
             if (a.type == SchedAction::Type::OPEN) {
-                // Bypass: se o espelho é dono desta zona, ele manda — suprime o OPEN.
-                if (mirrorOwnsZoneOutput(gateway.mirror, z->fonteInput, z->fonteEnabled)) {
-                    LOG_DEBUG("Irrigation GW: scheduler OPEN zone=%u suprimido (espelho dono)", a.zoneId);
-                    continue;
-                }
                 // Clamp pela maxMin da zona (scheduler já conhece durationS).
                 uint16_t dur = a.durationS;
                 if (z->maxMin > 0 && dur > (uint16_t)(z->maxMin * 60))
@@ -3776,11 +3666,6 @@ void IrrigationModule::gwTick()
                 }
                 // HOLD: enfileirado com dur clampeado; dreno abaixo libera quando houver capacidade.
             } else { // CLOSE
-                // Mesma proteção: não feche o que o espelho mantém aberto (carryover F4 #1).
-                if (mirrorOwnsZoneOutput(gateway.mirror, z->fonteInput, z->fonteEnabled)) {
-                    LOG_DEBUG("Irrigation GW: scheduler CLOSE zone=%u suprimido (espelho dono)", a.zoneId);
-                    continue;
-                }
                 gateway.openGate.release(a.zoneId);
                 gwSendValveCmd(z->node, z->index, z->tipo, 0, 0, a.zoneId, 1);
             }
@@ -4526,7 +4411,6 @@ void IrrigationModule::applyLocalRemoteLeds(uint8_t states)
 {
     for (uint8_t slot = 0; slot <= 1; slot++) {
         bool on = (states >> slot) & 1u;
-        _remoteLed[slot].onLedState(on, millis());
         if (settings.pinsRemoteLed[slot] >= 0) {
 #ifndef ARCH_PORTDUINO
             digitalWrite((uint8_t)settings.pinsRemoteLed[slot], on ? HIGH : LOW);
@@ -4725,7 +4609,6 @@ bool IrrigationModule::gwRunRemoteCommand(uint8_t targetZoneId)
 
 // ---------------------------------------------------------------------------
 // Modo Remoto (Task 8): acessores públicos para os endpoints CI-only.
-// Espelham gwBuildMirror / gwApplyMirrorMapping / gwDeleteMirrorMapping.
 // ---------------------------------------------------------------------------
 
 size_t IrrigationModule::remoteBuildStatus(char *buf, size_t cap)

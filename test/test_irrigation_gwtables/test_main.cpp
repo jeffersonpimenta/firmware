@@ -9,7 +9,7 @@
 void setUp(void) {}
 void tearDown(void) {}
 
-static Zone mkZone(uint8_t id, uint32_t node, int8_t fonte = -1)
+static Zone mkZone(uint8_t id, uint32_t node)
 {
     Zone z;
     z.id = id;
@@ -17,7 +17,6 @@ static Zone mkZone(uint8_t id, uint32_t node, int8_t fonte = -1)
     z.node = node;
     z.maxMin = 45;
     z.padraoMin = 20;
-    z.fonteInput = fonte;
     return z;
 }
 
@@ -25,7 +24,7 @@ static void test_zones_upsertByIdAndLookup()
 {
     ZoneTable t;
     TEST_ASSERT_TRUE(t.upsert(mkZone(1, 0x11)));
-    TEST_ASSERT_TRUE(t.upsert(mkZone(2, 0x22, 0)));
+    TEST_ASSERT_TRUE(t.upsert(mkZone(2, 0x22)));
     TEST_ASSERT_EQUAL_UINT(2, t.count());
 
     Zone z1b = mkZone(1, 0x33); // mesmo id: substitui
@@ -33,9 +32,6 @@ static void test_zones_upsertByIdAndLookup()
     TEST_ASSERT_EQUAL_UINT(2, t.count());
     TEST_ASSERT_EQUAL_HEX32(0x33, t.byId(1)->node);
 
-    TEST_ASSERT_NOT_NULL(t.byFonte(0));
-    TEST_ASSERT_EQUAL_UINT8(2, t.byFonte(0)->id);
-    TEST_ASSERT_NULL(t.byFonte(3));
     TEST_ASSERT_NULL(t.byId(99));
 
     TEST_ASSERT_TRUE(t.removeById(1));
@@ -56,14 +52,14 @@ static void test_zones_serializeRoundTrip()
 {
     ZoneTable t;
     t.upsert(mkZone(1, 0x11));
-    t.upsert(mkZone(7, 0x77, 2));
+    t.upsert(mkZone(7, 0x77));
     uint8_t buf[1024];
     size_t n = t.serialize(buf, sizeof(buf));
     TEST_ASSERT_GREATER_THAN(0, n);
     ZoneTable c;
     TEST_ASSERT_TRUE(c.deserialize(buf, n));
     TEST_ASSERT_EQUAL_UINT(2, c.count());
-    TEST_ASSERT_EQUAL_INT8(2, c.byId(7)->fonteInput);
+    TEST_ASSERT_EQUAL_HEX32(0x77, c.byId(7)->node);
     buf[0] ^= 0xFF;
     ZoneTable bad;
     TEST_ASSERT_FALSE(bad.deserialize(buf, n));
@@ -249,10 +245,12 @@ static void test_entry_at_itera_ocupados()
     TEST_ASSERT_NULL(c.entryAt(StationTelemetryCache::MAX)); // fora de faixa
 }
 
-static void test_zone_fonteEnabled_roundtrip()
+static void test_zone_v3_roundtrip_preserves_fields()
 {
+    // v3 (IZN3): layout de 27 bytes/entrada, sem fonteInput/fonteEnabled.
     ZoneTable t;
-    Zone z{}; z.id = 5; z.node = 0x1234; z.fonteInput = 2; z.fonteEnabled = 0;
+    Zone z{}; z.id = 5; z.node = 0x1234; z.tipo = 1; z.index = 3;
+    z.maxMin = 90; z.padraoMin = 15;
     strncpy(z.name, "Horta", sizeof(z.name) - 1);
     TEST_ASSERT_TRUE(t.upsert(z));
     uint8_t buf[800];
@@ -262,29 +260,12 @@ static void test_zone_fonteEnabled_roundtrip()
     TEST_ASSERT_TRUE(t2.deserialize(buf, n));
     const Zone *r = t2.byId(5);
     TEST_ASSERT_NOT_NULL(r);
-    TEST_ASSERT_EQUAL_INT8(2, r->fonteInput);
-    TEST_ASSERT_EQUAL_UINT8(0, r->fonteEnabled); // pausada preservada
-}
-
-static void test_zone_legacy_v1_migrates_enabled()
-{
-    // Constrói um blob legado IZN1 de 28 bytes/entrada (1 zona com fonteInput=1).
-    uint8_t buf[6 + 28] = {0};
-    uint32_t magic = 0x495A4E31; memcpy(buf, &magic, 4); buf[4] = 1; buf[5] = 1;
-    size_t off = 6;
-    buf[off + 0] = 7;                       // id
-    memcpy(buf + off + 1, "Z", 1);          // name
-    uint32_t node = 0xABCD; memcpy(buf + off + 17, &node, 4);
-    buf[off + 21] = 0; buf[off + 22] = 0;   // tipo, index
-    uint16_t mm = 120; memcpy(buf + off + 23, &mm, 2);
-    uint16_t pm = 20;  memcpy(buf + off + 25, &pm, 2);
-    buf[off + 27] = 1;                       // fonteInput
-    ZoneTable t;
-    TEST_ASSERT_TRUE(t.deserialize(buf, sizeof(buf)));
-    const Zone *r = t.byId(7);
-    TEST_ASSERT_NOT_NULL(r);
-    TEST_ASSERT_EQUAL_INT8(1, r->fonteInput);
-    TEST_ASSERT_EQUAL_UINT8(1, r->fonteEnabled); // migração default = habilitada
+    TEST_ASSERT_EQUAL_HEX32(0x1234, r->node);
+    TEST_ASSERT_EQUAL_UINT8(1, r->tipo);
+    TEST_ASSERT_EQUAL_UINT8(3, r->index);
+    TEST_ASSERT_EQUAL_UINT16(90, r->maxMin);
+    TEST_ASSERT_EQUAL_UINT16(15, r->padraoMin);
+    TEST_ASSERT_EQUAL_STRING("Horta", r->name);
 }
 
 static void test_is_local_target()
@@ -311,8 +292,7 @@ void setup()
     RUN_TEST(test_telemetryCache_upsertAndLookup);
     RUN_TEST(test_cache_guarda_sensores_e_tamper);
     RUN_TEST(test_entry_at_itera_ocupados);
-    RUN_TEST(test_zone_fonteEnabled_roundtrip);
-    RUN_TEST(test_zone_legacy_v1_migrates_enabled);
+    RUN_TEST(test_zone_v3_roundtrip_preserves_fields);
     exit(UNITY_END());
 }
 
