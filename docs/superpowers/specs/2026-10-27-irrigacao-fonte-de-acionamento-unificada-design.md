@@ -231,6 +231,17 @@ separado. As duas ficam **amarradas** por:
   `ServicePortalApi` — campos `pinsRemoteLed`/`digitalInLedIdx` saem, entra
   seletor `InputMode` por entrada; tela de Espelho funde na de Fonte de
   Acionamento; `validateRemoteTriggers` estende para `action`.
+- **Push de config de entrada pro nó dono** (requisito vindo da decisão de UI
+  "híbrido B-como-grid"): a edição de `digitalInMode[i]` e `digitalInActiveLow`
+  de uma estação é feita no grid do **gateway**, que **empurra** esses campos
+  pro nó dono reusando o mecanismo de `configEpoch` já existente. A tabela de
+  mapeamento `(nó,input)→zona` permanece gateway-side; `RemoteTrigger` continua
+  `{inputIdx, action}` (modelo B). O nó mantém editor local mínimo como fallback.
+- **Gateway expõe as entradas das estações** (requisito do grid agregado por nó
+  da UI): o `GET /acionamento` lista entradas do gateway + por estação
+  conhecida, logo o gateway precisa conhecer `digitalInMode`/polaridade das
+  estações (reportado pela estação, ex.: anexo ao heartbeat/telemetria). Sem
+  isso o grid só mostra as entradas locais do gateway.
 
 Qualquer mudança no contrato acima exige editar **esta** spec e sincronizar a
 UI-spec.
