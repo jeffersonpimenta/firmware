@@ -488,6 +488,19 @@ static void test_remoteTrigger_roundTrip()
     TEST_ASSERT_EQUAL_UINT(0, IrrigationProto::encodeRemoteTrigger(buf, 2, 1, m));
 }
 
+static void test_remote_trigger_carries_action()
+{
+    using namespace IrrigationProto;
+    uint8_t buf[32];
+    RemoteTrigger in{2 /*inputIdx*/, 1 /*OPEN*/};
+    size_t n = encodeRemoteTrigger(buf, sizeof(buf), 7, in);
+    TEST_ASSERT_GREATER_THAN(0, n);
+    RemoteTrigger out;
+    TEST_ASSERT_TRUE(decodeRemoteTrigger(buf, n, out));
+    TEST_ASSERT_EQUAL_UINT8(2, out.inputIdx);
+    TEST_ASSERT_EQUAL_UINT8(1, out.action);
+}
+
 static void test_remoteLed_roundTrip()
 {
     uint8_t buf[32];
@@ -548,6 +561,7 @@ void setup()
     RUN_TEST(test_pingSurvey_roundTrip);
     RUN_TEST(test_resyncPing_truncated_rejected);
     RUN_TEST(test_remoteTrigger_roundTrip);
+    RUN_TEST(test_remote_trigger_carries_action);
     RUN_TEST(test_remoteLed_roundTrip);
     RUN_TEST(test_cmdValvula_toggle_action_roundtrip);
     RUN_TEST(test_p2p_toggle_peer_needs_service_flag_to_authorize);

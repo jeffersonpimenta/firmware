@@ -46,6 +46,12 @@ enum AckStatus : uint8_t { ACK_OK = 0, ACK_NACK = 1 };
 // 2 = TOGGLE: o nó alvo inverte a própria saída (modo remoto P2P fallback).
 constexpr uint8_t ACTION_TOGGLE = 2;
 
+// Ação de RemoteTrigger (painel → gateway): intenção já resolvida pelo InputActuationPolicy.
+// 0 = toggle, 1 = abrir, 2 = fechar.
+constexpr uint8_t RT_ACTION_TOGGLE = 0;
+constexpr uint8_t RT_ACTION_OPEN = 1;
+constexpr uint8_t RT_ACTION_CLOSE = 2;
+
 enum NackReason : uint8_t {
     REASON_NONE = 0,
     REASON_BATTERY_LOW = 1,
@@ -97,7 +103,8 @@ struct CmdMaint {
 };
 
 struct RemoteTrigger {
-    uint8_t inputIdx; // 0..3
+    uint8_t inputIdx = 0;
+    uint8_t action = 0; // RT_ACTION_TOGGLE=0, RT_ACTION_OPEN=1, RT_ACTION_CLOSE=2
 };
 
 struct RemoteLed {

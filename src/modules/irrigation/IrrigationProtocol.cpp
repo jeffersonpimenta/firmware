@@ -357,6 +357,7 @@ size_t encodeRemoteTrigger(uint8_t *buf, size_t len, uint32_t seq, const RemoteT
     Writer w{buf, len};
     writeHeader(w, MSG_REMOTE_TRIGGER, seq);
     w.u8(m.inputIdx);
+    w.u8(m.action);
     return w.ok ? w.pos : 0;
 }
 
@@ -364,6 +365,7 @@ bool decodeRemoteTrigger(const uint8_t *buf, size_t len, RemoteTrigger &out)
 {
     Reader r = bodyReader(buf, len);
     out.inputIdx = r.u8();
+    out.action = r.u8();
     return r.ok;
 }
 
