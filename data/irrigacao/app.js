@@ -127,7 +127,7 @@ async function renderOverview() {
     html += `<div class="card amberbox pair-goto" data-goto-stations role="button" tabindex="0">Pareamento pendente — nó ${nodeHex(ov.pairingNodeId)} · expira em ${num(ov.pairingSecondsLeft)}s <span class="chev">›</span></div>`;
   }
   if (!ov.hasRtc) {
-    html += `<div class="card amberbox">Sem relógio — cronograma inativo. Modo espelho segue operando.</div>`;
+    html += `<div class="card amberbox">Sem relógio — cronograma inativo. Acionamento por entrada segue operando.</div>`;
   }
 
   const al = Array.isArray(alerts) ? alerts : [];
@@ -1132,7 +1132,7 @@ function programEditForm(p, zones) {
 // AuditOrigin: SISTEMA=0,CRONOGRAMA=1,PAINEL=2,PORTAL_CAMPO=3,BOTAO_FISICO=4,ENTRADA_FISICA=5,INTERTRAVAMENTO=6,FAILSAFE_TIMER=7,SERVICO=8,GRUPO_HIDRAULICO=9,NIVEL=10
 const ORIGENS_LABEL = ['Sistema','Cronograma','Painel','Portal campo','Botão físico','Entrada física','Intertravamento','Failsafe timer','Serviço','Grupo hidráulico','Nível'];
 // AuditAction: ABRIR=0,FECHAR=1,PULSO=2,GPO_ON=3,GPO_OFF=4,PAREAR=5,FACTORY_RESET=6,CONFIG_EPOCH=7,SAFE_MODE_IN=8,SAFE_MODE_OUT=9,TAMPER=10,REBOOT=11,HIBERNA_IN=12,HIBERNA_OUT=13,CMD_REJEITADO=14,ESPELHO=15
-const ACOES_LABEL = ['Abrir','Fechar','Pulso','GPO ligar','GPO desligar','Parear','Factory reset','Config epoch','Safe mode in','Safe mode out','Tamper','Reboot','Hibernar in','Hibernar out','Cmd rejeitado','Espelho'];
+const ACOES_LABEL = ['Abrir','Fechar','Pulso','GPO ligar','GPO desligar','Parear','Factory reset','Config epoch','Safe mode in','Safe mode out','Tamper','Reboot','Hibernar in','Hibernar out','Cmd rejeitado','Acionamento'];
 // AuditResult: OK=0,NACK=1,TIMEOUT=2
 const RESULTADOS_LABEL = ['OK','NACK','Timeout'];
 
@@ -2657,13 +2657,6 @@ const AC_MODE_OPTS = [
 // Ponto colorido de estado ao vivo.
 function acDotColor(active) {
   return active ? 'oklch(0.47 0.1 150)' : 'oklch(0.75 0.006 100)';
-}
-
-// Resolve nome de zona pelo id (fallback gracioso).
-function acZoneName(zoneId, zoneName) {
-  if (zoneName) return zoneName;
-  if (zoneId) return 'Zona ' + num(zoneId);
-  return '—';
 }
 
 // HTML puro de uma entrada individual.
