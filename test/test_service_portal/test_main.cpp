@@ -1,5 +1,6 @@
 #include "Arduino.h"
 #include "TestUtil.h"
+#include "modules/irrigation/InputActuationPolicy.h"
 #include "modules/irrigation/ServicePortalApi.h"
 #include <cstring>
 #include <unity.h>
@@ -172,6 +173,63 @@ static void test_parseNodeAction()
     TEST_ASSERT_FALSE(parseNodeAction("{\"node\":\"!11\",\"action\":\"nope\"}", 31, bad).ok);
 }
 
+// ── digitalInMode[] ───────────────────────────────────────────────────────────
+
+static void test_buildStationConfig_emits_digitalInMode()
+{
+    IrrigationSettings s;
+    s.digitalInMode[0] = InputMode::FOLLOW;
+    s.digitalInMode[1] = InputMode::EDGE_TOGGLE;
+    s.digitalInMode[2] = InputMode::DISABLED;
+    s.digitalInMode[3] = InputMode::EDGE_CLOSE;
+    char buf[3072];
+    size_t n = buildStationConfig(s, buf, sizeof buf);
+    TEST_ASSERT_TRUE(n > 0);
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"digitalInMode\":["));
+    // FOLLOW=1, EDGE_TOGGLE=3, DISABLED=0, EDGE_CLOSE=5
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"digitalInMode\":[1,3,0,5]"));
+}
+
+static void test_stationConfig_digitalInMode_roundtrip()
+{
+    IrrigationSettings a;
+    a.digitalInMode[0] = InputMode::FOLLOW;      // 1
+    a.digitalInMode[1] = InputMode::EDGE_BOTH;   // 2
+    a.digitalInMode[2] = InputMode::EDGE_OPEN;   // 4
+    a.digitalInMode[3] = InputMode::EDGE_CLOSE;  // 5
+
+    char js[3072];
+    size_t n = buildStationConfig(a, js, sizeof js);
+    TEST_ASSERT_TRUE(n > 0);
+
+    IrrigationSettings b;
+    // seed managed fields from a so EQUAL_MEMORY check passes
+    b.magic = a.magic;
+    b.version = a.version;
+    b.role = a.role;
+    b.boundGateway = a.boundGateway;
+    b.configEpoch = a.configEpoch;
+    ParseResult r = parseStationConfig(js, n, b);
+    TEST_ASSERT_TRUE(r.ok);
+    TEST_ASSERT_EQUAL_INT((int)InputMode::FOLLOW,     (int)b.digitalInMode[0]);
+    TEST_ASSERT_EQUAL_INT((int)InputMode::EDGE_BOTH,  (int)b.digitalInMode[1]);
+    TEST_ASSERT_EQUAL_INT((int)InputMode::EDGE_OPEN,  (int)b.digitalInMode[2]);
+    TEST_ASSERT_EQUAL_INT((int)InputMode::EDGE_CLOSE, (int)b.digitalInMode[3]);
+}
+
+static void test_parseStationConfig_digitalInMode_clampsInvalid()
+{
+    // Value 99 is out of range (>5) → should be clamped to DISABLED (0)
+    const char *js = "{\"digitalInMode\":[1,99,3,0]}";
+    IrrigationSettings b;
+    ParseResult r = parseStationConfig(js, strlen(js), b);
+    TEST_ASSERT_TRUE(r.ok);
+    TEST_ASSERT_EQUAL_INT((int)InputMode::FOLLOW,    (int)b.digitalInMode[0]);
+    TEST_ASSERT_EQUAL_INT((int)InputMode::DISABLED,  (int)b.digitalInMode[1]); // clamped
+    TEST_ASSERT_EQUAL_INT((int)InputMode::EDGE_TOGGLE, (int)b.digitalInMode[2]);
+    TEST_ASSERT_EQUAL_INT((int)InputMode::DISABLED,  (int)b.digitalInMode[3]);
+}
+
 // ── Aba Log ──────────────────────────────────────────────────────────────────
 
 struct RamLogReader : IServiceLogReader {
@@ -209,6 +267,9 @@ void setup()
     RUN_TEST(test_buildScanResults_maps_fields);
     RUN_TEST(test_buildStationConfig_emits_fields);
     RUN_TEST(test_stationConfig_round_trip);
+    RUN_TEST(test_buildStationConfig_emits_digitalInMode);
+    RUN_TEST(test_stationConfig_digitalInMode_roundtrip);
+    RUN_TEST(test_parseStationConfig_digitalInMode_clampsInvalid);
     RUN_TEST(test_parseNodeConfigReq);
     RUN_TEST(test_parseNodeAction);
     RUN_TEST(test_buildServiceLog);

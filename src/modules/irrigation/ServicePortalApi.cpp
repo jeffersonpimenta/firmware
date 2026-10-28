@@ -41,6 +41,41 @@ void parsePinArray(const char *json, size_t n, const char *key, int8_t *dst, siz
     IrrigationService::jsonForEachArray(arr, &c, fillPinCb);
 }
 
+void writeInputModeArray(JsonWriter &w, const char *key, const InputMode *modes, size_t n)
+{
+    w.key(key);
+    w.beginArray();
+    for (size_t i = 0; i < n; i++)
+        w.num((uint8_t)modes[i]);
+    w.endArray();
+}
+
+struct InputModeCtx {
+    InputMode *dst;
+    size_t cap;
+    size_t i;
+};
+static constexpr uint8_t INPUT_MODE_MAX = 5; // InputMode::EDGE_CLOSE
+bool fillInputModeCb(void *ctx, Slice elem)
+{
+    InputModeCtx *c = static_cast<InputModeCtx *>(ctx);
+    if (c->i >= c->cap)
+        return false;
+    uint8_t v = (uint8_t)strtol(elem.p, nullptr, 10);
+    if (v > INPUT_MODE_MAX)
+        v = 0; // valor inválido → DISABLED
+    c->dst[c->i++] = (InputMode)v;
+    return true;
+}
+void parseInputModeArray(const char *json, size_t n, const char *key, InputMode *dst, size_t cap)
+{
+    Slice arr;
+    if (!IrrigationService::jsonMember(json, n, key, arr))
+        return; // ausente → mantém out
+    InputModeCtx c{dst, cap, 0};
+    IrrigationService::jsonForEachArray(arr, &c, fillInputModeCb);
+}
+
 struct SensorCtx {
     IrrigationSettings::SensorSlot *dst;
     size_t i;
@@ -181,6 +216,7 @@ size_t buildStationConfig(const IrrigationSettings &s, char *buf, size_t cap)
     writePinArray(w, "pinsHbridgeB", s.pinsHbridgeB, IrrigationSettings::MAX_VALVES);
     writePinArray(w, "pinsDigitalIn", s.pinsDigitalIn, IrrigationSettings::MAX_DIGITAL_IN);
     w.keyNum("digitalInActiveLow", s.digitalInActiveLow);
+    writeInputModeArray(w, "digitalInMode", s.digitalInMode, IrrigationSettings::MAX_DIGITAL_IN);
     w.keyNum("pinBtn", s.pinBtn);
     w.keyNum("pinLed", s.pinLed);
     writePinArray(w, "pinsGpo", s.pinsGpo, IrrigationSettings::MAX_GPO);
@@ -253,6 +289,7 @@ ParseResult parseStationConfig(const char *json, size_t len, IrrigationSettings 
     parsePinArray(json, len, "pinsHbridgeB", out.pinsHbridgeB, IrrigationSettings::MAX_VALVES);
     parsePinArray(json, len, "pinsDigitalIn", out.pinsDigitalIn, IrrigationSettings::MAX_DIGITAL_IN);
     parsePinArray(json, len, "pinsGpo", out.pinsGpo, IrrigationSettings::MAX_GPO);
+    parseInputModeArray(json, len, "digitalInMode", out.digitalInMode, IrrigationSettings::MAX_DIGITAL_IN);
     // Sensores + intertravamentos.
     Slice arr;
     if (IrrigationService::jsonMember(json, len, "sensores", arr)) {
