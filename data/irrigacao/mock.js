@@ -282,6 +282,14 @@ const MOCK_DATA = {
   mirrorEnabled: false,
   mirrorPortsActive: [false, false, false, false], // estado ao vivo simulado das 4 portas
 
+  // Fonte de Acionamento — entradas físicas de qualquer nó acionam zonas.
+  // Chave: "<node>:<i>" → { node, i, mode, invertido, targetZoneId, active, driving }
+  acInputs: {
+    '168430090:0': { node: 168430090, i: 0, mode: 1, invertido: false, active: true, targetZoneId: 1, driving: true },
+    '168430090:1': { node: 168430090, i: 1, mode: 0, invertido: false, active: false, targetZoneId: 0, driving: false },
+    '2712847316:0': { node: 2712847316, i: 0, mode: 2, invertido: true, active: false, targetZoneId: 2, driving: false },
+  },
+
   // Alertas não-reconhecidos (§8.1–§8.3). type = AlertType (StationMonitor.h).
   alerts: [
     { type: 5, node: 0xe5f6a7b8, arg: 0, atMs: 1000, ageS: 2400 }, // Estação silenciosa
@@ -632,53 +640,39 @@ window.fetch = async function (url, opts) {
   }
   if (path.startsWith('/acionamento')) {
     // GET /acionamento — fonte de acionamento: nós com entradas físicas configuradas.
-    // Nó local (gateway, isSelf:true) com 2 entradas + 1 estação remota com 1 entrada.
+    // Constrói a resposta a partir de STATE.acInputs (mutável via POST /acionamento/entrada).
     const selfNode = STATE.overview.selfNode;
-    return mockResponse({
-      nodes: [
-        {
-          node: selfNode,
-          name: 'Gateway',
-          isSelf: true,
-          inputs: [
-            {
-              i: 0,
-              mode: 1,          // Segue nível
-              invertido: false,
-              active: true,
-              targetZoneId: 1,
-              zoneName: 'Horta',
-              driving: true,
-            },
-            {
-              i: 1,
-              mode: 0,          // Desabilitada
-              invertido: false,
-              active: false,
-              targetZoneId: 0,
-              zoneName: '',
-              driving: false,
-            },
-          ],
-        },
-        {
-          node: 0xa1b2c3d4,
-          name: 'Horta Norte',
-          isSelf: false,
-          inputs: [
-            {
-              i: 0,
-              mode: 2,          // Borda: abre/fecha
-              invertido: true,
-              active: false,
-              targetZoneId: 2,
-              zoneName: 'Pomar',
-              driving: false,
-            },
-          ],
-        },
-      ],
+    const stationMap = {};
+    (STATE.stations || []).forEach((s) => { stationMap[s.node] = s.name || null; });
+    const zoneMap = {};
+    (STATE.zones || []).forEach((z) => { zoneMap[z.id] = z.name || ('Zona ' + z.id); });
+    // Agrupa entradas por nó
+    const byNode = {};
+    Object.values(STATE.acInputs || {}).forEach((inp) => {
+      const nk = inp.node;
+      if (!byNode[nk]) byNode[nk] = [];
+      byNode[nk].push(inp);
     });
+    const nodes = Object.entries(byNode).map(([nodeStr, inputs]) => {
+      const nid = Number(nodeStr);
+      const isSelf = nid === selfNode;
+      const name = isSelf ? 'Gateway' : (stationMap[nid] || ('Nó ' + nid.toString(16)));
+      return {
+        node: nid,
+        name,
+        isSelf,
+        inputs: inputs.sort((a, b) => a.i - b.i).map((inp) => ({
+          i: inp.i,
+          mode: inp.mode,
+          invertido: !!inp.invertido,
+          active: !!inp.active,
+          targetZoneId: inp.targetZoneId || 0,
+          zoneName: inp.targetZoneId ? (zoneMap[inp.targetZoneId] || '') : '',
+          driving: !!inp.driving,
+        })),
+      };
+    });
+    return mockResponse({ nodes });
   }
   if (path.startsWith('/mirror')) {
     // Constrói a resposta a partir de STATE.zones (fonteInput >= 0 → associação ativa).
@@ -973,6 +967,32 @@ function handlePost(path, body) {
     const idx = remoteAssociations.findIndex((a) => a.id === id);
     if (idx >= 0) remoteAssociations[idx] = record;
     else remoteAssociations.push(record);
+    return mockResponse({ ok: true });
+  }
+  // Fonte de Acionamento — POST /acionamento/entrada (upsert) e /acionamento/entrada/delete
+  if (path === '/acionamento/entrada') {
+    const node = Number(body.node);
+    const i = Number(body.i);
+    const mode = Number(body.mode);
+    if (!Number.isFinite(node) || !Number.isFinite(i))
+      return mockResponse({ errors: ['node e i são obrigatórios.'] }, 400);
+    const key = node + ':' + i;
+    STATE.acInputs[key] = {
+      node,
+      i,
+      mode,
+      invertido: !!body.invertido,
+      active: !!(STATE.acInputs[key] || {}).active, // preserva estado ao vivo
+      targetZoneId: Number(body.targetZoneId) || 0,
+      driving: false,
+    };
+    return mockResponse({ ok: true });
+  }
+  if (path === '/acionamento/entrada/delete') {
+    const node = Number(body.node);
+    const i = Number(body.i);
+    const key = node + ':' + i;
+    delete STATE.acInputs[key];
     return mockResponse({ ok: true });
   }
   // Modo Espelhamento

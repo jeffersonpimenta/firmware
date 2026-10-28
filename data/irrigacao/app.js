@@ -2163,399 +2163,6 @@ function nvWire() {
   if (delConfirm) delConfirm.addEventListener('click', () => nvDelete());
 }
 
-// ===== Modo Espelhamento =====
-// Copia o estado das entradas físicas do gateway para as saídas de zona associadas nos nós.
-// Modelo de UI do mockup "Irrigacao Mobile.dc.html" linhas 815–970.
-// Estado do módulo: mrData cache do GET + mrUI da tela de edição.
-let mrData = { enabled: false, ports: [] };
-let mrUI = { screen: 'list', draft: null, errors: [], deleteConfirm: false };
-
-// Nomes fixos das 4 portas de entrada física do gateway.
-const MR_PORT_NAMES = ['Entrada 1', 'Entrada 2', 'Entrada 3', 'Entrada 4'];
-
-// Cor do ponto de estado (ativo/inativo).
-function mrDotColor(active) {
-  return active ? 'oklch(0.47 0.1 150)' : 'oklch(0.75 0.006 100)';
-}
-
-// Tela-lista (pura, não toca DOM).
-function mrListHtml() {
-  const { enabled, ports } = mrData;
-  const toggleBg = enabled ? 'oklch(0.47 0.1 150)' : 'oklch(0.85 0.006 100)';
-  const knobLeft = enabled ? '18px' : '2px';
-  const statusLabel = enabled ? 'Espelhamento ativo — entradas controlam saídas' : 'Desativado — cronograma e painel assumem o controle';
-
-  const bypassBanner = enabled
-    ? `<div style="background:oklch(0.65 0.15 75 / 0.1);border:1px solid oklch(0.65 0.15 75 / 0.4);border-radius:14px;padding:12px 14px;">
-        <div style="font-size:12.5px;font-weight:700;color:oklch(0.22 0.008 100);">Bypass ativo</div>
-        <div style="font-size:12px;color:oklch(0.22 0.008 100);margin-top:4px;line-height:1.5;">Cronogramas, grupos e intertravamentos são ignorados nas zonas associadas.</div>
-      </div>`
-    : '';
-
-  // Estado atual das portas (read-only)
-  const portRows = (Array.isArray(ports) ? ports : []).map((p) => {
-    const nome = esc(MR_PORT_NAMES[num(p.i)] || ('Entrada ' + (num(p.i) + 1)));
-    const active = !!p.active;
-    const dotColor = mrDotColor(active);
-    const label = active ? 'Ativa' : 'Inativa';
-    return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 0;border-bottom:1px solid oklch(0.94 0.004 100);">
-      <div style="display:flex;align-items:center;gap:10px;min-width:0;">
-        <div style="width:9px;height:9px;border-radius:999px;background:${dotColor};flex-shrink:0;"></div>
-        <div style="font-size:13.5px;font-weight:600;color:oklch(0.22 0.008 100);">${nome}</div>
-      </div>
-      <div style="font-size:12px;font-weight:600;color:${dotColor};white-space:nowrap;">${label}</div>
-    </div>`;
-  }).join('');
-
-  // Associações: portas que têm zoneId associado
-  const mappings = (Array.isArray(ports) ? ports : []).filter((p) => p.zoneId != null && p.zoneId > 0);
-  const freePorts = (Array.isArray(ports) ? ports : []).filter((p) => !(p.zoneId != null && p.zoneId > 0));
-  const allUsed = freePorts.length === 0;
-  const hasFree = freePorts.length > 0;
-  const hasMappings = mappings.length > 0;
-
-  const newBtn = hasFree
-    ? `<button data-mrnew style="cursor:pointer;border:1.5px dashed oklch(0.47 0.1 150 / 0.5);background:transparent;color:oklch(0.47 0.1 150);font-size:13px;font-weight:700;padding:11px;border-radius:14px;width:100%;">+ Nova associação</button>`
-    : '';
-  const allUsedMsg = allUsed
-    ? `<div style="font-size:12px;color:oklch(0.52 0.006 100);background:oklch(0.97 0.003 100);border-radius:10px;padding:9px 12px;">Todas as portas de entrada já estão associadas.</div>`
-    : '';
-
-  const mappingCards = mappings.map((p) => {
-    const portaNome = esc(MR_PORT_NAMES[num(p.i)] || ('Entrada ' + (num(p.i) + 1)));
-    const zonaNome = esc(p.zoneName || ('Zona ' + num(p.zoneId)));
-    const invertido = !!p.invertido;
-    const habilitado = !!p.habilitado;
-    const driving = !!p.driving;
-    const invBadge = invertido ? ` <span style="font-size:10.5px;font-weight:700;color:oklch(0.65 0.15 75);">INV</span>` : '';
-    const habChip = habilitado
-      ? `<span style="font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:999px;background:oklch(0.47 0.1 150 / 0.12);color:oklch(0.47 0.1 150);white-space:nowrap;">Habilitada</span>`
-      : `<span style="font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:999px;background:oklch(0.9 0.006 100);color:oklch(0.52 0.006 100);white-space:nowrap;">Desativada</span>`;
-    const habBg = habilitado ? 'oklch(0.47 0.1 150)' : 'oklch(0.85 0.006 100)';
-    const habKnob = habilitado ? '16px' : '2px';
-    const inActive = !!p.active;
-    const inDotColor = mrDotColor(invertido ? !inActive : inActive);
-    const outDotColor = mrDotColor(driving);
-    const inLabel = inActive ? 'ativa' : 'inativa';
-    const rawHigh = invertido ? !inActive : inActive;
-    const inRawLabel = rawHigh ? 'nível alto' : 'nível baixo';
-    const outLabel = driving ? 'aberta' : 'fechada';
-    return `<div style="cursor:pointer;background:oklch(1 0 0);border:1px solid oklch(0.9 0.006 100);box-shadow:0 1px 3px rgba(0,0,0,0.05);border-radius:16px;padding:14px 16px;" data-mredit="${num(p.i)}">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-        <div style="font-size:14px;font-weight:600;color:oklch(0.22 0.008 100);min-width:0;">${portaNome} <span style="color:oklch(0.7 0.006 100);">→</span> ${zonaNome}${invBadge}</div>
-        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
-          ${habChip}
-          <div data-mrtoghab="${num(p.i)}" style="cursor:pointer;width:34px;height:20px;border-radius:999px;background:${habBg};position:relative;">
-            <div style="position:absolute;top:2px;left:${habKnob};width:16px;height:16px;border-radius:999px;background:#fff;"></div>
-          </div>
-        </div>
-      </div>
-      <div style="font-size:12px;color:oklch(0.52 0.006 100);margin-top:6px;">Polaridade ${invertido ? 'invertida' : 'normal'}</div>
-      <div style="display:flex;align-items:center;gap:14px;margin-top:10px;">
-        <div style="display:flex;align-items:center;gap:6px;">
-          <div style="width:8px;height:8px;border-radius:999px;background:${inDotColor};"></div>
-          <div style="font-size:11.5px;color:oklch(0.52 0.006 100);">entrada ${inLabel} (${inRawLabel})</div>
-        </div>
-        <span style="color:oklch(0.75 0.006 100);font-size:13px;">→</span>
-        <div style="display:flex;align-items:center;gap:6px;">
-          <div style="width:8px;height:8px;border-radius:999px;background:${outDotColor};"></div>
-          <div style="font-size:11.5px;color:oklch(0.52 0.006 100);">saída ${outLabel}</div>
-        </div>
-      </div>
-    </div>`;
-  }).join('');
-
-  const noMappingsMsg = !hasMappings
-    ? `<div style="font-size:12.5px;color:oklch(0.52 0.006 100);">Nenhuma associação configurada.</div>`
-    : '';
-
-  return `
-    <div style="font-size:18px;font-weight:700;color:oklch(0.22 0.008 100);">Modo Espelhamento</div>
-    <div style="font-size:12px;color:oklch(0.52 0.006 100);margin-top:-6px;">Copia o estado das entradas físicas do gateway direto para saídas associadas nos nós</div>
-
-    <div style="background:oklch(1 0 0);border:1px solid oklch(0.9 0.006 100);box-shadow:0 1px 3px rgba(0,0,0,0.05);border-radius:16px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;">
-      <div>
-        <div style="font-size:14px;font-weight:600;color:oklch(0.22 0.008 100);">Ativar espelhamento</div>
-        <div style="font-size:12px;color:oklch(0.52 0.006 100);margin-top:2px;">${esc(statusLabel)}</div>
-      </div>
-      <div data-mrtoggle style="cursor:pointer;width:38px;height:22px;border-radius:999px;background:${toggleBg};position:relative;flex-shrink:0;">
-        <div style="position:absolute;top:2px;left:${knobLeft};width:18px;height:18px;border-radius:999px;background:#fff;"></div>
-      </div>
-    </div>
-
-    ${bypassBanner}
-
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;">
-      <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;">Estado atual das portas</div>
-    </div>
-    <div style="background:oklch(1 0 0);border:1px solid oklch(0.9 0.006 100);box-shadow:0 1px 3px rgba(0,0,0,0.05);border-radius:16px;padding:6px 16px;display:flex;flex-direction:column;">
-      ${portRows || '<div style="padding:10px 0;font-size:12px;color:oklch(0.6 0.006 100);">Sem dados de portas.</div>'}
-    </div>
-
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;">
-      <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;">Associações porta → zona</div>
-    </div>
-    ${allUsedMsg}
-    ${newBtn}
-    ${mappingCards}
-    ${noMappingsMsg}
-  `;
-}
-
-// Tela-edição do espelhamento (pura, não toca DOM).
-function mrEditHtml() {
-  const d = mrUI.draft;
-  const { ports } = mrData;
-  const editing = d.isEditing;
-  const errors = mrUI.errors || [];
-  const errBox = errors.length
-    ? `<div style="background:oklch(0.55 0.16 30 / 0.08);border:1px solid oklch(0.55 0.16 30 / 0.3);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:4px;">
-        ${errors.map((e) => `<div style="font-size:12px;color:oklch(0.55 0.16 30);">${esc(e)}</div>`).join('')}
-      </div>`
-    : '';
-
-  // Portas livres (sem zona) + a porta atual em edição
-  const freePorts = (Array.isArray(ports) ? ports : []).filter(
-    (p) => !(p.zoneId != null && p.zoneId > 0) || num(p.i) === num(d.input)
-  );
-  const portPills = freePorts.map((p) => {
-    const nome = esc(MR_PORT_NAMES[num(p.i)] || ('Entrada ' + (num(p.i) + 1)));
-    const sel = num(p.i) === num(d.input);
-    const border = sel ? 'oklch(0.47 0.1 150)' : 'oklch(0.88 0.006 100)';
-    const bg = sel ? 'oklch(0.47 0.1 150)' : 'transparent';
-    const color = sel ? '#fff' : 'oklch(0.4 0.006 100)';
-    const shadow = sel ? '0 1px 4px oklch(0.47 0.1 150 / 0.3)' : 'none';
-    return `<button data-mrport="${num(p.i)}" style="cursor:pointer;border:1.5px solid ${border};padding:7px 12px;border-radius:999px;background:${bg};color:${color};font-size:12.5px;font-weight:600;box-shadow:${shadow};">${nome}</button>`;
-  }).join('');
-
-  // Zonas disponíveis (todas as zonas do mrData)
-  const zones = Array.isArray(mrData.zones) ? mrData.zones : [];
-  const zonePills = zones.map((z) => {
-    const nome = esc(z.name || ('Zona ' + num(z.id)));
-    const sel = num(z.id) === num(d.zoneId);
-    const border = sel ? 'oklch(0.47 0.1 150)' : 'oklch(0.88 0.006 100)';
-    const bg = sel ? 'oklch(0.47 0.1 150)' : 'transparent';
-    const color = sel ? '#fff' : 'oklch(0.4 0.006 100)';
-    const shadow = sel ? '0 1px 4px oklch(0.47 0.1 150 / 0.3)' : 'none';
-    return `<button data-mrzone="${num(z.id)}" style="cursor:pointer;border:1.5px solid ${border};padding:7px 12px;border-radius:999px;background:${bg};color:${color};font-size:12.5px;font-weight:600;box-shadow:${shadow};">${nome}</button>`;
-  }).join('');
-
-  const normalBorder = !d.invertido ? 'oklch(0.47 0.1 150)' : 'oklch(0.88 0.006 100)';
-  const normalBg = !d.invertido ? 'oklch(0.47 0.1 150 / 0.1)' : 'transparent';
-  const normalColor = !d.invertido ? 'oklch(0.47 0.1 150)' : 'oklch(0.4 0.006 100)';
-  const invBorder = d.invertido ? 'oklch(0.47 0.1 150)' : 'oklch(0.88 0.006 100)';
-  const invBg = d.invertido ? 'oklch(0.47 0.1 150 / 0.1)' : 'transparent';
-  const invColor = d.invertido ? 'oklch(0.47 0.1 150)' : 'oklch(0.4 0.006 100)';
-  const polaridadeLabel = d.invertido
-    ? 'Invertido: saída abre quando entrada estiver em 0 V.'
-    : 'Normal: saída abre quando entrada estiver em 1 (ativa).';
-
-  const habBg = d.habilitado ? 'oklch(0.47 0.1 150)' : 'oklch(0.85 0.006 100)';
-  const habKnob = d.habilitado ? '18px' : '2px';
-
-  let delBlock = '';
-  if (editing) {
-    if (mrUI.deleteConfirm) {
-      delBlock = `<div style="background:oklch(0.55 0.16 30 / 0.08);border:1px solid oklch(0.55 0.16 30 / 0.3);border-radius:12px;padding:12px 14px;">
-        <div style="font-size:12.5px;color:oklch(0.22 0.008 100);">Excluir esta associação?</div>
-        <div style="display:flex;gap:8px;margin-top:8px;">
-          <button data-mrdelcancel style="cursor:pointer;flex:1;border:1px solid oklch(0.9 0.006 100);padding:9px;border-radius:8px;background:transparent;color:oklch(0.4 0.006 100);font-size:12.5px;font-weight:600;">Cancelar</button>
-          <button data-mrdelconfirm style="cursor:pointer;flex:1;border:none;padding:9px;border-radius:8px;background:oklch(0.55 0.16 30);color:#fff;font-size:12.5px;font-weight:700;">Excluir</button>
-        </div>
-      </div>`;
-    }
-    delBlock += `<button data-mrdelreq style="cursor:pointer;border:1px solid oklch(0.55 0.16 30 / 0.4);padding:11px;border-radius:12px;background:transparent;color:oklch(0.55 0.16 30);font-size:13px;font-weight:700;width:100%;">Excluir associação</button>`;
-  }
-
-  return `
-    <div data-mrcancel style="cursor:pointer;font-size:13px;font-weight:600;color:oklch(0.47 0.1 150);">‹ Modo Espelhamento</div>
-    <div style="font-size:18px;font-weight:700;color:oklch(0.22 0.008 100);">${editing ? 'Editar associação' : 'Nova associação'}</div>
-
-    ${errBox}
-
-    <div style="background:oklch(1 0 0);border:1px solid oklch(0.9 0.006 100);border-radius:16px;padding:14px 16px;display:flex;flex-direction:column;gap:14px;">
-      <div>
-        <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;">Porta de entrada (gateway)</div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px;">
-          ${portPills || '<div style="font-size:12px;color:oklch(0.6 0.006 100);">Todas as portas em uso.</div>'}
-        </div>
-      </div>
-
-      <div>
-        <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;">Zona associada (saída no nó)</div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px;">
-          ${zonePills || '<div style="font-size:12px;color:oklch(0.6 0.006 100);">Nenhuma zona configurada.</div>'}
-        </div>
-      </div>
-
-      <div>
-        <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;">Polaridade da entrada</div>
-        <div style="font-size:12px;color:oklch(0.52 0.006 100);margin-bottom:8px;line-height:1.4;">Use "Invertido" quando o hardware reporta a entrada como ativa em 0 V (lógica invertida).</div>
-        <div style="display:flex;gap:8px;">
-          <button data-mrnormal style="cursor:pointer;flex:1;border:1.5px solid ${normalBorder};padding:9px;border-radius:8px;background:${normalBg};color:${normalColor};font-size:12.5px;font-weight:700;">Normal</button>
-          <button data-mrinvertido style="cursor:pointer;flex:1;border:1.5px solid ${invBorder};padding:9px;border-radius:8px;background:${invBg};color:${invColor};font-size:12.5px;font-weight:700;">Invertido</button>
-        </div>
-        <div style="font-size:12px;font-weight:600;color:oklch(0.47 0.1 150);margin-top:8px;">${esc(polaridadeLabel)}</div>
-      </div>
-
-      <div data-mrhab style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;background:oklch(0.97 0.003 100);border-radius:10px;padding:10px 12px;">
-        <div style="font-size:13px;font-weight:600;color:oklch(0.22 0.008 100);">Associação habilitada</div>
-        <div style="width:38px;height:22px;border-radius:999px;background:${habBg};position:relative;flex-shrink:0;">
-          <div style="position:absolute;top:2px;left:${habKnob};width:18px;height:18px;border-radius:999px;background:#fff;"></div>
-        </div>
-      </div>
-    </div>
-
-    <button data-mrsave style="cursor:pointer;border:none;padding:13px;border-radius:12px;background:oklch(0.47 0.1 150);color:#fff;font-size:15px;font-weight:700;width:100%;">Salvar associação</button>
-
-    ${delBlock}
-  `;
-}
-
-function mrRender() {
-  view.innerHTML = mrUI.screen === 'edit' ? mrEditHtml() : mrListHtml();
-  mrWire();
-}
-
-function mrWire() {
-  const q = (sel) => view.querySelector(sel);
-
-  if (mrUI.screen !== 'edit') {
-    // Toggle espelhamento ativo/inativo
-    const tog = q('[data-mrtoggle]');
-    if (tog) tog.addEventListener('click', async () => {
-      const r = await postJson('/mirror', { enabled: !mrData.enabled });
-      if (r.ok) renderEspelhamento().catch(() => {});
-    });
-
-    // Nova associação
-    const nb = q('[data-mrnew]');
-    if (nb) nb.addEventListener('click', () => mrOpenNew());
-
-    // Editar associação (click no card, não no toggle)
-    view.querySelectorAll('[data-mredit]').forEach((el) => {
-      el.addEventListener('click', (e) => {
-        // Não abrir edit se clicou no toggle de habilitado
-        if (e.target.closest('[data-mrtoghab]')) return;
-        mrOpenEdit(num(el.dataset.mredit));
-      });
-    });
-
-    // Toggle habilitado inline no card da lista
-    view.querySelectorAll('[data-mrtoghab]').forEach((el) => {
-      el.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const portIdx = num(el.dataset.mrtoghab);
-        const p = (mrData.ports || []).find((x) => num(x.i) === portIdx);
-        if (!p) return;
-        const r = await postJson('/mirror/mapping', {
-          input: portIdx,
-          zoneId: num(p.zoneId),
-          invertido: !!p.invertido,
-          habilitado: !p.habilitado,
-        });
-        if (r.ok) renderEspelhamento().catch(() => {});
-      });
-    });
-    return;
-  }
-
-  // Tela de edição
-  const cancel = q('[data-mrcancel]');
-  if (cancel) cancel.addEventListener('click', () => { mrUI = { screen: 'list', draft: null, errors: [], deleteConfirm: false }; mrRender(); });
-
-  view.querySelectorAll('[data-mrport]').forEach((b) =>
-    b.addEventListener('click', () => { mrUI.draft.input = num(b.dataset.mrport); mrRender(); }));
-  view.querySelectorAll('[data-mrzone]').forEach((b) =>
-    b.addEventListener('click', () => { mrUI.draft.zoneId = num(b.dataset.mrzone); mrRender(); }));
-
-  const norm = q('[data-mrnormal]');
-  if (norm) norm.addEventListener('click', () => { mrUI.draft.invertido = false; mrRender(); });
-  const inv = q('[data-mrinvertido]');
-  if (inv) inv.addEventListener('click', () => { mrUI.draft.invertido = true; mrRender(); });
-
-  const hab = q('[data-mrhab]');
-  if (hab) hab.addEventListener('click', () => { mrUI.draft.habilitado = !mrUI.draft.habilitado; mrRender(); });
-
-  const save = q('[data-mrsave]');
-  if (save) save.addEventListener('click', () => mrSave());
-
-  const delReq = q('[data-mrdelreq]');
-  if (delReq) delReq.addEventListener('click', () => { mrUI.deleteConfirm = true; mrRender(); });
-  const delCancel = q('[data-mrdelcancel]');
-  if (delCancel) delCancel.addEventListener('click', () => { mrUI.deleteConfirm = false; mrRender(); });
-  const delConfirm = q('[data-mrdelconfirm]');
-  if (delConfirm) delConfirm.addEventListener('click', () => mrDelete());
-}
-
-function mrOpenNew() {
-  const freePorts = (mrData.ports || []).filter((p) => !(p.zoneId != null && p.zoneId > 0));
-  if (!freePorts.length) return;
-  const firstPort = freePorts[0];
-  const firstZone = (Array.isArray(mrData.zones) && mrData.zones[0]) ? num(mrData.zones[0].id) : null;
-  mrUI = {
-    screen: 'edit', errors: [], deleteConfirm: false,
-    draft: { input: num(firstPort.i), zoneId: firstZone, invertido: false, habilitado: true, isEditing: false },
-  };
-  mrRender();
-}
-
-function mrOpenEdit(portIdx) {
-  const p = (mrData.ports || []).find((x) => num(x.i) === portIdx);
-  if (!p) return;
-  mrUI = {
-    screen: 'edit', errors: [], deleteConfirm: false,
-    draft: {
-      input: num(p.i),
-      zoneId: num(p.zoneId),
-      invertido: !!p.invertido,
-      habilitado: !!p.habilitado,
-      isEditing: true,
-    },
-  };
-  mrRender();
-}
-
-async function mrSave() {
-  const d = mrUI.draft;
-  const errors = [];
-  if (d.input == null || d.input < 0 || d.input > 3) errors.push('Selecione uma porta de entrada.');
-  if (!d.zoneId) errors.push('Selecione uma zona.');
-  if (errors.length) { mrUI.errors = errors; mrRender(); return; }
-  const r = await postJson('/mirror/mapping', {
-    input: num(d.input),
-    zoneId: num(d.zoneId),
-    invertido: !!d.invertido,
-    habilitado: !!d.habilitado,
-  });
-  if (r.ok) { mrUI = { screen: 'list', draft: null, errors: [], deleteConfirm: false }; renderEspelhamento().catch(() => {}); }
-  else { mrUI.errors = (r.body && Array.isArray(r.body.errors)) ? r.body.errors : ['Falha ao salvar.']; mrRender(); }
-}
-
-async function mrDelete() {
-  const r = await postJson('/mirror/mapping/delete', { input: num(mrUI.draft.input) });
-  if (r.ok) { mrUI = { screen: 'list', draft: null, errors: [], deleteConfirm: false }; renderEspelhamento().catch(() => {}); }
-  else { mrUI.deleteConfirm = false; mrUI.errors = ['Falha ao excluir.']; mrRender(); }
-}
-
-// Entrada do roteador: carrega GET /mirror e cacheia em mrData.
-async function renderEspelhamento() {
-  const [mirror, zones] = await Promise.all([
-    getJson('/mirror').catch(() => ({ enabled: false, ports: [] })),
-    getJson('/zones').catch(() => []),
-  ]);
-  mrData = {
-    enabled: !!mirror.enabled,
-    ports: Array.isArray(mirror.ports) ? mirror.ports : [],
-    zones: Array.isArray(zones) ? zones : [],
-  };
-  // Poll apenas actualiza o cache; não reconstrói o DOM da tela de edição
-  // (evita flicker e perda de estado do draft durante edição activa).
-  if (mrUI.screen === 'edit') return;
-  mrUI = { screen: 'list', draft: null, errors: [], deleteConfirm: false };
-  mrRender();
-}
-
 // ===== Meteorologia (supressão por previsão de chuva — Open-Meteo) =====
 
 // Estado local (screen: 'list' | 'edit', draft, errors, deleteConfirm).
@@ -3032,476 +2639,10 @@ async function renderMeteo() {
   mtRender();
 }
 
-// ===== Modo Remoto (botoeira em nó/gateway → saída em outro nó/gateway) =====
-
-// Estado do módulo
-let rmtData = { status: [], associations: [], zones: [], stations: [], selfNode: null };
-let rmtUI = { screen: 'list', draft: null, errors: [], deleteConfirm: false };
-
-// Cor do ponto de estado vivo.
-function rmtDotColor(on) {
-  return on ? 'oklch(0.47 0.1 150)' : 'oklch(0.75 0.006 100)';
-}
-
-// Formata label de um nó (node id número).
-function rmtNodeLabel(nodeId, stations, selfNode) {
-  if (nodeId == null) return '—';
-  if (num(nodeId) === num(selfNode)) return 'Gateway (local)';
-  const s = (Array.isArray(stations) ? stations : []).find((x) => num(x.node) === num(nodeId));
-  return s ? (s.name || ('Nó ' + nodeHex(nodeId))) : nodeHex(nodeId);
-}
-
-// Formata label de uma zona (para card de associação).
-function rmtZoneLabel(zoneId, zones, stations, selfNode) {
-  const z = (Array.isArray(zones) ? zones : []).find((x) => num(x.id) === num(zoneId));
-  if (!z) return 'Zona ' + num(zoneId);
-  const nome = z.name || z.nome || ('Zona ' + num(z.id));
-  const nodeLabel = rmtNodeLabel(z.node, stations, selfNode);
-  return nodeLabel + ' · ' + nome;
-}
-
-// ---- Tela lista (pura, não toca DOM) ----
-function rmtListHtml() {
-  const { status, associations, zones, stations, selfNode } = rmtData;
-
-  // Card "Testar acionamento" — cada entrada do status[] é já deduplicada por saída.
-  const testRows = (Array.isArray(status) ? status : []).map((s) => {
-    const label = esc(s.name || ('Zona ' + num(s.targetZoneId)));
-    const on = !!s.on;
-    const dotColor = rmtDotColor(on);
-    const stateLabel = on ? 'ligada' : 'desligada';
-    return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 0;border-bottom:1px solid oklch(0.94 0.004 100);">
-      <div style="min-width:0;">
-        <div style="font-size:13px;font-weight:600;color:oklch(0.22 0.008 100);">${label}</div>
-        <div style="display:flex;align-items:center;gap:6px;margin-top:3px;">
-          <div style="width:7px;height:7px;border-radius:999px;background:${dotColor};"></div>
-          <div style="font-size:11px;color:oklch(0.52 0.006 100);">${stateLabel}</div>
-        </div>
-      </div>
-      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
-        <button data-rmtcmd="${num(s.targetZoneId)}" style="cursor:pointer;border:1.5px solid oklch(0.47 0.1 150 / 0.4);padding:6px 14px;border-radius:999px;background:transparent;color:oklch(0.47 0.1 150);font-size:12px;font-weight:700;white-space:nowrap;">Acionar</button>
-      </div>
-    </div>`;
-  }).join('');
-
-  const hasTestRows = testRows.length > 0;
-  const testCard = hasTestRows
-    ? `<div style="background:oklch(1 0 0);border:1px solid oklch(0.9 0.006 100);box-shadow:0 1px 3px rgba(0,0,0,0.05);border-radius:16px;padding:6px 16px;display:flex;flex-direction:column;">${testRows}</div>`
-    : `<div style="font-size:12.5px;color:oklch(0.52 0.006 100);">Nenhuma botoeira configurada ainda.</div>`;
-
-  // Cards de associação
-  const assocCards = (Array.isArray(associations) ? associations : []).map((a) => {
-    const targetLabel = esc(rmtZoneLabel(a.targetZoneId, zones, stations, selfNode));
-    const triggerNodeNames = (Array.isArray(a.triggers) ? a.triggers : [])
-      .map((t) => rmtNodeLabel(t.node, stations, selfNode))
-      .filter((v, i, arr) => arr.indexOf(v) === i)
-      .join(', ') || '—';
-    const habilitado = !!a.enabled;
-    const habChip = habilitado
-      ? `<span style="font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:999px;background:oklch(0.47 0.1 150 / 0.12);color:oklch(0.47 0.1 150);white-space:nowrap;">Habilitada</span>`
-      : `<span style="font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:999px;background:oklch(0.9 0.006 100);color:oklch(0.52 0.006 100);white-space:nowrap;">Desativada</span>`;
-    const habBg = habilitado ? 'oklch(0.47 0.1 150)' : 'oklch(0.85 0.006 100)';
-    const habKnob = habilitado ? '16px' : '2px';
-    const on = !!(Array.isArray(status) ? status : []).find((s) => num(s.targetZoneId) === num(a.targetZoneId) && s.on);
-    const outDotColor = rmtDotColor(on);
-    const outLabel = on ? 'ligada' : 'desligada';
-    return `<div style="cursor:pointer;background:oklch(1 0 0);border:1px solid oklch(0.9 0.006 100);box-shadow:0 1px 3px rgba(0,0,0,0.05);border-radius:16px;padding:14px 16px;" data-rmtedit="${esc(String(a.id))}">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-        <div style="font-size:14px;font-weight:600;color:oklch(0.22 0.008 100);min-width:0;">${targetLabel}</div>
-        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
-          ${habChip}
-          <div data-rmttoghab="${esc(String(a.id))}" style="cursor:pointer;width:34px;height:20px;border-radius:999px;background:${habBg};position:relative;">
-            <div style="position:absolute;top:2px;left:${habKnob};width:16px;height:16px;border-radius:999px;background:#fff;"></div>
-          </div>
-        </div>
-      </div>
-      <div style="font-size:12px;color:oklch(0.52 0.006 100);margin-top:6px;">Acionado por: ${esc(triggerNodeNames)}</div>
-      <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
-        <div style="width:8px;height:8px;border-radius:999px;background:${outDotColor};"></div>
-        <div style="font-size:11.5px;color:oklch(0.52 0.006 100);">saída ${outLabel}</div>
-      </div>
-    </div>`;
-  }).join('');
-
-  const hasAssocs = assocCards.length > 0;
-  const noAssocsMsg = !hasAssocs
-    ? `<div style="font-size:12.5px;color:oklch(0.52 0.006 100);">Nenhuma associação configurada.</div>`
-    : '';
-
-  return `
-    <div style="font-size:18px;font-weight:700;color:oklch(0.22 0.008 100);">Modo Remoto</div>
-    <div style="font-size:12px;color:oklch(0.52 0.006 100);margin-top:-6px;">O aperto de um botão em um nó ou no gateway aciona uma válvula/saída em outro nó ou no gateway. A ativação depende apenas das associações configuradas abaixo.</div>
-
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;">
-      <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;">Testar acionamento</div>
-    </div>
-    ${testCard}
-
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;">
-      <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;">Associações botão(ões) → saída</div>
-    </div>
-    <button data-rmtnew style="cursor:pointer;border:1.5px dashed oklch(0.47 0.1 150 / 0.5);background:transparent;color:oklch(0.47 0.1 150);font-size:13px;font-weight:700;padding:11px;border-radius:14px;width:100%;">+ Nova associação</button>
-    ${assocCards}
-    ${noAssocsMsg}
-  `;
-}
-
-// ---- Tela edição (pura, não toca DOM) ----
-function rmtEditHtml() {
-  const d = rmtUI.draft || {};
-  const { zones, stations, selfNode } = rmtData;
-  const isEditing = !!d.isEditing;
-  const errors = rmtUI.errors || [];
-
-  const errBox = errors.length
-    ? `<div style="background:oklch(0.55 0.16 30 / 0.08);border:1px solid oklch(0.55 0.16 30 / 0.3);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:4px;">
-        ${errors.map((e) => `<div style="font-size:12px;color:oklch(0.55 0.16 30);">${esc(e)}</div>`).join('')}
-      </div>`
-    : '';
-
-  // Nós disponíveis para gatilho (gateway + todas as estações)
-  const allNodes = [
-    { node: num(selfNode), name: 'Gateway (local)' },
-    ...(Array.isArray(stations) ? stations : []).map((s) => ({ node: num(s.node), name: s.name || nodeHex(s.node) })),
-  ];
-
-  // Chips de nó para seleção de gatilho
-  const triggerNodePills = allNodes.map((n) => {
-    const sel = num(n.node) === num(d.triggerPickNode);
-    const border = sel ? 'oklch(0.47 0.1 150)' : 'oklch(0.88 0.006 100)';
-    const bg = sel ? 'oklch(0.47 0.1 150)' : 'transparent';
-    const color = sel ? '#fff' : 'oklch(0.4 0.006 100)';
-    const shadow = sel ? '0 1px 4px oklch(0.47 0.1 150 / 0.3)' : 'none';
-    return `<button data-rmttrignode="${num(n.node)}" style="cursor:pointer;border:1.5px solid ${border};padding:6px 11px;border-radius:999px;background:${bg};color:${color};font-size:12px;font-weight:600;box-shadow:${shadow};">${esc(n.name)}</button>`;
-  }).join('');
-
-  // Entradas do nó selecionado para gatilho (0..3)
-  const triggers = Array.isArray(d.triggers) ? d.triggers : [];
-  const triggerForPickNode = triggers.find((t) => num(t.node) === num(d.triggerPickNode));
-  const triggerInputPills = [0, 1, 2, 3].map((idx) => {
-    const sel = triggerForPickNode ? num(triggerForPickNode.inputIdx) === idx : false;
-    const border = sel ? 'oklch(0.47 0.1 150)' : 'oklch(0.88 0.006 100)';
-    const bg = sel ? 'oklch(0.47 0.1 150)' : 'transparent';
-    const color = sel ? '#fff' : 'oklch(0.4 0.006 100)';
-    const shadow = sel ? '0 1px 4px oklch(0.47 0.1 150 / 0.3)' : 'none';
-    return `<button data-rmttriginput="${idx}" style="cursor:pointer;border:1.5px solid ${border};padding:7px 12px;border-radius:999px;background:${bg};color:${color};font-size:12.5px;font-weight:600;box-shadow:${shadow};">Entrada ${idx + 1}</button>`;
-  }).join('');
-
-  // Nós para saída-alvo (gateway + estações)
-  const targetNodePills = allNodes.map((n) => {
-    const sel = num(n.node) === num(d.targetPickNode);
-    const border = sel ? 'oklch(0.47 0.1 150)' : 'oklch(0.88 0.006 100)';
-    const bg = sel ? 'oklch(0.47 0.1 150)' : 'transparent';
-    const color = sel ? '#fff' : 'oklch(0.4 0.006 100)';
-    const shadow = sel ? '0 1px 4px oklch(0.47 0.1 150 / 0.3)' : 'none';
-    return `<button data-rmttargetnode="${num(n.node)}" style="cursor:pointer;border:1.5px solid ${border};padding:6px 11px;border-radius:999px;background:${bg};color:${color};font-size:12px;font-weight:600;box-shadow:${shadow};">${esc(n.name)}</button>`;
-  }).join('');
-
-  // Zonas do nó-alvo selecionado
-  const targetZones = (Array.isArray(zones) ? zones : []).filter((z) => num(z.node) === num(d.targetPickNode));
-  const targetZonePills = targetZones.length
-    ? targetZones.map((z) => {
-        const nome = esc(z.name || z.nome || ('Zona ' + num(z.id)));
-        const sel = num(z.id) === num(d.targetZoneId);
-        const border = sel ? 'oklch(0.47 0.1 150)' : 'oklch(0.88 0.006 100)';
-        const bg = sel ? 'oklch(0.47 0.1 150)' : 'transparent';
-        const color = sel ? '#fff' : 'oklch(0.4 0.006 100)';
-        const shadow = sel ? '0 1px 4px oklch(0.47 0.1 150 / 0.3)' : 'none';
-        return `<button data-rmtzone="${num(z.id)}" style="cursor:pointer;border:1.5px solid ${border};padding:7px 12px;border-radius:999px;background:${bg};color:${color};font-size:12.5px;font-weight:600;box-shadow:${shadow};">${nome}</button>`;
-      }).join('')
-    : `<div style="font-size:12px;color:oklch(0.6 0.006 100);">Nenhuma zona neste nó.</div>`;
-
-  // LED por gatilho — para cada trigger selecionado, picker LED 1 / LED 2 / nenhum
-  const ledSections = triggers.length
-    ? triggers.map((t) => {
-        const nodeName = esc(rmtNodeLabel(t.node, stations, selfNode));
-        const curSlot = t.ledSlot != null ? num(t.ledSlot) : 255;
-        const ledOpts = [
-          { label: 'Nenhum', slot: 255 },
-          { label: 'LED 1', slot: 0 },
-          { label: 'LED 2', slot: 1 },
-        ];
-        const pills = ledOpts.map((opt) => {
-          const sel = curSlot === opt.slot;
-          const border = sel ? 'oklch(0.47 0.1 150)' : 'oklch(0.88 0.006 100)';
-          const bg = sel ? 'oklch(0.47 0.1 150)' : 'transparent';
-          const color = sel ? '#fff' : 'oklch(0.4 0.006 100)';
-          const shadow = sel ? '0 1px 4px oklch(0.47 0.1 150 / 0.3)' : 'none';
-          return `<button data-rmtled="${num(t.node)}" data-rmtledslot="${opt.slot}" style="cursor:pointer;border:1.5px solid ${border};padding:7px 12px;border-radius:999px;background:${bg};color:${color};font-size:12.5px;font-weight:600;box-shadow:${shadow};">${esc(opt.label)}</button>`;
-        }).join('');
-        return `<div style="margin-bottom:8px;">
-          <div style="font-size:11px;color:oklch(0.6 0.006 100);margin-bottom:5px;">${nodeName}</div>
-          <div style="display:flex;flex-wrap:wrap;gap:6px;">${pills}</div>
-        </div>`;
-      }).join('')
-    : `<div style="font-size:12px;color:oklch(0.6 0.006 100);">Selecione gatilho(s) acima.</div>`;
-
-  const habBg = d.enabled ? 'oklch(0.47 0.1 150)' : 'oklch(0.85 0.006 100)';
-  const habKnob = d.enabled ? '18px' : '2px';
-
-  let delBlock = '';
-  if (isEditing) {
-    if (rmtUI.deleteConfirm) {
-      delBlock = `<div style="background:oklch(0.55 0.16 30 / 0.08);border:1px solid oklch(0.55 0.16 30 / 0.3);border-radius:12px;padding:12px 14px;">
-        <div style="font-size:12.5px;color:oklch(0.22 0.008 100);">Excluir esta associação?</div>
-        <div style="display:flex;gap:8px;margin-top:8px;">
-          <button data-rmtdelcancel style="cursor:pointer;flex:1;border:1px solid oklch(0.9 0.006 100);padding:9px;border-radius:8px;background:transparent;color:oklch(0.4 0.006 100);font-size:12.5px;font-weight:600;">Cancelar</button>
-          <button data-rmtdelconfirm style="cursor:pointer;flex:1;border:none;padding:9px;border-radius:8px;background:oklch(0.55 0.16 30);color:#fff;font-size:12.5px;font-weight:700;">Excluir</button>
-        </div>
-      </div>`;
-    }
-    delBlock += `<button data-rmtdelreq style="cursor:pointer;border:1px solid oklch(0.55 0.16 30 / 0.4);padding:11px;border-radius:12px;background:transparent;color:oklch(0.55 0.16 30);font-size:13px;font-weight:700;width:100%;">Excluir associação</button>`;
-  }
-
-  return `
-    <div data-rmtcancel style="cursor:pointer;font-size:13px;font-weight:600;color:oklch(0.47 0.1 150);">‹ Modo Remoto</div>
-    <div style="font-size:18px;font-weight:700;color:oklch(0.22 0.008 100);">${isEditing ? 'Editar associação' : 'Nova associação'}</div>
-
-    ${errBox}
-
-    <div style="background:oklch(1 0 0);border:1px solid oklch(0.9 0.006 100);border-radius:16px;padding:14px 16px;display:flex;flex-direction:column;gap:14px;">
-      <div>
-        <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;">Botões — um por nó/gateway; pode adicionar mais de um nó</div>
-        <div style="font-size:10px;font-weight:700;color:oklch(0.6 0.006 100);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:5px;">Nó</div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">
-          ${triggerNodePills}
-        </div>
-        <div style="font-size:10px;font-weight:700;color:oklch(0.6 0.006 100);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:5px;">Entrada</div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px;">
-          ${triggerInputPills}
-        </div>
-      </div>
-
-      <div>
-        <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;">Saída a acionar</div>
-        <div style="font-size:10px;font-weight:700;color:oklch(0.6 0.006 100);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:5px;">Nó</div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">
-          ${targetNodePills}
-        </div>
-        <div style="font-size:10px;font-weight:700;color:oklch(0.6 0.006 100);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:5px;">Saída</div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px;">
-          ${targetZonePills}
-        </div>
-      </div>
-
-      <div>
-        <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;">LED de feedback por gatilho (opcional)</div>
-        <div style="font-size:12px;color:oklch(0.52 0.006 100);margin-bottom:8px;line-height:1.4;">Acende junto com a saída acionada, indicando visualmente que a botoeira foi ativada — no nó da botoeira.</div>
-        ${ledSections}
-      </div>
-
-      <div data-rmthab style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;background:oklch(0.97 0.003 100);border-radius:10px;padding:10px 12px;">
-        <div style="font-size:13px;font-weight:600;color:oklch(0.22 0.008 100);">Associação habilitada</div>
-        <div style="width:38px;height:22px;border-radius:999px;background:${habBg};position:relative;flex-shrink:0;">
-          <div style="position:absolute;top:2px;left:${habKnob};width:18px;height:18px;border-radius:999px;background:#fff;"></div>
-        </div>
-      </div>
-    </div>
-
-    <button data-rmtsave style="cursor:pointer;border:none;padding:13px;border-radius:12px;background:oklch(0.47 0.1 150);color:#fff;font-size:15px;font-weight:700;width:100%;">Salvar associação</button>
-
-    ${delBlock}
-  `;
-}
-
-function rmtRender() {
-  view.innerHTML = rmtUI.screen === 'edit' ? rmtEditHtml() : rmtListHtml();
-  rmtWire();
-}
-
-function rmtWire() {
-  const q = (sel) => view.querySelector(sel);
-
-  if (rmtUI.screen !== 'edit') {
-    // Botões "Acionar" (testar acionamento)
-    view.querySelectorAll('[data-rmtcmd]').forEach((btn) => {
-      btn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const zid = num(btn.dataset.rmtcmd);
-        await postJson('/remote/command', { targetZoneId: zid });
-        renderRemoto().catch(() => {});
-      });
-    });
-
-    // Nova associação
-    const nb = q('[data-rmtnew]');
-    if (nb) nb.addEventListener('click', () => rmtOpenNew());
-
-    // Editar associação (click no card, não no toggle)
-    view.querySelectorAll('[data-rmtedit]').forEach((el) => {
-      el.addEventListener('click', (e) => {
-        if (e.target.closest('[data-rmttoghab]')) return;
-        rmtOpenEdit(el.dataset.rmtedit);
-      });
-    });
-
-    // Toggle habilitado inline
-    view.querySelectorAll('[data-rmttoghab]').forEach((el) => {
-      el.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const id = el.dataset.rmttoghab;
-        const a = (rmtData.associations || []).find((x) => String(x.id) === String(id));
-        if (!a) return;
-        const r = await postJson('/remote', { id: a.id, enabled: !a.enabled, targetZoneId: num(a.targetZoneId), triggers: Array.isArray(a.triggers) ? a.triggers : [] });
-        if (r.ok) renderRemoto().catch(() => {});
-      });
-    });
-    return;
-  }
-
-  // Tela de edição
-  const cancel = q('[data-rmtcancel]');
-  if (cancel) cancel.addEventListener('click', () => { rmtUI = { screen: 'list', draft: null, errors: [], deleteConfirm: false }; rmtRender(); });
-
-  // Seleção do nó de gatilho
-  view.querySelectorAll('[data-rmttrignode]').forEach((b) => {
-    b.addEventListener('click', () => {
-      rmtUI.draft.triggerPickNode = num(b.dataset.rmttrignode);
-      rmtRender();
-    });
-  });
-
-  // Seleção de entrada do nó de gatilho (um por nó, substitui se já existir)
-  view.querySelectorAll('[data-rmttriginput]').forEach((b) => {
-    b.addEventListener('click', () => {
-      const inputIdx = num(b.dataset.rmttriginput);
-      const pickNode = num(rmtUI.draft.triggerPickNode);
-      const triggers = (rmtUI.draft.triggers || []).filter((t) => num(t.node) !== pickNode);
-      // Verifica se já estava selecionado (toggle off)
-      const wasSelected = (rmtUI.draft.triggers || []).some((t) => num(t.node) === pickNode && num(t.inputIdx) === inputIdx);
-      if (!wasSelected) {
-        triggers.push({ node: pickNode, inputIdx, ledSlot: 255 });
-      }
-      rmtUI.draft.triggers = triggers;
-      rmtRender();
-    });
-  });
-
-  // Seleção do nó de saída-alvo
-  view.querySelectorAll('[data-rmttargetnode]').forEach((b) => {
-    b.addEventListener('click', () => {
-      rmtUI.draft.targetPickNode = num(b.dataset.rmttargetnode);
-      rmtUI.draft.targetZoneId = null;
-      rmtRender();
-    });
-  });
-
-  // Seleção de zona-alvo
-  view.querySelectorAll('[data-rmtzone]').forEach((b) => {
-    b.addEventListener('click', () => {
-      rmtUI.draft.targetZoneId = num(b.dataset.rmtzone);
-      rmtRender();
-    });
-  });
-
-  // LED por gatilho
-  view.querySelectorAll('[data-rmtled]').forEach((b) => {
-    b.addEventListener('click', () => {
-      const nodeId = num(b.dataset.rmtled);
-      const slot = num(b.dataset.rmtledslot);
-      rmtUI.draft.triggers = (rmtUI.draft.triggers || []).map((t) =>
-        num(t.node) === nodeId ? { ...t, ledSlot: slot } : t
-      );
-      rmtRender();
-    });
-  });
-
-  const hab = q('[data-rmthab]');
-  if (hab) hab.addEventListener('click', () => { rmtUI.draft.enabled = !rmtUI.draft.enabled; rmtRender(); });
-
-  const save = q('[data-rmtsave]');
-  if (save) save.addEventListener('click', () => rmtSave());
-
-  const delReq = q('[data-rmtdelreq]');
-  if (delReq) delReq.addEventListener('click', () => { rmtUI.deleteConfirm = true; rmtRender(); });
-  const delCancel = q('[data-rmtdelcancel]');
-  if (delCancel) delCancel.addEventListener('click', () => { rmtUI.deleteConfirm = false; rmtRender(); });
-  const delConfirm = q('[data-rmtdelconfirm]');
-  if (delConfirm) delConfirm.addEventListener('click', () => rmtDelete());
-}
-
-function rmtOpenNew() {
-  const selfNode = rmtData.selfNode;
-  const firstNode = selfNode != null ? num(selfNode) : 0;
-  rmtUI = {
-    screen: 'edit', errors: [], deleteConfirm: false,
-    draft: { id: null, enabled: true, triggers: [], targetZoneId: null, targetPickNode: firstNode, triggerPickNode: firstNode, isEditing: false },
-  };
-  rmtRender();
-}
-
-function rmtOpenEdit(id) {
-  const a = (rmtData.associations || []).find((x) => String(x.id) === String(id));
-  if (!a) return;
-  const selfNode = rmtData.selfNode;
-  const firstNode = selfNode != null ? num(selfNode) : 0;
-  const triggers = Array.isArray(a.triggers) ? a.triggers : [];
-  const triggerPickNode = triggers.length ? num(triggers[0].node) : firstNode;
-  const targetZone = (rmtData.zones || []).find((z) => num(z.id) === num(a.targetZoneId));
-  const targetPickNode = targetZone ? num(targetZone.node) : firstNode;
-  rmtUI = {
-    screen: 'edit', errors: [], deleteConfirm: false,
-    draft: {
-      id: a.id,
-      enabled: !!a.enabled,
-      triggers: triggers.map((t) => ({ node: num(t.node), inputIdx: num(t.inputIdx), ledSlot: t.ledSlot != null ? num(t.ledSlot) : 255 })),
-      targetZoneId: num(a.targetZoneId),
-      targetPickNode,
-      triggerPickNode,
-      isEditing: true,
-    },
-  };
-  rmtRender();
-}
-
-async function rmtSave() {
-  const d = rmtUI.draft;
-  const errors = [];
-  if (!d.triggers || d.triggers.length === 0) errors.push('Selecione ao menos um gatilho.');
-  if (!d.targetZoneId) errors.push('Selecione a saída a ser acionada.');
-  if (errors.length) { rmtUI.errors = errors; rmtRender(); return; }
-  const payload = {
-    enabled: !!d.enabled,
-    targetZoneId: num(d.targetZoneId),
-    triggers: d.triggers.map((t) => ({ node: num(t.node), inputIdx: num(t.inputIdx), ledSlot: t.ledSlot != null ? num(t.ledSlot) : 255 })),
-  };
-  if (d.id != null) payload.id = d.id;
-  const r = await postJson('/remote', payload);
-  if (r.ok) { rmtUI = { screen: 'list', draft: null, errors: [], deleteConfirm: false }; renderRemoto().catch(() => {}); }
-  else { rmtUI.errors = (r.body && Array.isArray(r.body.errors)) ? r.body.errors : ['Falha ao salvar.']; rmtRender(); }
-}
-
-async function rmtDelete() {
-  const r = await postJson('/remote/delete', { id: rmtUI.draft.id });
-  if (r.ok) { rmtUI = { screen: 'list', draft: null, errors: [], deleteConfirm: false }; renderRemoto().catch(() => {}); }
-  else { rmtUI.deleteConfirm = false; rmtUI.errors = ['Falha ao excluir.']; rmtRender(); }
-}
-
-// Entrada do roteador: carrega GET /remote + dados auxiliares e cacheia em rmtData.
-async function renderRemoto() {
-  const [remoteData, overview, zones, stations] = await Promise.all([
-    getJson('/remote').catch(() => ({ status: [], associations: [] })),
-    getJson('/overview').catch(() => ({})),
-    getJson('/zones').catch(() => []),
-    getJson('/stations').catch(() => []),
-  ]);
-  rmtData = {
-    status: Array.isArray(remoteData.status) ? remoteData.status : [],
-    associations: Array.isArray(remoteData.associations) ? remoteData.associations : [],
-    zones: Array.isArray(zones) ? zones : [],
-    stations: Array.isArray(stations) ? stations : [],
-    selfNode: overview.selfNode != null ? num(overview.selfNode) : null,
-  };
-  // Poll apenas atualiza o cache; não reconstrói o DOM da tela de edição.
-  if (rmtUI.screen === 'edit') return;
-  rmtUI = { screen: 'list', draft: null, errors: [], deleteConfirm: false };
-  rmtRender();
-}
-
 // ===== Fonte de Acionamento =====
 
 // Estado local do módulo.
-let acData = { nodes: [] };
+let acData = { nodes: [], zones: [] };
 
 // Modos de entrada (InputMode): value, label, discouraged.
 const AC_MODE_OPTS = [
@@ -3513,7 +2654,7 @@ const AC_MODE_OPTS = [
   [5, 'Borda: so fecha', true],
 ];
 
-// Ponto colorido de estado ao vivo (reusa estilo de mrDotColor).
+// Ponto colorido de estado ao vivo.
 function acDotColor(active) {
   return active ? 'oklch(0.47 0.1 150)' : 'oklch(0.75 0.006 100)';
 }
@@ -3544,7 +2685,18 @@ function acInputHtml(inp, nodeNum) {
     return `<option value="${v}"${sel}>${esc(text)}</option>`;
   }).join('');
 
-  const zoneOpts = '<option value="0"' + (!inp.targetZoneId ? ' selected' : '') + '>— nenhuma —</option>';
+  // Reconstrói select de zona: 1 opção "nenhuma" + 1 por zona (evita duplicata se targetZoneId==0).
+  const allZones = Array.isArray(acData.zones) ? acData.zones : [];
+  const zoneOpts = '<option value="0"' + (!inp.targetZoneId ? ' selected' : '') + '>\u2014 nenhuma \u2014</option>' +
+    allZones.map((z) => {
+      const zid = num(z.id);
+      const znm = esc(z.name || ('Zona ' + zid));
+      const sel = zid === num(inp.targetZoneId) ? ' selected' : '';
+      return '<option value="' + zid + '"' + sel + '>' + znm + '</option>';
+    }).join('');
+
+  const invColor = invertido ? 'oklch(0.47 0.1 150)' : 'oklch(0.85 0.006 100)';
+  const invKnob = invertido ? '16px' : '2px';
 
   return `<div style="background:oklch(1 0 0);border:1px solid oklch(0.9 0.006 100);box-shadow:0 1px 3px rgba(0,0,0,0.05);border-radius:16px;padding:14px 16px;display:flex;flex-direction:column;gap:10px;">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
@@ -3560,11 +2712,20 @@ function acInputHtml(inp, nodeNum) {
     </div>
     <div style="display:flex;flex-direction:column;gap:6px;">
       <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;">Modo</div>
-      <select data-acmode data-node="${num(nodeNum)}" data-i="${num(inp.i)}" style="width:100%;padding:8px 10px;border:1px solid oklch(0.88 0.006 100);border-radius:8px;background:oklch(0.98 0.002 100);font-size:13px;color:oklch(0.22 0.008 100);">${modeOpts}</select>
+      <select data-acmode data-node="${num(nodeNum)}" data-i="${num(inp.i)}" data-invertido="${invertido ? '1' : '0'}" data-targetzoneid="${num(inp.targetZoneId)}" style="width:100%;padding:8px 10px;border:1px solid oklch(0.88 0.006 100);border-radius:8px;background:oklch(0.98 0.002 100);font-size:13px;color:oklch(0.22 0.008 100);">${modeOpts}</select>
     </div>
     <div style="display:flex;flex-direction:column;gap:6px;">
       <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;">Zona-alvo</div>
-      <select data-aczone data-node="${num(nodeNum)}" data-i="${num(inp.i)}" style="width:100%;padding:8px 10px;border:1px solid oklch(0.88 0.006 100);border-radius:8px;background:oklch(0.98 0.002 100);font-size:13px;color:oklch(0.22 0.008 100);">${zoneOpts}<option value="${num(inp.targetZoneId)}"${inp.targetZoneId ? ' selected' : ''}>${esc(acZoneName(inp.targetZoneId, inp.zoneName))}</option></select>
+      <select data-aczone data-node="${num(nodeNum)}" data-i="${num(inp.i)}" data-invertido="${invertido ? '1' : '0'}" data-mode="${mode}" style="width:100%;padding:8px 10px;border:1px solid oklch(0.88 0.006 100);border-radius:8px;background:oklch(0.98 0.002 100);font-size:13px;color:oklch(0.22 0.008 100);">${zoneOpts}</select>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px;">
+      <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;">Polaridade</div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <button data-acinvertido data-node="${num(nodeNum)}" data-i="${num(inp.i)}" data-mode="${mode}" data-targetzoneid="${num(inp.targetZoneId)}" data-invertido="${invertido ? '1' : '0'}" style="cursor:pointer;width:38px;height:22px;border-radius:999px;background:${invColor};border:none;position:relative;flex-shrink:0;">
+          <div style="position:absolute;top:2px;left:${invKnob};width:18px;height:18px;border-radius:999px;background:#fff;"></div>
+        </button>
+        <div style="font-size:12px;color:oklch(0.52 0.006 100);">${invertido ? 'Invertida (LOW aciona)' : 'Normal (HIGH aciona)'}</div>
+      </div>
     </div>
   </div>`;
 }
@@ -3598,36 +2759,75 @@ function acListHtml() {
   return sections.join('<div style="height:20px;"></div>');
 }
 
-// Desenha na view e vincula eventos de leitura.
+// Desenha na view e vincula handlers de POST (modo, zona-alvo, polaridade).
 function acRender() {
   view.innerHTML = `<div style="display:flex;flex-direction:column;gap:10px;">${acListHtml()}</div>`;
-  // Binding de leitura de selects (data-acmode / data-aczone prontos para Task 5 ligar POST).
+
+  // Envia POST e re-renderiza; em caso de falha imprime no console (sem alert).
+  async function acPost(payload) {
+    const r = await postJson('/acionamento/entrada', payload);
+    if (!r.ok) { console.warn('[AC] POST falhou', r.body); return; }
+    await routeAcionamento();
+  }
+
+  // Mudança de modo
   view.querySelectorAll('[data-acmode]').forEach((sel) => {
     sel.addEventListener('change', () => {
-      // Placeholder: Task 5 fara o POST /acionamento/config aqui.
-      console.log('[AC] modo changed node=' + sel.dataset.node + ' i=' + sel.dataset.i + ' => ' + sel.value);
+      acPost({
+        node: num(sel.dataset.node),
+        i: num(sel.dataset.i),
+        mode: num(sel.value),
+        invertido: sel.dataset.invertido === '1',
+        targetZoneId: num(sel.dataset.targetzoneid),
+      });
     });
   });
+
+  // Mudança de zona-alvo
   view.querySelectorAll('[data-aczone]').forEach((sel) => {
     sel.addEventListener('change', () => {
-      console.log('[AC] zona changed node=' + sel.dataset.node + ' i=' + sel.dataset.i + ' => ' + sel.value);
+      acPost({
+        node: num(sel.dataset.node),
+        i: num(sel.dataset.i),
+        mode: num(sel.dataset.mode),
+        invertido: sel.dataset.invertido === '1',
+        targetZoneId: num(sel.value),
+      });
+    });
+  });
+
+  // Toggle de polaridade
+  view.querySelectorAll('[data-acinvertido]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const cur = btn.dataset.invertido === '1';
+      acPost({
+        node: num(btn.dataset.node),
+        i: num(btn.dataset.i),
+        mode: num(btn.dataset.mode),
+        invertido: !cur,
+        targetZoneId: num(btn.dataset.targetzoneid),
+      });
     });
   });
 }
 
-// Entrada do roteador: carrega GET /acionamento e cacheia em acData.
+// Entrada do roteador: carrega GET /acionamento + zonas e cacheia em acData.
 async function routeAcionamento() {
-  const data = await getJson('/acionamento').catch(() => ({ nodes: [] }));
-  acData = { nodes: Array.isArray(data.nodes) ? data.nodes : [] };
+  const [data, zones] = await Promise.all([
+    getJson('/acionamento').catch(() => ({ nodes: [] })),
+    getJson('/zones').catch(() => []),
+  ]);
+  acData = {
+    nodes: Array.isArray(data.nodes) ? data.nodes : [],
+    zones: Array.isArray(zones) ? zones : [],
+  };
   acRender();
 }
 
 // ===== "Mais" (menu de telas secundárias) =====
 function renderMais() {
   const items = [
-    ['remoto', 'Modo Remoto', 'Botoeira em um no/gateway aciona saida em outro'],
-    ['acionamento', 'Fonte de Acionamento', 'Entradas fisicas de qualquer no acionam zonas'],
-    ['espelhamento', 'Modo Espelhamento', 'Entradas fisicas do gateway → saidas dos nos'],
+    ['acionamento', 'Acionamento', 'Entradas físicas de qualquer nó acionam zonas'],
     ['grupos', 'Grupos & Intertravamentos', 'Sequenciamento de bomba e regras de bloqueio'],
     ['niveis', 'Controle de nível', 'Controle de bomba por boia flutuante'],
     ['meteo', 'Meteorologia', 'Supressão por previsão de chuva (Open-Meteo)'],
@@ -4357,9 +3557,7 @@ const RENDER = {
   gpo: renderGpo,
   grupos: renderGruposInterlocks,
   niveis: renderNiveis,
-  remoto: renderRemoto,
   acionamento: routeAcionamento,
-  espelhamento: renderEspelhamento,
   auditlog: renderAuditLog,
   tamper: renderTamper,
   radio: renderRadio,
@@ -4372,14 +3570,12 @@ const RENDER = {
 
 // Rótulo mostrado na barra de volta ao entrar numa tela secundária via "Mais".
 const SECTION_LABELS = {
-  remoto: 'Modo Remoto',
-  acionamento: 'Fonte de Acionamento',
-  espelhamento: 'Espelhamento', grupos: 'Grupos & Intertravamentos', niveis: 'Nível',
+  acionamento: 'Acionamento', grupos: 'Grupos & Intertravamentos', niveis: 'Nível',
   sensores: 'Sensores', gpo: 'Saídas (GPO)', tamper: 'Tamper', auditlog: 'Log', radio: 'Enlace / Cobertura',
   wifi: 'Rede Wi-Fi', horario: 'Horário', meteo: 'Meteorologia', sistema: 'Sistema',
 };
 // Telas que se auto-atualizam (poll 3 s) via re-render completo.
-const POLLED = { overview: 1, stations: 1, sensores: 1, radio: 1, remoto: 1, espelhamento: 1, meteo: 1 };
+const POLLED = { overview: 1, stations: 1, sensores: 1, radio: 1, acionamento: 1, meteo: 1 };
 
 const subbar = document.getElementById('subbar');
 const subTitle = document.getElementById('subTitle');
