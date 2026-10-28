@@ -3498,11 +3498,136 @@ async function renderRemoto() {
   rmtRender();
 }
 
+// ===== Fonte de Acionamento =====
+
+// Estado local do módulo.
+let acData = { nodes: [] };
+
+// Modos de entrada (InputMode): value, label, discouraged.
+const AC_MODE_OPTS = [
+  [0, 'Desabilitada', false],
+  [1, 'Segue nivel', false],
+  [2, 'Borda: abre/fecha', false],
+  [3, 'Borda: toggle', true],
+  [4, 'Borda: so abre', true],
+  [5, 'Borda: so fecha', true],
+];
+
+// Ponto colorido de estado ao vivo (reusa estilo de mrDotColor).
+function acDotColor(active) {
+  return active ? 'oklch(0.47 0.1 150)' : 'oklch(0.75 0.006 100)';
+}
+
+// Resolve nome de zona pelo id (fallback gracioso).
+function acZoneName(zoneId, zoneName) {
+  if (zoneName) return zoneName;
+  if (zoneId) return 'Zona ' + num(zoneId);
+  return '—';
+}
+
+// HTML puro de uma entrada individual.
+function acInputHtml(inp, nodeNum) {
+  const active = !!inp.active;
+  const driving = !!inp.driving;
+  const invertido = !!inp.invertido;
+  const mode = num(inp.mode);
+  const dotColor = acDotColor(driving);
+  const stateLabel = driving ? 'acionando' : 'inativa';
+  const invBadge = invertido
+    ? `<span style="font-size:10px;font-weight:800;padding:2px 6px;border-radius:999px;background:oklch(0.55 0.16 30 / 0.12);color:oklch(0.45 0.16 30);margin-left:4px;">INV</span>`
+    : '';
+  const inputLabel = 'Entrada ' + (num(inp.i) + 1);
+
+  const modeOpts = AC_MODE_OPTS.map(([v, lbl, warn]) => {
+    const sel = v === mode ? ' selected' : '';
+    const text = warn ? lbl + ' ⚠' : lbl;
+    return `<option value="${v}"${sel}>${esc(text)}</option>`;
+  }).join('');
+
+  const zoneOpts = '<option value="0"' + (!inp.targetZoneId ? ' selected' : '') + '>— nenhuma —</option>';
+
+  return `<div style="background:oklch(1 0 0);border:1px solid oklch(0.9 0.006 100);box-shadow:0 1px 3px rgba(0,0,0,0.05);border-radius:16px;padding:14px 16px;display:flex;flex-direction:column;gap:10px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+      <div style="display:flex;align-items:center;gap:6px;">
+        <div style="font-size:13.5px;font-weight:700;color:oklch(0.22 0.008 100);">${esc(inputLabel)}</div>
+        ${invBadge}
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+        <div style="width:8px;height:8px;border-radius:999px;background:${acDotColor(active)};"></div>
+        <div style="width:8px;height:8px;border-radius:999px;background:${dotColor};"></div>
+        <div style="font-size:11px;color:oklch(0.52 0.006 100);">${stateLabel}</div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px;">
+      <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;">Modo</div>
+      <select data-acmode data-node="${num(nodeNum)}" data-i="${num(inp.i)}" style="width:100%;padding:8px 10px;border:1px solid oklch(0.88 0.006 100);border-radius:8px;background:oklch(0.98 0.002 100);font-size:13px;color:oklch(0.22 0.008 100);">${modeOpts}</select>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px;">
+      <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;">Zona-alvo</div>
+      <select data-aczone data-node="${num(nodeNum)}" data-i="${num(inp.i)}" style="width:100%;padding:8px 10px;border:1px solid oklch(0.88 0.006 100);border-radius:8px;background:oklch(0.98 0.002 100);font-size:13px;color:oklch(0.22 0.008 100);">${zoneOpts}<option value="${num(inp.targetZoneId)}"${inp.targetZoneId ? ' selected' : ''}>${esc(acZoneName(inp.targetZoneId, inp.zoneName))}</option></select>
+    </div>
+  </div>`;
+}
+
+// HTML puro de uma secao de no.
+function acNodeSectionHtml(n) {
+  const selfTag = n.isSelf
+    ? `<span style="font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:oklch(0.47 0.1 150 / 0.12);color:oklch(0.47 0.1 150);margin-left:6px;">Este no</span>`
+    : '';
+  const inputs = Array.isArray(n.inputs) ? n.inputs : [];
+  if (inputs.length === 0) return '';
+  const inputCards = inputs.map((inp) => acInputHtml(inp, n.node)).join('');
+  return `<div style="display:flex;flex-direction:column;gap:10px;">
+    <div style="display:flex;align-items:center;gap:4px;padding:0 2px;">
+      <div style="font-size:13px;font-weight:700;color:oklch(0.22 0.008 100);">${esc(n.name || nodeHex(n.node))}</div>
+      ${selfTag}
+    </div>
+    ${inputCards}
+  </div>`;
+}
+
+// Render principal (pura — nao toca DOM).
+function acListHtml() {
+  const nodes = Array.isArray(acData.nodes) ? acData.nodes : [];
+  // No local primeiro.
+  const sorted = [...nodes].sort((a, b) => (b.isSelf ? 1 : 0) - (a.isSelf ? 1 : 0));
+  const sections = sorted.map((n) => acNodeSectionHtml(n)).filter(Boolean);
+  if (!sections.length) {
+    return `<div style="font-size:12.5px;color:oklch(0.52 0.006 100);">Nenhuma entrada configurada. Configure entradas nos nos da rede.</div>`;
+  }
+  return sections.join('<div style="height:20px;"></div>');
+}
+
+// Desenha na view e vincula eventos de leitura.
+function acRender() {
+  view.innerHTML = `<div style="display:flex;flex-direction:column;gap:10px;">${acListHtml()}</div>`;
+  // Binding de leitura de selects (data-acmode / data-aczone prontos para Task 5 ligar POST).
+  view.querySelectorAll('[data-acmode]').forEach((sel) => {
+    sel.addEventListener('change', () => {
+      // Placeholder: Task 5 fara o POST /acionamento/config aqui.
+      console.log('[AC] modo changed node=' + sel.dataset.node + ' i=' + sel.dataset.i + ' => ' + sel.value);
+    });
+  });
+  view.querySelectorAll('[data-aczone]').forEach((sel) => {
+    sel.addEventListener('change', () => {
+      console.log('[AC] zona changed node=' + sel.dataset.node + ' i=' + sel.dataset.i + ' => ' + sel.value);
+    });
+  });
+}
+
+// Entrada do roteador: carrega GET /acionamento e cacheia em acData.
+async function routeAcionamento() {
+  const data = await getJson('/acionamento').catch(() => ({ nodes: [] }));
+  acData = { nodes: Array.isArray(data.nodes) ? data.nodes : [] };
+  acRender();
+}
+
 // ===== "Mais" (menu de telas secundárias) =====
 function renderMais() {
   const items = [
-    ['remoto', 'Modo Remoto', 'Botoeira em um nó/gateway aciona saída em outro'],
-    ['espelhamento', 'Modo Espelhamento', 'Entradas físicas do gateway → saídas dos nós'],
+    ['remoto', 'Modo Remoto', 'Botoeira em um no/gateway aciona saida em outro'],
+    ['acionamento', 'Fonte de Acionamento', 'Entradas fisicas de qualquer no acionam zonas'],
+    ['espelhamento', 'Modo Espelhamento', 'Entradas fisicas do gateway → saidas dos nos'],
     ['grupos', 'Grupos & Intertravamentos', 'Sequenciamento de bomba e regras de bloqueio'],
     ['niveis', 'Controle de nível', 'Controle de bomba por boia flutuante'],
     ['meteo', 'Meteorologia', 'Supressão por previsão de chuva (Open-Meteo)'],
@@ -4233,6 +4358,7 @@ const RENDER = {
   grupos: renderGruposInterlocks,
   niveis: renderNiveis,
   remoto: renderRemoto,
+  acionamento: routeAcionamento,
   espelhamento: renderEspelhamento,
   auditlog: renderAuditLog,
   tamper: renderTamper,
@@ -4247,6 +4373,7 @@ const RENDER = {
 // Rótulo mostrado na barra de volta ao entrar numa tela secundária via "Mais".
 const SECTION_LABELS = {
   remoto: 'Modo Remoto',
+  acionamento: 'Fonte de Acionamento',
   espelhamento: 'Espelhamento', grupos: 'Grupos & Intertravamentos', niveis: 'Nível',
   sensores: 'Sensores', gpo: 'Saídas (GPO)', tamper: 'Tamper', auditlog: 'Log', radio: 'Enlace / Cobertura',
   wifi: 'Rede Wi-Fi', horario: 'Horário', meteo: 'Meteorologia', sistema: 'Sistema',

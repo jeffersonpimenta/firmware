@@ -630,6 +630,56 @@ window.fetch = async function (url, opts) {
       associations: remoteAssociations,
     });
   }
+  if (path.startsWith('/acionamento')) {
+    // GET /acionamento — fonte de acionamento: nós com entradas físicas configuradas.
+    // Nó local (gateway, isSelf:true) com 2 entradas + 1 estação remota com 1 entrada.
+    const selfNode = STATE.overview.selfNode;
+    return mockResponse({
+      nodes: [
+        {
+          node: selfNode,
+          name: 'Gateway',
+          isSelf: true,
+          inputs: [
+            {
+              i: 0,
+              mode: 1,          // Segue nível
+              invertido: false,
+              active: true,
+              targetZoneId: 1,
+              zoneName: 'Horta',
+              driving: true,
+            },
+            {
+              i: 1,
+              mode: 0,          // Desabilitada
+              invertido: false,
+              active: false,
+              targetZoneId: 0,
+              zoneName: '',
+              driving: false,
+            },
+          ],
+        },
+        {
+          node: 0xa1b2c3d4,
+          name: 'Horta Norte',
+          isSelf: false,
+          inputs: [
+            {
+              i: 0,
+              mode: 2,          // Borda: abre/fecha
+              invertido: true,
+              active: false,
+              targetZoneId: 2,
+              zoneName: 'Pomar',
+              driving: false,
+            },
+          ],
+        },
+      ],
+    });
+  }
   if (path.startsWith('/mirror')) {
     // Constrói a resposta a partir de STATE.zones (fonteInput >= 0 → associação ativa).
     const ports = [0, 1, 2, 3].map((i) => {
