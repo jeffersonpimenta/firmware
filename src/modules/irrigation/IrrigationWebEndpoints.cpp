@@ -1165,18 +1165,24 @@ static void hAcionamento(HTTPRequest *req, HTTPResponse *res)
 static void hAcionamentoEntradaPost(HTTPRequest *req, HTTPResponse *res)
 {
     if (!gwReady()) { res->setStatusCode(404); return; }
-    char body[128];
+    // static: evita estouro de stack da task HTTP (ver hStations, hAcionamento).
+    static char body[256];
     size_t nb = readBody(req, body, sizeof(body));
     AcionamentoEntradaReq r{};
     ParseResult pr = parseAcionamentoEntrada(body, nb, r);
     if (!pr.ok) {
-        char e[192];
-        int n = snprintf(e, sizeof(e), "{\"ok\":false,\"errors\":[");
-        for (uint8_t k = 0; k < pr.errorCount && k < 4; k++) {
-            if (k > 0 && n < (int)sizeof(e) - 1) e[n++] = ',';
-            n += snprintf(e + n, sizeof(e) - (size_t)n, "\"%s\"", pr.errors[k].msg);
-        }
-        if (n < (int)sizeof(e) - 2) { e[n++] = ']'; e[n++] = '}'; e[n] = '\0'; }
+        static char e[256];
+        JsonWriter w(e, sizeof(e));
+        w.beginObject();
+        w.key("ok");
+        w.boolean(false);
+        w.key("errors");
+        w.beginArray();
+        for (uint8_t k = 0; k < pr.errorCount && k < 4; k++)
+            w.str(pr.errors[k].msg);
+        w.endArray();
+        w.endObject();
+        w.done();
         sendJson(res, e, 400);
         return;
     }
@@ -1197,7 +1203,8 @@ static void hAcionamentoEntradaPost(HTTPRequest *req, HTTPResponse *res)
 static void hAcionamentoEntradaDelete(HTTPRequest *req, HTTPResponse *res)
 {
     if (!gwReady()) { res->setStatusCode(404); return; }
-    char body[64];
+    // static: evita estouro de stack da task HTTP (ver hStations, hAcionamento).
+    static char body[64];
     size_t nb = readBody(req, body, sizeof(body));
     uint32_t node = 0;
     uint8_t idx = 0;
