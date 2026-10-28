@@ -1133,6 +1133,41 @@ static void hWeatherRefresh(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, ok ? "{\"ok\":true,\"staUp\":true}" : "{\"ok\":false,\"reason\":\"sem WiFi\"}");
 }
 
+// GET /api/irrigation/acionamento — grid agregado por nó (UI-Task 1)
+static void hAcionamento(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!gwReady()) {
+        res->setStatusCode(404);
+        return;
+    }
+    const IrrigationGateway &g = irrigationModule->gwState();
+    bool liveActive[IrrigationSettings::MAX_DIGITAL_IN];
+    for (uint8_t i = 0; i < IrrigationSettings::MAX_DIGITAL_IN; i++)
+        liveActive[i] = irrigationModule->gwInputActive(i);
+
+    // Configuração local do gateway (digitalInMode/activeLow) vem do blob da própria estação
+    // (gateway) salvo em disco. Aqui usamos o objeto settings carregado em memória.
+    // Como IrrigationModule não expõe o IrrigationSettings diretamente, lemos do módulo
+    // via StationEntry do próprio gateway — mas o gateway não tem StationEntry próprio.
+    // Alternativa: lemos o settings salvo em flash para montar o contexto.
+    IrrigationSettings selfSettings;
+    loadIrrigationSettings(selfSettings);
+
+    static char buf[4096];
+    size_t n = buildAcionamento(buf, sizeof(buf),
+                                irrigationModule->gwSelfNode(),
+                                irrigationModule->gwNodeLabel(),
+                                g.zones, g.remoteButtons,
+                                selfSettings, g.telemetry,
+                                liveActive);
+    if (!n) {
+        res->setStatusCode(500);
+        return;
+    }
+    sendJson(res, buf);
+}
+
 // ---------------------------------------------------------------------------
 // Registro
 // ---------------------------------------------------------------------------
@@ -1195,6 +1230,8 @@ void registerIrrigationHandlers(HTTPServer *server)
     server->registerNode(new ResourceNode("/api/irrigation/weather/rule", "POST", &hWeatherRulePost));
     server->registerNode(new ResourceNode("/api/irrigation/weather/rule/delete", "POST", &hWeatherRuleDelete));
     server->registerNode(new ResourceNode("/api/irrigation/weather/refresh", "POST", &hWeatherRefresh));
+    // UI-Task 1: grid de acionamento agregado por nó
+    server->registerNode(new ResourceNode("/api/irrigation/acionamento", "GET", &hAcionamento));
 }
 
 #endif

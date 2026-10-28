@@ -161,6 +161,11 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     bool   remoteApplyUpsert(const char *json, size_t n);     // parse → gwApplyRemoteUpsert
     bool   remoteApplyDelete(const char *json, size_t n);     // parse → gwApplyRemoteDelete
     bool   remoteRunCommand(const char *json, size_t n);      // parse → gwRunRemoteCommand
+    // UI-Task 1: estado ao vivo da InputActuationPolicy do nó local (i in [0,MAX_DIGITAL_IN)).
+    bool gwInputActive(uint8_t i) const
+    {
+        return i < IrrigationSettings::MAX_DIGITAL_IN && _inputPolicy[i].active();
+    }
 
     bool gwWeatherSetConfig(uint8_t enabled, int32_t latE7, int32_t lonE7);
     uint8_t gwWeatherUpsertRule(const WeatherRule &r); // retorna id atribuído (0=falha/sem espaço)

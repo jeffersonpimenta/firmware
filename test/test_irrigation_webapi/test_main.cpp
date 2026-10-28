@@ -1331,6 +1331,89 @@ static void test_buildRemoteStatus_dedupByOutput()
     TEST_ASSERT_NOT_NULL(strstr(buf, "\"on\":true"));
 }
 
+// ── UI-Task 1 — buildAcionamento ─────────────────────────────────────────────
+
+// selfNode deve ser o primeiro nó no array, com isSelf:true.
+static void test_buildAcionamento_selfNode_first()
+{
+    ZoneTable zones;
+    RemoteButtonTable rbt;
+    IrrigationSettings settings;
+    StationTelemetryCache cache;
+    bool liveActive[IrrigationSettings::MAX_DIGITAL_IN] = {false, false, false, false};
+
+    char buf[2048];
+    size_t n = buildAcionamento(buf, sizeof(buf), 0xDEADBEEFu, "Gateway",
+                                zones, rbt, settings, cache, liveActive);
+    TEST_ASSERT_GREATER_THAN(0, n);
+    // nodes[] deve existir e selfNode aparecer primeiro com isSelf:true
+    TEST_ASSERT_TRUE(contains(buf, "\"nodes\":[{"));
+    TEST_ASSERT_TRUE(contains(buf, "\"node\":3735928559")); // 0xDEADBEEF
+    TEST_ASSERT_TRUE(contains(buf, "\"isSelf\":true"));
+    TEST_ASSERT_TRUE(contains(buf, "\"name\":\"Gateway\""));
+}
+
+// Entrada local em modo FOLLOW ligada a zona via RemoteButtonTable:
+// mode==1 (FOLLOW), targetZoneId e zoneName corretos, driving conforme active.
+static void test_buildAcionamento_follow_mode_zone()
+{
+    ZoneTable zones;
+    Zone z; z.id = 3; snprintf(z.name, sizeof(z.name), "Canteiro"); z.node = 0x1111; z.tipo = 0; z.index = 0;
+    zones.upsert(z);
+
+    RemoteButtonTable rbt;
+    RemoteAssoc assoc; assoc.id = 1; assoc.enabled = 1; assoc.targetZoneId = 3;
+    assoc.triggers[0] = {0xABCD0000u, 0, 255}; // node=0xABCD0000, inputIdx=0
+    rbt.upsert(assoc);
+
+    IrrigationSettings settings;
+    settings.digitalInMode[0] = InputMode::FOLLOW; // mode=1
+    settings.digitalInActiveLow = 0; // invertido=false
+
+    StationTelemetryCache cache;
+    bool liveActive[IrrigationSettings::MAX_DIGITAL_IN] = {true, false, false, false};
+
+    char buf[2048];
+    size_t n = buildAcionamento(buf, sizeof(buf), 0xABCD0000u, "GW-Test",
+                                zones, rbt, settings, cache, liveActive);
+    TEST_ASSERT_GREATER_THAN(0, n);
+    // nó local primeiro, isSelf=true
+    TEST_ASSERT_TRUE(contains(buf, "\"isSelf\":true"));
+    // input[0]: mode=1 (FOLLOW)
+    TEST_ASSERT_TRUE(contains(buf, "\"mode\":1"));
+    // targetZoneId=3, zoneName=Canteiro
+    TEST_ASSERT_TRUE(contains(buf, "\"targetZoneId\":3"));
+    TEST_ASSERT_TRUE(contains(buf, "\"zoneName\":\"Canteiro\""));
+    // active=true, driving=true (mode!=DISABLED && active)
+    TEST_ASSERT_TRUE(contains(buf, "\"active\":true"));
+    TEST_ASSERT_TRUE(contains(buf, "\"driving\":true"));
+    // invertido=false
+    TEST_ASSERT_TRUE(contains(buf, "\"invertido\":false"));
+}
+
+// Estação com inputCount==0 não deve aparecer no JSON (não reportou ainda → DESCONHECIDA).
+static void test_buildAcionamento_station_inputCount_zero_omitted()
+{
+    ZoneTable zones;
+    RemoteButtonTable rbt;
+    IrrigationSettings settings;
+    StationTelemetryCache cache;
+
+    // Estação com inputCount=0 (não reportou ainda)
+    StationTelemetry tel; tel.node = 0xBBBBu; tel.inputCount = 0;
+    cache.update(tel);
+
+    bool liveActive[IrrigationSettings::MAX_DIGITAL_IN] = {false, false, false, false};
+    char buf[2048];
+    size_t n = buildAcionamento(buf, sizeof(buf), 0x1111u, "GW",
+                                zones, rbt, settings, cache, liveActive);
+    TEST_ASSERT_GREATER_THAN(0, n);
+    // Estação 0xBBBB não deve aparecer (inputCount==0)
+    TEST_ASSERT_FALSE(contains(buf, "\"node\":48059")); // 0xBBBB = 48059
+    // Apenas o nó local deve estar presente
+    TEST_ASSERT_TRUE(contains(buf, "\"isSelf\":true"));
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -1434,6 +1517,10 @@ void setup()
     // Modo Remoto — Task 5
     RUN_TEST(test_parseRemoteUpsert_and_validate);
     RUN_TEST(test_buildRemoteStatus_dedupByOutput);
+    // UI-Task 1 — grid de acionamento
+    RUN_TEST(test_buildAcionamento_selfNode_first);
+    RUN_TEST(test_buildAcionamento_follow_mode_zone);
+    RUN_TEST(test_buildAcionamento_station_inputCount_zero_omitted);
     exit(UNITY_END());
 }
 

@@ -3,10 +3,12 @@
 #include "modules/irrigation/HydraulicGroupTable.h"
 #include "modules/irrigation/InterlockTable.h"
 #include "modules/irrigation/IrrigationProtocol.h"
+#include "modules/irrigation/IrrigationSettings.h"
 #include "modules/irrigation/LevelControlTable.h"
 #include "modules/irrigation/ProgramScheduler.h"
 #include "modules/irrigation/RemoteButtonTable.h"
 #include "modules/irrigation/StationMonitor.h" // AlertCenter/Alert p/ buildAlerts
+#include "modules/irrigation/StationTelemetryCache.h"
 #include "modules/irrigation/SurveyLog.h"
 #include "modules/irrigation/WeatherConfig.h"
 #include "modules/irrigation/WeatherForecast.h"
@@ -365,5 +367,20 @@ size_t buildRemote(char *buf, size_t cap, const RemoteButtonTable &t, const Zone
 // on = zoneOpenById[targetZoneId]. Cada saída emitida UMA vez mesmo com múltiplas associações.
 size_t buildRemoteStatus(char *buf, size_t cap, const RemoteButtonTable &t, const ZoneTable &zones,
                          const bool *zoneOpenById /*index 0..255*/);
+
+// ── UI-Task 1 — grid de acionamento (fonte de acionamento por nó) ─────────────
+// Serializa: {"nodes":[{"node":<u32>,"name":"...","isSelf":true,
+//   "inputs":[{"i":0,"mode":<0..5>,"invertido":<bool>,"active":<bool>,
+//              "targetZoneId":<u8>,"zoneName":"...","driving":<bool>}]},...]}
+// Nó local (isSelf=true) primeiro; depois estações do cache com inputCount>0.
+// liveActive[MAX_DIGITAL_IN]: estado ao vivo das InputActuationPolicy do gateway (nó local).
+// selfName: label do nó local (long_name do gateway ou "Gateway").
+size_t buildAcionamento(char *buf, size_t cap,
+                        uint32_t selfNode, const char *selfName,
+                        const ZoneTable &zones,
+                        const RemoteButtonTable &remoteButtons,
+                        const IrrigationSettings &settings,
+                        const StationTelemetryCache &telemetry,
+                        const bool liveActive[IrrigationSettings::MAX_DIGITAL_IN]);
 
 } // namespace IrrigationWeb

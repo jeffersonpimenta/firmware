@@ -1739,4 +1739,86 @@ size_t buildRemoteStatus(char *buf, size_t cap, const RemoteButtonTable &t, cons
     return w.done();
 }
 
+// ── UI-Task 1 — grid de acionamento (fonte de acionamento por nó) ─────────────
+
+// Emite o array "inputs" de um nó, a partir de inputCount entradas com os modos/polaridade
+// fornecidos. liveActive != nullptr => usa para o nó local; nullptr => usa false (estações).
+static void emitInputsArray(JsonWriter &w, uint32_t node, uint8_t inputCount, const uint8_t *modes,
+                            uint8_t activeLowMask, const bool *liveActive,
+                            const RemoteButtonTable &remoteButtons, const ZoneTable &zones)
+{
+    const RemoteAssoc *found[RemoteButtonTable::MAX];
+    w.key("inputs");
+    w.beginArray();
+    for (uint8_t i = 0; i < inputCount && i < IrrigationSettings::MAX_DIGITAL_IN; i++) {
+        uint8_t mode = modes[i];
+        bool invertido = (activeLowMask >> i) & 1;
+        bool active = liveActive ? liveActive[i] : false;
+        // Zona-alvo: primeira associação cujo gatilho bate (node, i)
+        size_t nf = remoteButtons.findByTrigger(node, i, found, RemoteButtonTable::MAX);
+        uint8_t targetZoneId = (nf > 0) ? found[0]->targetZoneId : 0;
+        const Zone *z = (targetZoneId != 0) ? zones.byId(targetZoneId) : nullptr;
+        // driving = entrada habilitada e ativa (pressionada/assertida)
+        bool driving = (mode != (uint8_t)InputMode::DISABLED) && active;
+        w.beginObject();
+        w.keyNum("i", i);
+        w.keyNum("mode", mode);
+        w.keyBool("invertido", invertido);
+        w.keyBool("active", active);
+        w.keyNum("targetZoneId", targetZoneId);
+        w.keyStr("zoneName", z ? z->name : "");
+        w.keyBool("driving", driving);
+        w.endObject();
+    }
+    w.endArray();
+}
+
+size_t buildAcionamento(char *buf, size_t cap,
+                        uint32_t selfNode, const char *selfName,
+                        const ZoneTable &zones,
+                        const RemoteButtonTable &remoteButtons,
+                        const IrrigationSettings &settings,
+                        const StationTelemetryCache &telemetry,
+                        const bool liveActive[IrrigationSettings::MAX_DIGITAL_IN])
+{
+    JsonWriter w(buf, cap);
+    w.beginObject();
+    w.key("nodes");
+    w.beginArray();
+
+    // --- Nó local (gateway, isSelf=true) primeiro ---
+    {
+        uint8_t selfModes[IrrigationSettings::MAX_DIGITAL_IN];
+        for (uint8_t i = 0; i < IrrigationSettings::MAX_DIGITAL_IN; i++)
+            selfModes[i] = (uint8_t)settings.digitalInMode[i];
+        w.beginObject();
+        w.keyNum("node", (int64_t)selfNode);
+        w.keyStr("name", selfName ? selfName : "");
+        w.keyBool("isSelf", true);
+        emitInputsArray(w, selfNode, IrrigationSettings::MAX_DIGITAL_IN, selfModes,
+                        settings.digitalInActiveLow, liveActive, remoteButtons, zones);
+        w.endObject();
+    }
+
+    // --- Estações do cache com inputCount > 0 ---
+    for (size_t s = 0; s < StationTelemetryCache::MAX; s++) {
+        const StationTelemetry *t = telemetry.entryAt(s);
+        if (!t || t->node == 0 || t->inputCount == 0)
+            continue;
+        // Nome da estação não está no StationTelemetryCache; emite "" como placeholder.
+        w.beginObject();
+        w.keyNum("node", (int64_t)t->node);
+        w.keyStr("name", "");
+        w.keyBool("isSelf", false);
+        emitInputsArray(w, t->node, t->inputCount, t->digitalInMode,
+                        t->digitalInActiveLow, nullptr /*sem live p/ estação*/,
+                        remoteButtons, zones);
+        w.endObject();
+    }
+
+    w.endArray();
+    w.endObject();
+    return w.done();
+}
+
 } // namespace IrrigationWeb
