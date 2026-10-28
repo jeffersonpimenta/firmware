@@ -368,6 +368,24 @@ size_t buildRemote(char *buf, size_t cap, const RemoteButtonTable &t, const Zone
 size_t buildRemoteStatus(char *buf, size_t cap, const RemoteButtonTable &t, const ZoneTable &zones,
                          const bool *zoneOpenById /*index 0..255*/);
 
+// ── UI-Task 2 — upsert/delete de entrada de acionamento ──────────────────────
+
+struct AcionamentoEntradaReq {
+    uint32_t node = 0;
+    uint8_t i = 0;           // 0..3
+    uint8_t mode = 0;        // InputMode 0..5
+    bool invertido = false;
+    uint8_t targetZoneId = 0; // 0 = limpar
+};
+
+// {node, i, mode, invertido, targetZoneId}
+// Valida: i in 0..3, mode in 0..5. targetZoneId 0 = limpar (aceito).
+// node 0 rejeitado.
+ParseResult parseAcionamentoEntrada(const char *json, size_t len, AcionamentoEntradaReq &out);
+
+// {node, i} — i in 0..3, node != 0.
+ParseResult parseAcionamentoEntradaDelete(const char *json, size_t len, uint32_t &outNode, uint8_t &outI);
+
 // ── UI-Task 1 — grid de acionamento (fonte de acionamento por nó) ─────────────
 // Serializa: {"nodes":[{"node":<u32>,"name":"...","isSelf":true,
 //   "inputs":[{"i":0,"mode":<0..5>,"invertido":<bool>,"active":<bool>,

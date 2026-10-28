@@ -166,6 +166,13 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     {
         return i < IrrigationSettings::MAX_DIGITAL_IN && _inputPolicy[i].active();
     }
+    // UI-Task 2: accessor sem flash-read para o hAcionamento e handlers de upsert/delete.
+    const IrrigationSettings &getSettings() const { return settings; }
+    // UI-Task 2: upsert de uma entrada de acionamento (digitalInMode[i] + RemoteButtonTable + push).
+    // false se node desconhecido, i fora de 0..3 ou mode fora de 0..5; nó remoto: false se sem config adotada.
+    bool gwApplyAcionamentoEntrada(uint32_t node, uint8_t i, uint8_t mode, bool invertido, uint8_t targetZoneId);
+    // UI-Task 2: limpa entrada i de um nó (mode=DISABLED, targetZoneId=0).
+    bool gwApplyAcionamentoEntradaDelete(uint32_t node, uint8_t i);
 
     bool gwWeatherSetConfig(uint8_t enabled, int32_t latE7, int32_t lonE7);
     uint8_t gwWeatherUpsertRule(const WeatherRule &r); // retorna id atribuído (0=falha/sem espaço)

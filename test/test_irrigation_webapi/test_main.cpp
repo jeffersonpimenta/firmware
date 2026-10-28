@@ -1414,6 +1414,76 @@ static void test_buildAcionamento_station_inputCount_zero_omitted()
     TEST_ASSERT_TRUE(contains(buf, "\"isSelf\":true"));
 }
 
+// ── UI-Task 2 — parseAcionamentoEntrada / parseAcionamentoEntradaDelete ─────────
+
+static void test_parseAcionamentoEntrada_ok()
+{
+    const char *j = "{\"node\":123,\"i\":1,\"mode\":2,\"invertido\":true,\"targetZoneId\":5}";
+    AcionamentoEntradaReq out{};
+    ParseResult r = parseAcionamentoEntrada(j, strlen(j), out);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.errorCount ? r.errors[0].msg : "ok");
+    TEST_ASSERT_EQUAL_UINT32(123, out.node);
+    TEST_ASSERT_EQUAL_UINT8(1, out.i);
+    TEST_ASSERT_EQUAL_UINT8(2, out.mode);
+    TEST_ASSERT_TRUE(out.invertido);
+    TEST_ASSERT_EQUAL_UINT8(5, out.targetZoneId);
+}
+
+static void test_parseAcionamentoEntrada_rejects_bad_mode()
+{
+    const char *j = "{\"node\":123,\"i\":0,\"mode\":9,\"invertido\":false,\"targetZoneId\":0}";
+    AcionamentoEntradaReq out{};
+    ParseResult r = parseAcionamentoEntrada(j, strlen(j), out);
+    TEST_ASSERT_FALSE(r.ok);
+}
+
+static void test_parseAcionamentoEntrada_rejects_bad_i()
+{
+    const char *j = "{\"node\":123,\"i\":7,\"mode\":1,\"invertido\":false,\"targetZoneId\":0}";
+    AcionamentoEntradaReq out{};
+    ParseResult r = parseAcionamentoEntrada(j, strlen(j), out);
+    TEST_ASSERT_FALSE(r.ok);
+}
+
+static void test_parseAcionamentoEntrada_invertido_false_targetZone_zero()
+{
+    const char *j = "{\"node\":456,\"i\":3,\"mode\":5,\"invertido\":false,\"targetZoneId\":0}";
+    AcionamentoEntradaReq out{};
+    ParseResult r = parseAcionamentoEntrada(j, strlen(j), out);
+    TEST_ASSERT_TRUE(r.ok);
+    TEST_ASSERT_EQUAL_UINT32(456, out.node);
+    TEST_ASSERT_EQUAL_UINT8(3, out.i);
+    TEST_ASSERT_EQUAL_UINT8(5, out.mode);
+    TEST_ASSERT_FALSE(out.invertido);
+    TEST_ASSERT_EQUAL_UINT8(0, out.targetZoneId);
+}
+
+static void test_parseAcionamentoEntrada_rejects_node_zero()
+{
+    const char *j = "{\"node\":0,\"i\":0,\"mode\":1,\"invertido\":false,\"targetZoneId\":0}";
+    AcionamentoEntradaReq out{};
+    ParseResult r = parseAcionamentoEntrada(j, strlen(j), out);
+    TEST_ASSERT_FALSE(r.ok);
+}
+
+static void test_parseAcionamentoEntradaDelete_ok()
+{
+    const char *j = "{\"node\":999,\"i\":2}";
+    uint32_t node = 0; uint8_t idx = 99;
+    ParseResult r = parseAcionamentoEntradaDelete(j, strlen(j), node, idx);
+    TEST_ASSERT_TRUE(r.ok);
+    TEST_ASSERT_EQUAL_UINT32(999, node);
+    TEST_ASSERT_EQUAL_UINT8(2, idx);
+}
+
+static void test_parseAcionamentoEntradaDelete_rejects_bad_i()
+{
+    const char *j = "{\"node\":1,\"i\":4}"; // i=4 invalido
+    uint32_t node = 0; uint8_t idx = 0;
+    ParseResult r = parseAcionamentoEntradaDelete(j, strlen(j), node, idx);
+    TEST_ASSERT_FALSE(r.ok);
+}
+
 void setup()
 {
     initializeTestEnvironment();
@@ -1521,6 +1591,14 @@ void setup()
     RUN_TEST(test_buildAcionamento_selfNode_first);
     RUN_TEST(test_buildAcionamento_follow_mode_zone);
     RUN_TEST(test_buildAcionamento_station_inputCount_zero_omitted);
+    // UI-Task 2 — parseAcionamentoEntrada / parseAcionamentoEntradaDelete
+    RUN_TEST(test_parseAcionamentoEntrada_ok);
+    RUN_TEST(test_parseAcionamentoEntrada_rejects_bad_mode);
+    RUN_TEST(test_parseAcionamentoEntrada_rejects_bad_i);
+    RUN_TEST(test_parseAcionamentoEntrada_invertido_false_targetZone_zero);
+    RUN_TEST(test_parseAcionamentoEntrada_rejects_node_zero);
+    RUN_TEST(test_parseAcionamentoEntradaDelete_ok);
+    RUN_TEST(test_parseAcionamentoEntradaDelete_rejects_bad_i);
     exit(UNITY_END());
 }
 

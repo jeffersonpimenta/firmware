@@ -1146,26 +1146,71 @@ static void hAcionamento(HTTPRequest *req, HTTPResponse *res)
     for (uint8_t i = 0; i < IrrigationSettings::MAX_DIGITAL_IN; i++)
         liveActive[i] = irrigationModule->gwInputActive(i);
 
-    // Configuração local do gateway (digitalInMode/activeLow) vem do blob da própria estação
-    // (gateway) salvo em disco. Aqui usamos o objeto settings carregado em memória.
-    // Como IrrigationModule não expõe o IrrigationSettings diretamente, lemos do módulo
-    // via StationEntry do próprio gateway — mas o gateway não tem StationEntry próprio.
-    // Alternativa: lemos o settings salvo em flash para montar o contexto.
-    IrrigationSettings selfSettings;
-    loadIrrigationSettings(selfSettings);
-
     static char buf[4096];
     size_t n = buildAcionamento(buf, sizeof(buf),
                                 irrigationModule->gwSelfNode(),
                                 irrigationModule->gwNodeLabel(),
                                 g.zones, g.remoteButtons,
-                                selfSettings, g.telemetry,
+                                irrigationModule->getSettings(), g.telemetry,
                                 liveActive);
     if (!n) {
         res->setStatusCode(500);
         return;
     }
     sendJson(res, buf);
+}
+
+// POST /api/irrigation/acionamento/entrada — upsert de entrada de acionamento
+// Body: {node, i, mode, invertido, targetZoneId}
+static void hAcionamentoEntradaPost(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!gwReady()) { res->setStatusCode(404); return; }
+    char body[128];
+    size_t nb = readBody(req, body, sizeof(body));
+    AcionamentoEntradaReq r{};
+    ParseResult pr = parseAcionamentoEntrada(body, nb, r);
+    if (!pr.ok) {
+        char e[192];
+        int n = snprintf(e, sizeof(e), "{\"ok\":false,\"errors\":[");
+        for (uint8_t k = 0; k < pr.errorCount && k < 4; k++) {
+            if (k > 0 && n < (int)sizeof(e) - 1) e[n++] = ',';
+            n += snprintf(e + n, sizeof(e) - (size_t)n, "\"%s\"", pr.errors[k].msg);
+        }
+        if (n < (int)sizeof(e) - 2) { e[n++] = ']'; e[n++] = '}'; e[n] = '\0'; }
+        sendJson(res, e, 400);
+        return;
+    }
+    // Valida targetZoneId != 0 deve existir; 0 e aceito (limpar).
+    if (r.targetZoneId != 0 && !irrigationModule->gwState().zones.byId(r.targetZoneId)) {
+        sendJson(res, "{\"ok\":false,\"errors\":[\"zona inexistente\"]}", 400);
+        return;
+    }
+    if (!irrigationModule->gwApplyAcionamentoEntrada(r.node, r.i, r.mode, r.invertido, r.targetZoneId)) {
+        sendJson(res, "{\"ok\":false,\"errors\":[\"estacao nao configurada ou node desconhecido\"]}", 400);
+        return;
+    }
+    sendJson(res, "{\"ok\":true}");
+}
+
+// POST /api/irrigation/acionamento/entrada/delete — remove entrada de acionamento
+// Body: {node, i}
+static void hAcionamentoEntradaDelete(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!gwReady()) { res->setStatusCode(404); return; }
+    char body[64];
+    size_t nb = readBody(req, body, sizeof(body));
+    uint32_t node = 0;
+    uint8_t idx = 0;
+    ParseResult pr = parseAcionamentoEntradaDelete(body, nb, node, idx);
+    if (!pr.ok) {
+        sendJson(res, "{\"ok\":false,\"errors\":[\"body invalido\"]}", 400);
+        return;
+    }
+    if (!irrigationModule->gwApplyAcionamentoEntradaDelete(node, idx)) {
+        sendJson(res, "{\"ok\":false,\"errors\":[\"estacao nao configurada ou node desconhecido\"]}", 400);
+        return;
+    }
+    sendJson(res, "{\"ok\":true}");
 }
 
 // ---------------------------------------------------------------------------
@@ -1232,6 +1277,9 @@ void registerIrrigationHandlers(HTTPServer *server)
     server->registerNode(new ResourceNode("/api/irrigation/weather/refresh", "POST", &hWeatherRefresh));
     // UI-Task 1: grid de acionamento agregado por nó
     server->registerNode(new ResourceNode("/api/irrigation/acionamento", "GET", &hAcionamento));
+    // UI-Task 2: upsert/delete de entrada de acionamento
+    server->registerNode(new ResourceNode("/api/irrigation/acionamento/entrada", "POST", &hAcionamentoEntradaPost));
+    server->registerNode(new ResourceNode("/api/irrigation/acionamento/entrada/delete", "POST", &hAcionamentoEntradaDelete));
 }
 
 #endif

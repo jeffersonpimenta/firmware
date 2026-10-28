@@ -1739,6 +1739,42 @@ size_t buildRemoteStatus(char *buf, size_t cap, const RemoteButtonTable &t, cons
     return w.done();
 }
 
+// ── UI-Task 2 — upsert/delete de entrada de acionamento ──────────────────────
+
+ParseResult parseAcionamentoEntrada(const char *json, size_t len, AcionamentoEntradaReq &out)
+{
+    ParseResult r;
+    JsonReader rd(json, len);
+    int64_t node = 0, idx = -1, mode = -1, targetZoneId = 0;
+    bool invertido = false;
+    if (!rd.getInt("node", node) || node == 0) r.fail("node ausente/zero");
+    if (!rd.getInt("i", idx) || idx < 0 || idx > 3) r.fail("i fora de 0..3");
+    if (!rd.getInt("mode", mode) || mode < 0 || mode > 5) r.fail("mode fora de 0..5");
+    rd.getBool("invertido", invertido);
+    rd.getInt("targetZoneId", targetZoneId);
+    if (targetZoneId < 0 || targetZoneId > 255) r.fail("targetZoneId invalido");
+    if (!r.ok) return r;
+    out.node = (uint32_t)node;
+    out.i = (uint8_t)idx;
+    out.mode = (uint8_t)mode;
+    out.invertido = invertido;
+    out.targetZoneId = (uint8_t)targetZoneId;
+    return r;
+}
+
+ParseResult parseAcionamentoEntradaDelete(const char *json, size_t len, uint32_t &outNode, uint8_t &outI)
+{
+    ParseResult r;
+    JsonReader rd(json, len);
+    int64_t node = 0, idx = -1;
+    if (!rd.getInt("node", node) || node == 0) r.fail("node ausente/zero");
+    if (!rd.getInt("i", idx) || idx < 0 || idx > 3) r.fail("i fora de 0..3");
+    if (!r.ok) return r;
+    outNode = (uint32_t)node;
+    outI = (uint8_t)idx;
+    return r;
+}
+
 // ── UI-Task 1 — grid de acionamento (fonte de acionamento por nó) ─────────────
 
 // Emite o array "inputs" de um nó, a partir de inputCount entradas com os modos/polaridade

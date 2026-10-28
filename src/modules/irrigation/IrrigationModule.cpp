@@ -4592,6 +4592,94 @@ void IrrigationModule::gwPushStationBtnConfig(const RemoteAssoc &a)
 }
 
 // ---------------------------------------------------------------------------
+// UI-Task 2: upsert/delete de entrada de acionamento.
+// ---------------------------------------------------------------------------
+
+bool IrrigationModule::gwApplyAcionamentoEntrada(uint32_t node, uint8_t i, uint8_t mode,
+                                                 bool invertido, uint8_t targetZoneId)
+{
+    if (i >= IrrigationSettings::MAX_DIGITAL_IN) return false;
+    if (mode > 5) return false; // InputMode 0..5
+
+    // Lê os modos atuais do nó-alvo para fazer upsert apenas da entrada i.
+    uint8_t modes[IrrigationSettings::MAX_DIGITAL_IN] = {0};
+    uint8_t activeLow = 0;
+
+    if (node == nodeDB->getNodeNum()) {
+        // Nó local: lê de settings em memória.
+        for (uint8_t k = 0; k < IrrigationSettings::MAX_DIGITAL_IN; k++)
+            modes[k] = (uint8_t)settings.digitalInMode[k];
+        activeLow = settings.digitalInActiveLow;
+    } else {
+        // Estação remota: extrai do blob desejado.
+        const StationEntry *e = gateway.stations.byNode(node);
+        if (!e || e->desiredEpoch == 0)
+            return false; // estacao nao configurada
+        IrrigationSettings cfg;
+        if (!migrateIrrigationSettings(e->blob, sizeof(e->blob), cfg))
+            return false;
+        for (uint8_t k = 0; k < IrrigationSettings::MAX_DIGITAL_IN; k++)
+            modes[k] = (uint8_t)cfg.digitalInMode[k];
+        activeLow = cfg.digitalInActiveLow;
+    }
+
+    // Aplica a mudanca na entrada i.
+    modes[i] = mode;
+    // Ajusta bit de polaridade para a entrada i.
+    if (invertido)
+        activeLow |= (uint8_t)(1u << i);
+    else
+        activeLow &= (uint8_t)~(uint8_t)(1u << i);
+
+    // Empurra a nova config de entrada via gwPushStationInputConfig.
+    if (!gwPushStationInputConfig(node, modes, activeLow))
+        return false;
+
+    // Atualiza RemoteButtonTable: upsert (targetZoneId != 0) ou remove (targetZoneId == 0).
+    if (targetZoneId != 0) {
+        // Verifica se ja existe associacao para (node, i); atualiza ou cria.
+        const RemoteAssoc *found[RemoteButtonTable::MAX];
+        size_t nf = gateway.remoteButtons.findByTrigger(node, i, found, RemoteButtonTable::MAX);
+        if (nf > 0) {
+            // Muta o primeiro encontrado com o novo targetZoneId.
+            RemoteAssoc updated = *found[0];
+            updated.targetZoneId = targetZoneId;
+            gateway.remoteButtons.upsert(updated);
+        } else {
+            // Cria nova associacao.
+            RemoteAssoc a{};
+            a.id = gwAllocRemoteId();
+            if (a.id == 0) return false; // tabela cheia
+            a.enabled = 1;
+            a.targetZoneId = targetZoneId;
+            a.triggers[0] = {node, i, 255};
+            gateway.remoteButtons.upsert(a);
+        }
+        saveRemoteButtons();
+        gwPushRemoteLed();
+    } else {
+        // Limpar: remove associacoes cujo unico gatilho seja (node, i).
+        const RemoteAssoc *found[RemoteButtonTable::MAX];
+        size_t nf = gateway.remoteButtons.findByTrigger(node, i, found, RemoteButtonTable::MAX);
+        for (size_t fi = 0; fi < nf; fi++) {
+            uint8_t aid = found[fi]->id;
+            gateway.remoteButtons.removeById(aid);
+        }
+        if (nf > 0) {
+            saveRemoteButtons();
+            gwPushRemoteLed();
+        }
+    }
+    return true;
+}
+
+bool IrrigationModule::gwApplyAcionamentoEntradaDelete(uint32_t node, uint8_t i)
+{
+    // Delete = upsert com mode=DISABLED e targetZoneId=0.
+    return gwApplyAcionamentoEntrada(node, i, 0 /*DISABLED*/, false, 0);
+}
+
+// ---------------------------------------------------------------------------
 // Modo Remoto (Task 6 Step 8): apply-helpers de CRUD.
 // ---------------------------------------------------------------------------
 
