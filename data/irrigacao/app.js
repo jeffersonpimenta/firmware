@@ -606,7 +606,7 @@ async function renderZones() {
         stationName(stations, z.node) + ' · saída ' + num(z.index) + ' · ' + (TIPO_LABEL[num(z.tipo)] || '—');
       const supMsg = zoneSupMap[num(z.id)];
       const supLine = supMsg != null
-        ? `<div style="font-size:12px;color:oklch(0.55 0.14 230);margin-top:8px;">Suprimida por meteorologia — ${esc(supMsg)}</div>`
+        ? `<div class="gi-supress zone-sup">Suprimida por meteorologia — ${esc(supMsg)}</div>`
         : '';
       return `<div class="card zone">
       <div class="zrow">
