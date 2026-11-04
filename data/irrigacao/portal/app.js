@@ -21,14 +21,6 @@ function setHeader(s) {
 let svcInit = false; // Fase 8c: abas SERVICO ativadas 1× quando role==Serviço
 let lastRole = 0; // Fase 8d: última role vista, escolhe endpoint de survey
 
-async function j(url, opts) {
-  const r = await fetch(url, opts);
-  const t = await r.text();
-  let body = {};
-  try { body = t ? JSON.parse(t) : {}; } catch (e) {}
-  return { ok: r.ok, body };
-}
-
 function renderNode(s) {
   setHeader(s);
   const el = document.getElementById("nodeState");
@@ -449,9 +441,8 @@ document.getElementById("importReplaceBtn").addEventListener("click", () => impo
 // ── Aba Firmware — status OTA + armar atualização BLE ───────────────────────
 async function refreshFirmware() {
   try {
-    const r = await fetch("/api/portal/ota/status");
-    if (!r.ok) return;
-    const s = await r.json();
+    const { ok, body: s } = await j("/api/portal/ota/status");
+    if (!ok) return;
     document.getElementById("fw-version").textContent = s.fwVersion || "—";
     const loader = document.getElementById("fw-loader");
     if (!s.loaderPresent) loader.textContent = "OTA indisponível: loader ausente.";
@@ -468,12 +459,11 @@ document.getElementById("fw-arm").addEventListener("click", async () => {
   const btn = document.getElementById("fw-arm");
   btn.disabled = true;
   try {
-    const r = await fetch("/api/portal/ota", { method: "POST", body: "{}" });
-    if (r.ok) {
+    const { ok, body: j2 } = await j("/api/portal/ota", { method: "POST", body: "{}" });
+    if (ok) {
       document.getElementById("fw-loader").textContent =
         "Modo atualização armado. Use o app Meshtastic (BLE) para enviar o .bin.";
     } else {
-      const j2 = await r.json().catch(() => ({}));
       document.getElementById("fw-loader").textContent =
         "Falha: " + ((j2.errors && j2.errors[0]) || "erro");
       btn.disabled = false;

@@ -1,5 +1,6 @@
 // mock.js — API mockada para testes de UI offline
-// Inclua antes de app.js: <script src="mock.js"></script>
+// Ativado automaticamente via ?mock=1 na URL (injetado pelo index.html).
+// Pode também ser incluído manualmente com ?mock=1 na URL para testes offline.
 'use strict';
 
 const MOCK_DATA = {
@@ -481,6 +482,10 @@ function mockWeatherStatus() {
     anySuppressed: rules.some((r) => r.triggered),
   };
 }
+
+// Auto-ativação: instala o patch de fetch apenas quando ?mock (ou ?mock=1) está na URL.
+// Inclui suporte ao caminho manual (descomentando o <script> no HTML + ?mock=1 na URL).
+if (new URLSearchParams(location.search).has('mock')) {
 
 // Substitui fetch global
 const origFetch = window.fetch;
@@ -1064,3 +1069,4 @@ function handlePost(path, body) {
 }
 
 console.log('[MOCK] API mockada ativada. Dados fake em STATE global.');
+} // fim do bloco if has('mock')

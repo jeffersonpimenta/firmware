@@ -3,26 +3,10 @@
 // Zonas/Programas adicionados nas Tasks 12/13 estendendo o mapa RENDER.
 'use strict';
 
-const API = '/api/irrigation';
+var API = '/api/irrigation'; // var (não const) para ficar visível como window.API ao api.js
 const view = document.getElementById('view');
 let current = 'overview';
 let timer = null;
-
-async function getJson(path) {
-  const r = await fetch(API + path);
-  if (!r.ok) throw new Error(r.status);
-  return r.json();
-}
-
-async function postJson(path, body) {
-  const r = await fetch(API + path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  const j = await r.json().catch(() => ({}));
-  return { ok: r.ok, body: j };
-}
 
 // Escapa texto para inserção segura em HTML (nomes de estação vêm do usuário).
 function esc(v) {
@@ -2852,7 +2836,7 @@ async function downloadBackup(btn, statusEl) {
   statusEl.textContent = 'Gerando backup…';
   statusEl.className = 'sub';
   try {
-    const r = await fetch(API + '/export');
+    const r = await rawFetch(API + '/export');
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const text = await r.text();
     if (!text || text[0] !== '{') throw new Error('resposta vazia/inválida');
@@ -2886,7 +2870,7 @@ async function restoreBackup(btn, fileInput, statusEl) {
   try {
     const text = await file.text();
     if (!text || text[0] !== '{') throw new Error('arquivo inválido (não é JSON)');
-    const r = await fetch(API + '/import', { method: 'POST', body: text });
+    const r = await rawFetch(API + '/import', { method: 'POST', body: text });
     const json = await r.json();
     if (!r.ok) throw new Error(json.error || json.errors?.[0] || 'HTTP ' + r.status);
     if (!json.ok) throw new Error(json.error || 'falha no servidor');
@@ -3054,19 +3038,19 @@ let wfUseMock = false;
 // Fetch helpers exclusivos (não usam API = /api/irrigation).
 async function wfGet(path) {
   if (wfUseMock) return wfMockGet(path);
-  const r = await fetch(path);
-  const j = await r.json().catch(() => ({}));
-  return { ok: r.ok, status: r.status, body: j };
+  const r = await rawFetch(path);
+  const jj = await r.json().catch(() => ({}));
+  return { ok: r.ok, status: r.status, body: jj };
 }
 async function wfPost(path, body) {
   if (wfUseMock) return wfMockPost(path, body);
-  const r = await fetch(path, {
+  const r = await rawFetch(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  const j = await r.json().catch(() => ({}));
-  return { ok: r.ok, status: r.status, body: j };
+  const jj = await r.json().catch(() => ({}));
+  return { ok: r.ok, status: r.status, body: jj };
 }
 
 // Mock responses para testes (simula endpoints WiFi).

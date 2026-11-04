@@ -28,8 +28,8 @@
       <button data-tab="programs" class="tab">Programas</button>
       <button data-tab="mais" class="tab">Mais</button>
     </nav>
-    <!-- Mock local p/ preview da UI sem gateway (descomente para testar offline): -->
-    <!-- <script src="mock.js"></script> -->
+    <script>if(new URLSearchParams(location.search).has('mock')){document.write('<script src="mock.js"><\/script>');}</script>
+    <script src="api.js"></script>
     <script src="route.js"></script>
     <script src="app.js"></script>
   </body>
