@@ -1284,7 +1284,7 @@ function gpoRender() {
       </div>
       <div class="gpo-btns">
         <button class="btn outline sm" data-gpoopen="${num(z.id)}" data-bistable="${bistable ? 1 : 0}">Ligar</button>
-        <button class="btn solid sm" data-gpoclose="${num(z.id)}">Desligar</button>
+        <button class="btn ghost sm" data-gpoclose="${num(z.id)}">Desligar</button>
       </div>
       ${confirmBlock}
     </div>`;
