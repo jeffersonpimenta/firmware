@@ -637,26 +637,36 @@ async function renderZones() {
     });
   }
 
+  const runningId = num(ov && ov.runningZoneId);
+  const runningRemain = num(ov && ov.runningRemainMin);
+
   const cards = rows
     .map((z) => {
       z = z || {};
+      const zid = num(z.id);
       const meta =
         stationName(stations, z.node) + ' · saída ' + num(z.index) + ' · ' + (TIPO_LABEL[num(z.tipo)] || '—');
-      const supMsg = zoneSupMap[num(z.id)];
+      const supMsg = zoneSupMap[zid];
       const supLine = supMsg != null
-        ? `<div class="gi-supress zone-sup">Suprimida por meteorologia — ${esc(supMsg)}</div>`
+        ? `<div class="gi-supress zone-sup">Suprimida por meteorologia · ${esc(supMsg)}</div>`
         : '';
+      const isRunning = ov && ov.running && runningId === zid;
+      const abrirBtn = isRunning
+        ? `<div class="z-running">Aberta · ${runningRemain} min</div>`
+        : `<button class="btn outline sm" data-zopen="${zid}">Abrir ${num(z.padraoMin)} min</button>`;
       return `<div class="card zone">
       <div class="zrow">
         <div class="zinfo">
-          <div class="name">${esc(z.name)}</div>
+          <div class="zname-row">
+            <div class="name">${esc(z.name)}</div>
+            <button class="btn ghost sm" data-zedit="${zid}">Editar</button>
+          </div>
           <div class="sub">${meta}</div>
         </div>
-        <div class="zbtns">
-          <button class="btn ghost sm" data-zedit="${num(z.id)}">Editar</button>
-          <button class="btn outline sm" data-zopen="${num(z.id)}">Abrir</button>
-          <button class="btn solid sm" data-zclose="${num(z.id)}">Fechar</button>
-        </div>
+      </div>
+      <div class="z-actions">
+        ${abrirBtn}
+        <button class="btn solid sm" data-zclose="${zid}">Fechar</button>
       </div>
       ${supLine}</div>`;
     })
@@ -744,10 +754,9 @@ function zoneEditForm(z, rows, stations, selfNode) {
           : '') + `<button class="btn dangerline" data-delreq>Excluir zona</button>`
       : '';
 
+    showFormSubbar('‹ Zonas', editing ? 'Editar zona' : 'Nova zona', () => renderZones().catch(() => {}));
     view.innerHTML =
-      `<div class="backlink" data-zback>‹ Zonas</div>
-       <div class="ztitle">${editing ? 'Editar zona' : 'Nova zona'}</div>
-       ${errBox}
+      `${errBox}
        <div class="card form">
          <label class="fld">
            <span class="flbl">Nome</span>
@@ -771,7 +780,7 @@ function zoneEditForm(z, rows, stations, selfNode) {
            <span class="flbl">Tipo de saída</span>
            <div class="segrow">
              <button class="seg wide${st.tipo === 0 ? ' active' : ''}" data-tipo="0">Válvula</button>
-             <button class="seg wide${st.tipo === 1 ? ' active' : ''}" data-tipo="1">Motor / GPO</button>
+             <button class="seg wide${st.tipo === 1 ? ' active' : ''}" data-tipo="1">Motor/GPO</button>
            </div>
          </div>
          <div class="fld">
@@ -782,7 +791,6 @@ function zoneEditForm(z, rows, stations, selfNode) {
        <button class="btn solid big" data-zsave>Salvar zona</button>
        ${delBlock}`;
 
-    view.querySelector('[data-zback]').addEventListener('click', () => renderZones().catch(() => {}));
     view.querySelector('#z-name').addEventListener('input', (e) => {
       st.name = e.target.value;
     });
@@ -915,14 +923,14 @@ async function renderPrograms() {
     .map((p) => {
       p = p || {};
       const ativo = !!p.enabled;
-      const tglCls = ativo ? 'chip green' : 'chip';
-      const tglTxt = ativo ? 'Ativo' : 'Pausado';
+      const pid = num(p.id);
       return `<div class="card program">
-      <div class="pinfo" data-pedit="${num(p.id)}">
-        <div class="name">${esc(diasLabel(p.daysMask))} · ${esc(minToTime(p.startMinute))}</div>
+      <span class="time-col">${esc(minToTime(p.startMinute))}</span>
+      <div class="prog-info" data-pedit="${pid}">
+        <div class="name">${esc(diasLabel(p.daysMask))}</div>
         <div class="sub">${esc(seqText(p.steps, zl))}</div>
       </div>
-      <button class="ptoggle ${tglCls}" data-ptoggle="${num(p.id)}" data-enabled="${ativo ? 1 : 0}">${tglTxt}</button>
+      <div class="switch${ativo ? ' on' : ''}" data-ptoggle="${pid}" data-enabled="${ativo ? 1 : 0}"><span class="knob"></span></div>
     </div>`;
     })
     .join('');
@@ -989,10 +997,10 @@ function programEditForm(p, zones) {
           : '<div class="empty">Nenhuma zona — configure uma antes.</div>';
         const rem =
           st.steps.length > 1
-            ? `<span class="steprm" data-steprm="${i}">Remover</span>`
+            ? `<button class="btn ghost sm step-rm" data-steprm="${i}">Remover</button>`
             : '';
         return `<div class="card step">
-          <div class="stephdr"><span class="flbl">Etapa ${i + 1}</span>${rem}</div>
+          <div class="stephdr"><span class="step-badge">${i + 1}</span><span class="flbl">Etapa ${i + 1}</span>${rem}</div>
           <div class="pills">${zoneChips}</div>
           <div class="stepdur">
             <span class="durlbl">Duração (min)</span>
@@ -1014,10 +1022,9 @@ function programEditForm(p, zones) {
           : '') + `<button class="btn dangerline" data-delreq>Excluir programa</button>`
       : '';
 
+    showFormSubbar('‹ Programas', editing ? 'Editar programa' : 'Novo programa', () => renderPrograms().catch(() => {}));
     view.innerHTML =
-      `<div class="backlink" data-pback>‹ Programas</div>
-       <div class="ztitle">${editing ? 'Editar programa' : 'Novo programa'}</div>
-       ${errBox}
+      `${errBox}
        <div class="card form">
          <div class="fld">
            <span class="flbl">Dias</span>
@@ -1028,19 +1035,18 @@ function programEditForm(p, zones) {
            <input class="finput time" id="p-time" type="time" value="${esc(minToTime(st.startMinute))}">
          </div>
          <div class="toggle-row" data-pactive>
-           <span class="tlbl">Programa ativo</span>
+           <span class="tlbl">Ativo</span>
            <span class="switch${st.enabled ? ' on' : ''}"><span class="knob"></span></span>
          </div>
        </div>
+       <div class="sec-hdr"><span>Sequência</span><span class="sub">${st.steps.length} etapa${st.steps.length !== 1 ? 's' : ''} · ${totalMin} min total</span></div>
        <div class="fld">
-         <span class="flbl">Sequência · ${totalMin} min total</span>
          <div class="steps">${passos}</div>
          <button class="btn stepadd" data-stepadd ${st.steps.length >= 8 ? 'disabled' : ''}>+ Adicionar etapa</button>
        </div>
        <button class="btn solid big" data-psave>Salvar programa</button>
        ${delBlock}`;
 
-    view.querySelector('[data-pback]').addEventListener('click', () => renderPrograms().catch(() => {}));
     view.querySelector('#p-time').addEventListener('input', (e) => {
       st.startMinute = timeToMin(e.target.value);
     });
@@ -3566,7 +3572,24 @@ const POLLED = { overview: 1, stations: 1, sensores: 1, radio: 1, acionamento: 1
 
 const subbar = document.getElementById('subbar');
 const subTitle = document.getElementById('subTitle');
-document.getElementById('subBack').addEventListener('click', () => show('mais'));
+let subbackFn = null;
+document.getElementById('subBack').addEventListener('click', () => {
+  if (subbackFn) { subbackFn(); } else { show('mais'); }
+});
+
+// Exibe o subbar global para formulários de Zonas/Programas, com rótulo e ação de volta custom.
+function showFormSubbar(backLabel, title, backFn) {
+  const btn = document.getElementById('subBack');
+  if (btn) btn.textContent = backLabel;
+  subTitle.textContent = title;
+  subbackFn = () => {
+    subbar.classList.add('hidden');
+    subbackFn = null;
+    if (btn) btn.textContent = '‹ Mais';
+    backFn();
+  };
+  subbar.classList.remove('hidden');
+}
 
 function setActiveTab(tab) {
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === tab));
@@ -3585,6 +3608,7 @@ async function show(tab) {
   current = tab;
   setActiveTab(tab);
   subbar.classList.add('hidden');
+  subbackFn = null;
   clearTimer();
   const fn = RENDER[tab];
   if (!fn) {
@@ -3605,6 +3629,9 @@ async function showSub(name) {
   current = name;
   setActiveTab('mais');
   subTitle.textContent = SECTION_LABELS[name] || '';
+  const btn = document.getElementById('subBack');
+  if (btn) btn.textContent = '‹ Mais';
+  subbackFn = null;
   subbar.classList.remove('hidden');
   clearTimer();
   const fn = RENDER[name];
