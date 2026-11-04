@@ -1483,9 +1483,24 @@ function interlockForm(rule, stations, zones, sensors, allRules) {
 }
 
 // ===== Log de auditoria =====
+// Índices de ação considerados "Comandos" (abertura/fechamento/controle).
+const LOG_PILL_COMANDOS = new Set([0, 1, 2, 3, 4]); // Abrir, Fechar, Pulso, GPO ligar, GPO desligar
+// Índices de ação considerados "Alertas" (eventos de estado/segurança).
+const LOG_PILL_ALERTAS = new Set([8, 9, 10, 11, 14]); // Safe mode in/out, Tamper, Reboot, Cmd rejeitado
+
 async function renderAuditLog() {
   const records = (await getJson('/audit?fmt=json&n=500')) || [];
   const rows = Array.isArray(records) ? records : [];
+
+  // Pill filter state: 'todos' | 'comandos' | 'alertas'
+  let pillFilter = 'todos';
+
+  const pillsHtml = `
+    <div class="pills log-pills">
+      <button class="pill active" data-logpill="todos">Todos</button>
+      <button class="pill" data-logpill="comandos">Comandos</button>
+      <button class="pill" data-logpill="alertas">Alertas</button>
+    </div>`;
 
   const filterRow = `
     <div class="card form log-filters">
@@ -1515,16 +1530,11 @@ async function renderAuditLog() {
       <a class="btn ghost sm" href="${API}/audit?fmt=json&n=500" download="audit.json">Exportar JSON</a>
     </div>`;
 
-  const tableWrap = `<div class="log-table-wrap"><table class="log-table">
-    <thead><tr>
-      <th>Data/hora</th><th>Origem</th><th>Ação</th><th>Alvo</th><th>Res.</th><th>Estação</th><th>Seq</th>
-    </tr></thead>
-    <tbody id="log-tbody">
-      ${rows.length ? renderLogRows(rows) : '<tr><td colspan="7" class="empty">Log vazio.</td></tr>'}
-    </tbody>
-  </table></div>`;
+  const listWrap = `<div class="list" id="log-list">
+    ${rows.length ? renderLogRows(rows) : '<div class="log-empty">Log vazio.</div>'}
+  </div>`;
 
-  view.innerHTML = filterRow + tableWrap;
+  view.innerHTML = pillsHtml + filterRow + listWrap;
 
   function applyFilter() {
     const origVal = view.querySelector('#log-orig').value;
@@ -1538,15 +1548,26 @@ async function renderAuditLog() {
         const rDec = String(num(r.node));
         if (!rHex.includes(nodeVal) && !rDec.includes(nodeVal)) return false;
       }
+      const acao = num(r.acao);
+      if (pillFilter === 'comandos' && !LOG_PILL_COMANDOS.has(acao)) return false;
+      if (pillFilter === 'alertas' && !LOG_PILL_ALERTAS.has(acao)) return false;
       return true;
     });
-    const tbody = view.querySelector('#log-tbody');
-    if (tbody) tbody.innerHTML = filtered.length ? renderLogRows(filtered) : '<tr><td colspan="7" class="empty">Sem resultados.</td></tr>';
+    const list = view.querySelector('#log-list');
+    if (list) list.innerHTML = filtered.length ? renderLogRows(filtered) : '<div class="log-empty">Sem resultados.</div>';
   }
 
   view.querySelector('#log-orig').addEventListener('change', applyFilter);
   view.querySelector('#log-acao').addEventListener('change', applyFilter);
   view.querySelector('#log-node').addEventListener('input', applyFilter);
+
+  view.querySelectorAll('[data-logpill]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      pillFilter = btn.dataset.logpill;
+      view.querySelectorAll('[data-logpill]').forEach((b) => b.classList.toggle('active', b.dataset.logpill === pillFilter));
+      applyFilter();
+    });
+  });
 }
 
 function renderLogRows(rows) {
@@ -1555,15 +1576,16 @@ function renderLogRows(rows) {
     const origem = ORIGENS_LABEL[num(r.origem)] || ('orig ' + num(r.origem));
     const acao = ACOES_LABEL[num(r.acao)] || ('acao ' + num(r.acao));
     const resultado = RESULTADOS_LABEL[num(r.resultado)] || ('res ' + num(r.resultado));
-    return `<tr>
-      <td class="log-ts">${esc(fmtEpoch(r.ts))}</td>
-      <td>${esc(origem)}</td>
-      <td>${esc(acao)}</td>
-      <td class="mono">${esc(String(r.alvo == null ? '—' : r.alvo))}</td>
-      <td>${esc(resultado)}</td>
-      <td class="mono">${esc(nodeHex(r.node))}</td>
-      <td class="mono">${esc(String(r.seq == null ? '—' : r.seq))}</td>
-    </tr>`;
+    const alvoTxt = r.alvo == null ? '' : (' · alvo ' + esc(String(r.alvo)));
+    const seqTxt = r.seq == null ? '' : (' · seq ' + esc(String(r.seq)));
+    const secondary = esc(origem) + ' · ' + esc(nodeHex(r.node)) + ' · ' + esc(resultado) + alvoTxt + seqTxt;
+    return `<div class="log-row">
+      <span class="log-ts mono">${esc(fmtEpoch(r.ts))}</span>
+      <div class="log-row-main">
+        <span class="log-ac">${esc(acao)}</span>
+        <span class="sub">${secondary}</span>
+      </div>
+    </div>`;
   }).join('');
 }
 
@@ -1700,15 +1722,15 @@ async function renderGruposInterlocks() {
     const zonasNomes = (Array.isArray(g.zonas) ? g.zonas : []).map((id) => zoneName(zs, id)).join(', ') || '—';
     const maxTxt = num(g.maxOpen) ? num(g.maxOpen) : 'sem teto';
     const supMsg = groupSupMap[num(g.id)];
-    const supLine = supMsg != null ? `<div class="gi-supress">Suprimido por meteorologia — ${esc(supMsg)}</div>` : '';
+    const supLine = supMsg != null ? `<div class="gi-supress">Suprimido por meteorologia · ${esc(supMsg)}</div>` : '';
     return `<div class="gi-card" data-gedit="${num(g.id)}">
       <div class="gi-cardhdr">
         <div class="gi-name">${esc(g.nome || ('Grupo ' + num(g.id)))}</div>
         <span class="gi-editpill">Editar</span>
       </div>
       <div class="gi-line">Bomba: ${bombaNome} · Zonas: ${zonasNomes}</div>
-      <div class="gi-estado ${cls}" data-gstate="${num(g.id)}">${esc(estLabel)}</div>
-      <div class="gi-line gi-cfg">Sobreposição ${num(g.overlapS)}s · partida ${num(g.startAfterOpenS)}s após abrir · parada ${num(g.stopBeforeCloseS)}s antes de fechar<br>Mín. ${num(g.minOpen)} / máx. ${maxTxt} zonas abertas · máx. ${num(g.maxStartsHour)} partidas/hora</div>
+      <div class="chip-row"><span class="chip ${cls}" data-gstate="${num(g.id)}">${esc(estLabel)}</span></div>
+      <div class="gi-cfg-box gi-line gi-cfg">Sobreposição ${num(g.overlapS)}s · partida ${num(g.startAfterOpenS)}s após abrir · parada ${num(g.stopBeforeCloseS)}s antes de fechar<br>Mín. ${num(g.minOpen)} / máx. ${maxTxt} zonas abertas · máx. ${num(g.maxStartsHour)} partidas/hora</div>
       ${supLine}
     </div>`;
   }).join('');
@@ -1719,19 +1741,23 @@ async function renderGruposInterlocks() {
     const tipo = INTERLOCK_TIPO_LABEL[num(r.tipo)] || ('tipo ' + num(r.tipo));
     const zonasStr = r.todas ? 'Todas as zonas' : ('Zonas: ' + ((Array.isArray(r.zonas) ? r.zonas : []).map((id) => zoneName(zs, id)).join(', ') || '—'));
     return `<div class="gi-card" data-itledit="${num(r.id)}">
-      <div class="gi-cardhdr"><div class="gi-name">${esc(r.mensagem || tipo)}</div></div>
-      <div class="gi-line">${interlockDesc(r, sts, sens)} · ${esc(acao)}</div>
+      <div class="gi-cardhdr">
+        <div class="gi-name">${esc(r.mensagem || tipo)}</div>
+        <span class="chip neutral">${esc(acao)}</span>
+        <span class="chev">›</span>
+      </div>
+      <div class="gi-line">${interlockDesc(r, sts, sens)}</div>
       <div class="gi-line">${zonasStr}</div>
     </div>`;
   }).join('');
 
   view.innerHTML = `
     <div class="lvl-wrap">
-      <div class="gi-sechdr"><div class="lvl-seclbl">Grupos hidráulicos</div></div>
+      <div class="sec-hdr"><span>Grupos hidráulicos</span><span class="sec-count">${grows.length} grupo${grows.length !== 1 ? 's' : ''}</span></div>
       <div class="lvl-list">${groupCards || '<div class="lvl-empty">Nenhum grupo hidráulico.</div>'}</div>
       <button class="lvl-newbtn" data-gnew>+ Novo grupo</button>
 
-      <div class="gi-sechdr mt6"><div class="lvl-seclbl">Intertravamentos</div></div>
+      <div class="sec-hdr"><span>Intertravamentos</span><span class="sec-count">${irows.length} regra${irows.length !== 1 ? 's' : ''}</span></div>
       <button class="lvl-newbtn" data-itlnew>+ Novo intertravamento</button>
       <div class="lvl-list">${itlCards || '<div class="lvl-empty">Nenhuma regra de intertravamento.</div>'}</div>
     </div>`;
@@ -1755,7 +1781,7 @@ async function pollGroupStatus() {
     const el = view.querySelector(`[data-gstate="${num(s.id)}"]`);
     if (el) {
       const estado = s.estado || 'ocioso';
-      el.className = 'gi-estado ' + (GROUP_STATE_CLASS[estado] || 'gray');
+      el.className = 'chip ' + (GROUP_STATE_CLASS[estado] || 'gray');
       el.textContent = GROUP_STATE_LABEL[estado] || estado;
     }
   });
@@ -2716,13 +2742,13 @@ function acInputHtml(inp, nodeNum) {
       <div class="flbl">Zona-alvo</div>
       <select class="finput" data-aczone data-node="${num(nodeNum)}" data-i="${num(inp.i)}" data-invertido="${invertido ? '1' : '0'}" data-mode="${mode}">${zoneOpts}</select>
     </div>
-    <div class="fld">
-      <div class="flbl">Polaridade</div>
-      <div class="ac-polrow">
-        <button class="switch ac-sw${invertido ? ' on' : ''}" data-acinvertido data-node="${num(nodeNum)}" data-i="${num(inp.i)}" data-mode="${mode}" data-targetzoneid="${num(inp.targetZoneId)}" data-invertido="${invertido ? '1' : '0'}">
-          <div class="knob"></div>
-        </button>
-        <div class="ac-poltxt">${invertido ? 'Invertida (LOW aciona)' : 'Normal (HIGH aciona)'}</div>
+    <div class="ac-polrow tap-row" data-acinvertido data-node="${num(nodeNum)}" data-i="${num(inp.i)}" data-mode="${mode}" data-targetzoneid="${num(inp.targetZoneId)}" data-invertido="${invertido ? '1' : '0'}">
+      <div class="ac-pollabel">
+        <span class="ac-poltitle">Polaridade invertida</span>
+        <span class="ac-poltxt">${invertido ? 'LOW aciona a zona' : 'HIGH aciona a zona'}</span>
+      </div>
+      <div class="switch ac-sw${invertido ? ' on' : ''}">
+        <div class="knob"></div>
       </div>
     </div>
   </div>`;
@@ -2759,7 +2785,7 @@ function acListHtml() {
 
 // Desenha na view e vincula handlers de POST (modo, zona-alvo, polaridade).
 function acRender() {
-  view.innerHTML = `<div class="ac-sec">${acListHtml()}</div>`;
+  view.innerHTML = `<p class="screen-sub">Entradas físicas de qualquer nó acionam zonas.</p><div class="ac-sec">${acListHtml()}</div>`;
 
   // Envia POST e re-renderiza; em caso de falha imprime no console (sem alert).
   async function acPost(payload) {
