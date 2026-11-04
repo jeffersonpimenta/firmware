@@ -4,6 +4,7 @@
 #include "modules/irrigation/IrrigationEndpointHelpers.h" // sendJson/sendParseErrors/readBody
 #include "modules/irrigation/IrrigationModule.h"
 #include "modules/irrigation/PortalApi.h"
+#include "modules/irrigation/ServicePortalApi.h" // buildStationConfig (hNodeBackup)
 
 #include <Arduino.h>
 #include <cstdlib> // malloc/free explícitos (hLog aloca ~10 KB no heap)
@@ -294,6 +295,27 @@ static void hOtaArm(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, "{\"ok\":true,\"reboot\":true}");
 }
 
+// GET /api/portal/node/backup — baixa a config deste nó (sem PSK), p/ restaurar depois.
+static void hNodeBackup(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!irrigationModule) {
+        res->setStatusCode(404);
+        return;
+    }
+    const size_t cap = 4096;
+    char *buf = (char *)malloc(cap);
+    if (!buf) {
+        res->setStatusCode(500);
+        return;
+    }
+    size_t n = buildStationConfig(irrigationModule->getSettings(), buf, cap);
+    res->setHeader("Content-Type", "application/json");
+    res->setHeader("Content-Disposition", "attachment; filename=\"no-backup.json\"");
+    res->write((uint8_t *)buf, n);
+    free(buf);
+}
+
 // ── Wi-Fi management (§7) ────────────────────────────────────────────────────
 // WiFi só existe no gateway (nós são bateria/solar — não provisionam WiFi nem varrem redes).
 // Todos os endpoints WiFi respondem 404 fora do gateway.
@@ -438,6 +460,7 @@ void registerIrrigationPortalHandlers(HTTPServer *server)
 {
     server->registerNode(new ResourceNode("/api/portal/provision", "POST", &hProvision));
     server->registerNode(new ResourceNode("/api/portal/node", "GET", &hNode));
+    server->registerNode(new ResourceNode("/api/portal/node/backup", "GET", &hNodeBackup));
     server->registerNode(new ResourceNode("/api/portal/node/pulse", "POST", &hNodePulse));
     server->registerNode(new ResourceNode("/api/portal/net/roster", "GET", &hNetRoster));
     server->registerNode(new ResourceNode("/api/portal/net/command", "POST", &hNetCommand));

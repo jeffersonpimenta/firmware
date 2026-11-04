@@ -230,6 +230,25 @@ static void test_parseStationConfig_digitalInMode_clampsInvalid()
     TEST_ASSERT_EQUAL_INT((int)InputMode::DISABLED,  (int)b.digitalInMode[3]);
 }
 
+// ── Backup round-trip do próprio settings ────────────────────────────────────
+
+static void test_node_backup_roundtrips_own_settings()
+{
+    IrrigationSettings s{};
+    s.numValves = 3;
+    s.hbMinutes = 7;
+    s.latE7 = -229071000;
+    char buf[2048];
+    size_t n = buildStationConfig(s, buf, sizeof(buf));
+    TEST_ASSERT_TRUE(n > 0);
+    IrrigationSettings back{};
+    ParseResult r = parseStationConfig(buf, n, back);
+    TEST_ASSERT_TRUE(r.ok);
+    TEST_ASSERT_EQUAL(3, back.numValves);
+    TEST_ASSERT_EQUAL(7, back.hbMinutes);
+    TEST_ASSERT_EQUAL(-229071000, back.latE7);
+}
+
 // ── Aba Log ──────────────────────────────────────────────────────────────────
 
 struct RamLogReader : IServiceLogReader {
@@ -270,6 +289,7 @@ void setup()
     RUN_TEST(test_buildStationConfig_emits_digitalInMode);
     RUN_TEST(test_stationConfig_digitalInMode_roundtrip);
     RUN_TEST(test_parseStationConfig_digitalInMode_clampsInvalid);
+    RUN_TEST(test_node_backup_roundtrips_own_settings);
     RUN_TEST(test_parseNodeConfigReq);
     RUN_TEST(test_parseNodeAction);
     RUN_TEST(test_buildServiceLog);
