@@ -100,36 +100,51 @@ async function renderOverview() {
     </div>`;
 
   if (ov.running) {
+    const runZone = (Array.isArray(zones) ? zones : []).find((z) => z && num(z.id) === num(ov.runningZoneId));
+    const runZoneName = runZone && runZone.name ? esc(runZone.name) : '';
+    const runZoneLabel = runZoneName ? `Zona ${num(ov.runningZoneId)} · ${runZoneName}` : `Zona ${num(ov.runningZoneId)}`;
+    const maxMin = runZone && num(runZone.maxMin) > 0 ? num(runZone.maxMin) : num(ov.runningRemainMin) || 1;
+    const pct = Math.min(100, Math.max(0, Math.round(((maxMin - num(ov.runningRemainMin)) / maxMin) * 100)));
     html += `<div class="card greenbox exec">
-      <div class="lbl green">Em execução agora</div>
-      <div class="big">Zona ${num(ov.runningZoneId)} · restam ${num(ov.runningRemainMin)} min</div>
+      <div class="lbl green">Irrigando agora</div>
+      <div class="exec-name-row">
+        <span class="big">${runZoneLabel}</span>
+        <span class="exec-remain">${num(ov.runningRemainMin)} min</span>
+      </div>
+      <div class="exec-bar"><div class="exec-fill" style="width:${pct}%"></div></div>
       <div class="asub">Fecha sozinha pelo fail-safe local ao expirar.</div>
     </div>`;
   }
 
   if (ov.pairingPending) {
-    html += `<div class="card amberbox pair-goto" data-goto-stations role="button" tabindex="0">Pareamento pendente — nó ${nodeHex(ov.pairingNodeId)} · expira em ${num(ov.pairingSecondsLeft)}s <span class="chev">›</span></div>`;
+    html += `<div class="card amberbox pair-goto" data-goto-stations role="button" tabindex="0">
+      <div class="pair-body">
+        <span class="pair-title">Pareamento pendente</span>
+        <span class="sub">${nodeHex(ov.pairingNodeId)} · expira em ${num(ov.pairingSecondsLeft)} s</span>
+      </div>
+      <span class="chev">›</span>
+    </div>`;
   }
   if (!ov.hasRtc) {
-    html += `<div class="card amberbox">Sem relógio — cronograma inativo. Acionamento por entrada segue operando.</div>`;
+    html += `<div class="card amberbox"><span class="rtc-bold">Sem relógio.</span> Cronograma inativo; acionamento por entrada segue operando.</div>`;
   }
 
   const al = Array.isArray(alerts) ? alerts : [];
-  html += `<div class="sec-title">Alertas não reconhecidos</div>`;
-  html += al.length
-    ? '<div class="alerts">' +
+  if (al.length) {
+    html += `<div class="sec-hdr"><span>Alertas</span><span class="sub">${al.length} não reconhecidos</span></div>`;
+    html += '<div class="list">' +
       al
         .map((a) => {
           const info = ALERT_INFO[num(a.type)] || ['Alerta', 'amber'];
-          return `<div class="card alert">
+          return `<div class="list-row">
           <span class="dot ${info[1]}"></span>
           <div class="ainfo"><div class="amsg">${esc(info[0])}</div><div class="asub">${esc(stationName(stations, a.node))} · ${fmtSince(a.ageS)}</div></div>
           <button class="btn ghost sm" data-ack data-node="${num(a.node)}" data-type="${num(a.type)}" data-arg="${num(a.arg)}" data-at="${num(a.atMs)}">Reconhecer</button>
         </div>`;
         })
         .join('') +
-      '</div>'
-    : '<div class="empty">Nenhum alerta pendente.</div>';
+      '</div>';
+  }
 
   if (ov.hasRtc) {
     const now = new Date();
@@ -140,16 +155,17 @@ async function renderOverview() {
       .sort((a, b) => a.inMin - b.inMin)
       .slice(0, 3);
     if (ups.length) {
-      html +=
-        `<div class="sec-title">Próximas execuções</div>` +
+      html += `<div class="sec-hdr"><span>Próximas execuções</span></div>`;
+      html += '<div class="list">' +
         ups
           .map(
-            ({ p }) => `<div class="card">
-             <div class="amsg">${esc(diasLabel(p.daysMask))} · ${esc(minToTime(p.startMinute))}</div>
-             <div class="asub">${esc(seqText(p.steps, zones))}</div>
+            ({ p }) => `<div class="list-row list-row-up">
+             <span class="up-time">${esc(minToTime(p.startMinute))}</span>
+             <div class="up-info"><div class="amsg">${esc(diasLabel(p.daysMask))}</div><div class="asub">${esc(seqText(p.steps, zones))}</div></div>
            </div>`
           )
-          .join('');
+          .join('') +
+        '</div>';
     }
   }
 
@@ -197,6 +213,20 @@ function stationPills(s) {
   return p.map(([c, t]) => `<span class="chip ${c}">${esc(t)}</span>`).join('');
 }
 
+// Chips extras (exclui sync — sync é exibido na linha do nome no card de lista).
+function stationExtraChips(s) {
+  const p = [];
+  const f = num(s.flags);
+  if (f & 1) p.push(['red', 'Tamper']);
+  if (f & 2) p.push(['red', 'Modo seguro']);
+  if (f & 4) p.push(['amber', 'Hibernando']);
+  const vb = num(s.vbatCentiV);
+  if (vb && vb < 1180) p.push(['red', 'Bateria crítica']);
+  else if (vb && vb < 1220) p.push(['amber', 'Bateria em aviso']);
+  if (s.snrQuarterDb != null && num(s.snrQuarterDb) / 4 < 3) p.push(['amber', 'Enlace degradando']);
+  return p.map(([c, t]) => `<span class="chip ${c}">${esc(t)}</span>`).join('');
+}
+
 function stationByNode(list, node) {
   return (Array.isArray(list) ? list : []).find((x) => x && num(x.node) === num(node));
 }
@@ -223,11 +253,16 @@ async function renderStations() {
       .map((s) => {
         s = s || {};
         const name = s.name ? esc(s.name) : nodeHex(s.node);
+        const [syncCls, syncTxt] = stationSyncLabel(s.sync);
+        const extraChips = stationExtraChips(s);
         return `<div class="card station" data-node="${nodeHex(s.node)}" role="button" tabindex="0">
       <div class="st-main">
-        <div class="name">${name}</div>
-        <div class="sub">${fmtSince(s.secsSinceHeard)} · ${fmtVolts(s.vbatCentiV)}</div>
-        <div class="chips">${stationPills(s)}</div>
+        <div class="st-name-row">
+          <span class="name">${name}</span>
+          <span class="chip ${syncCls}">${esc(syncTxt)}</span>
+        </div>
+        <div class="sub">${nodeHex(s.node)} · ${fmtSince(s.secsSinceHeard)}</div>
+        ${extraChips ? `<div class="chips">${extraChips}</div>` : ''}
       </div>
       <span class="chev">›</span>
     </div>`;
@@ -335,7 +370,7 @@ function pulseBlock(s) {
     .join('');
   let action;
   if (stSheetPulse === 'enviando') action = '<div class="pulse-state">Enviando comando…</div>';
-  else if (stSheetPulse === 'aberto') action = '<div class="pulse-state open">Aberto — fechará automaticamente</div>';
+  else if (stSheetPulse === 'aberto') action = '<div class="pulse-state open">Aberto · fecha sozinho</div>';
   else if (stSheetPulse === 'fechado') action = '<div class="pulse-state">Fechado — teste concluído</div>';
   else action = '<button class="btn outline big" id="stPulse">Teste de pulso (10 s)</button>';
   return `<div class="ml-wrap">
@@ -391,15 +426,14 @@ function stationSheetView(s, name, syncCls, syncTxt) {
       <div class="sg-box"><div class="sg-lbl">SNR / RSSI</div><div class="sg-val sm">${snr} / ${rssi}</div></div>
       <div class="sg-box"><div class="sg-lbl">Reboots</div><div class="sg-val">${num(s.rebootCount)}</div></div>
     </div>
-    <div class="sg-box wide"><div class="sg-lbl">Coordenadas</div><div class="sg-val sm">${esc(coords)}</div></div>
-    <div class="sg-box wide">
-      <div class="sg-lbl">Heartbeat &amp; limiares de bateria</div>
-      <div class="sg-val sm">${hb}</div>
-      ${limiares ? `<div class="sg-note">${limiares}</div>` : ''}
+    <div class="sg-kv-list">
+      <div class="sg-kv-row"><span class="sg-k">Coordenadas</span><span class="sg-v mono">${esc(coords)}</span></div>
+      <div class="sg-kv-row"><span class="sg-k">Heartbeat</span><span class="sg-v">${hb}</span></div>
+      <div class="sg-kv-row"><span class="sg-k">Limiares de bateria</span><span class="sg-v">${limiares || '—'}</span></div>
     </div>
     ${pulseBlock(s)}
     <div class="ml-wrap">
-      <div class="sg-lbl">Log remoto — esta estação</div>
+      <div class="sg-lbl">Log remoto · esta estação</div>
       <div class="ml-list">${stationMiniLog(s.node)}</div>
     </div>
     <button class="btn solid big" id="stClose">Fechar</button>`;
@@ -431,6 +465,8 @@ function stationSheetEdit(s) {
     </div>
     ${errs}
     <div class="card form sheet-form">
+      <label class="fld"><span class="flbl">Nome</span>
+        <input class="finput" id="edNome" maxlength="15" value="${esc(d.nome)}"></label>
       <label class="fld"><span class="flbl">Heartbeat (min)</span>
         <input class="finput" id="edHb" type="number" min="1" max="1440" value="${esc(d.hbMinutes)}"></label>
       <div class="frow">
@@ -446,9 +482,9 @@ function stationSheetEdit(s) {
           <input class="finput" id="edLon" type="number" step="0.00001" value="${esc(d.lon)}"></label>
       </div>
     </div>
-    <div class="frow sheet-actions">
+    <div class="sheet-actions-grid">
       <button class="btn ghost sm" id="stEditCancel">Cancelar</button>
-      <button class="btn solid sm grow" id="stEditSave">Salvar</button>
+      <button class="btn solid sm" id="stEditSave">Salvar</button>
     </div>
     ${del}`;
 }
@@ -458,6 +494,7 @@ function enterStationEdit(s) {
   stSheetErrors = [];
   stSheetDeleteConfirm = false;
   stSheetDraft = {
+    nome: s.name || '',
     hbMinutes: s.hbMinutes != null ? num(s.hbMinutes) : 10,
     vbatAvisoV: ((s.vbatAvisoCentiV != null ? num(s.vbatAvisoCentiV) : 1220) / 100).toFixed(1),
     vbatCriticaV: ((s.vbatCriticaCentiV != null ? num(s.vbatCriticaCentiV) : 1180) / 100).toFixed(1),
@@ -472,6 +509,7 @@ async function saveStationEdit() {
   // Contrato inteiro (o parser do firmware é int-only): volts→centiV, graus→×1e7.
   const payload = {
     node: openStationNode,
+    name: g('edNome').value.slice(0, 15),
     hbMinutes: Number(g('edHb').value),
     vbatAvisoCentiV: Math.round(Number(g('edAviso').value) * 100),
     vbatCriticaCentiV: Math.round(Number(g('edCritica').value) * 100),
