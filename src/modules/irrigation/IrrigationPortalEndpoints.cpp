@@ -3,6 +3,7 @@
 
 #include "modules/irrigation/IrrigationEndpointHelpers.h" // sendJson/sendParseErrors/readBody
 #include "modules/irrigation/IrrigationModule.h"
+#include "modules/irrigation/IrrigationWebApi.h"    // JsonReader
 #include "modules/irrigation/PortalApi.h"
 #include "modules/irrigation/ServicePortalApi.h" // buildStationConfig (hNodeBackup)
 
@@ -488,6 +489,25 @@ static void hWifiToggle(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, "{\"ok\":true}");
 }
 
+// POST /api/portal/ble — janela BLE sob demanda (5/10/15 min): WiFi do portal cai, BLE on por N min,
+// device reboota e volta sozinho. Espelha hBleWindow do gateway.
+static void hPortalBle(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!irrigationModule) { res->setStatusCode(404); return; }
+    char body[128];
+    size_t nb = readBody(req, body, sizeof(body));
+    JsonReader rd(body, nb);
+    int64_t minutes = 0;
+    if (!rd.getInt("minutes", minutes) || (minutes != 5 && minutes != 10 && minutes != 15)) {
+        sendJson(res, "{\"ok\":false,\"errors\":[\"minutes deve ser 5, 10 ou 15\"]}", 400);
+        return;
+    }
+    char out[64];
+    snprintf(out, sizeof(out), "{\"ok\":true,\"minutes\":%d}", (int)minutes);
+    sendJson(res, out); // responde antes do reboot
+    irrigationModule->startBleWindow((uint8_t)minutes);
+}
+
 void registerIrrigationPortalHandlers(HTTPServer *server)
 {
     server->registerNode(new ResourceNode("/api/portal/provision", "POST", &hProvision));
@@ -496,6 +516,7 @@ void registerIrrigationPortalHandlers(HTTPServer *server)
     server->registerNode(new ResourceNode("/api/portal/node/restore", "POST", &hNodeRestore));
     server->registerNode(new ResourceNode("/api/portal/node/reboot", "POST", &hNodeReboot));
     server->registerNode(new ResourceNode("/api/portal/node/reset", "POST", &hNodeReset));
+    server->registerNode(new ResourceNode("/api/portal/ble", "POST", &hPortalBle));
     server->registerNode(new ResourceNode("/api/portal/node/pulse", "POST", &hNodePulse));
     server->registerNode(new ResourceNode("/api/portal/net/roster", "GET", &hNetRoster));
     server->registerNode(new ResourceNode("/api/portal/net/command", "POST", &hNetCommand));
