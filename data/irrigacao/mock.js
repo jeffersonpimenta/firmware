@@ -509,9 +509,21 @@ window.fetch = async function (url, opts) {
         if (body.enabled) wifiState.scanInProgress = true;
         return mockResponse({ ok: true });
       }
+      // Sistema do nó
+      if (ppath === '/node/restore') return mockResponse({ ok: true, epoch: 15 });
+      if (ppath === '/node/reboot') return mockResponse({ ok: true, reboot: true });
+      if (ppath === '/node/reset') { STATE.portalNode.provisioned = false; return mockResponse({ ok: true, reboot: true }); }
+      if (ppath === '/ble') { const b = opts.body ? JSON.parse(opts.body) : {}; return mockResponse({ ok: true, minutes: b.minutes }); }
       // Demais POSTs (/wifi/scan, /wifi/connect, /wifi/forget) caem nos handlers
       // dedicados abaixo, que tratam método — não retornar aqui.
     }
+    if (ppath.startsWith('/node/backup')) return mockResponse({
+      version: 7, role: STATE.portalNode.role, configEpoch: STATE.portalNode.configEpoch, boundGateway: STATE.portalNode.boundGateway,
+      numValves: 2, hbMinutes: 10, vbatMinAbrirCentiV: 1150, maxOpenConfigS: 7200, cmdRatePerMin: 12, pulseMs: 80,
+      pinsHbridgeA: [25, 26], pinsHbridgeB: [27, 14], pinsDigitalIn: [32, 33], pinsGpo: [12],
+      digitalInActiveLow: 0, pinBtn: 0, pinLed: 2, pinTamper: 34, hwFlags: 1, latE7: -229071000, lonE7: -470632000,
+      sensores: [], localInterlocks: [],
+    });
     if (ppath.startsWith('/node')) return mockResponse(STATE.portalNode);
     if (ppath.startsWith('/sensors')) return mockResponse(STATE.portalSensors);
     if (ppath.startsWith('/log')) return mockResponse(STATE.portalLog);
