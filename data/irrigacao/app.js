@@ -1204,31 +1204,32 @@ async function renderSensores() {
   const cards = rows.map((st) => {
     st = st || {};
     const nome = st.nome ? esc(st.nome) : nodeHex(st.node);
-    const tamper = st.tamper ? `<span class="chip red">tamper</span>` : '';
+    const tamper = st.tamper ? `<span class="chip red">Tamper</span>` : '';
     const sensores = Array.isArray(st.sensores) ? st.sensores : [];
     const sRows = sensores.map((s) => {
       s = s || {};
       const tipoStr = num(s.tipo) === 0 ? 'Digital' : 'Analógico';
       const valStr = esc(fmtSensorVal(s.tipo, s.valor));
       const nomeAtual = esc(s.nome || '');
-      return `<tr>
-        <td>${num(s.idx)}</td>
-        <td><input class="finput sn-input" data-node="${num(st.node)}" data-sensor="${num(s.idx)}" maxlength="15" placeholder="(sem nome)" value="${nomeAtual}"></td>
-        <td>${tipoStr}</td>
-        <td class="mono">${valStr}</td>
-      </tr>`;
+      return `<div class="sn-row">
+        <span class="sn-idx">${num(s.idx)}</span>
+        <input class="finput sn-input" data-node="${num(st.node)}" data-sensor="${num(s.idx)}" maxlength="15" placeholder="(sem nome)" value="${nomeAtual}">
+        <span>${tipoStr}</span>
+        <span class="mono sn-val">${valStr}</span>
+      </div>`;
     }).join('');
 
     return `<div class="card">
       <div class="sens-hdr">
         <span class="name">${nome}</span>
-        <span class="sub">${nodeHex(st.node)}</span>
+        <span class="mono sn-hex">${nodeHex(st.node)}</span>
+        <span class="sn-spacer"></span>
         ${tamper}
       </div>
-      <table class="sens-table">
-        <thead><tr><th>#</th><th>Nome</th><th>Tipo</th><th>Valor</th></tr></thead>
-        <tbody>${sRows || '<tr><td colspan="4" class="empty">Sem sensores</td></tr>'}</tbody>
-      </table>
+      <div class="sn-grid-hdr">
+        <span>#</span><span>Nome</span><span>Tipo</span><span class="sn-val">Valor</span>
+      </div>
+      ${sRows || '<div class="empty sn-empty">Sem sensores</div>'}
     </div>`;
   }).join('');
 
@@ -1249,50 +1250,76 @@ async function renderSensores() {
 }
 
 // ===== GPO =====
-async function renderGpo() {
-  const [zones, stations] = await Promise.all([getJson('/zones'), getJson('/stations').catch(() => [])]);
-  const rows = Array.isArray(zones) ? zones : [];
-  const gpos = rows.filter((z) => z && num(z.tipo) === 1);
+let gpoPendingId = 0; // id do GPO biestável com confirmação pendente (0 = nenhum)
+let gpoData = { gpos: [], stations: [] }; // cache para re-render sem fetch
 
+function gpoRender() {
+  const { gpos, stations } = gpoData;
   if (!gpos.length) {
     view.innerHTML = '<div class="empty">Nenhuma zona do tipo GPO configurada.</div>';
     return;
   }
-
   const cards = gpos.map((z) => {
     z = z || {};
     const meta = stationName(stations, z.node) + ' · saída ' + num(z.index);
-    const bistable = !num(z.padraoMin); // durationMin 0 = biestável
+    const bistable = !num(z.padraoMin);
     const tag = bistable ? '<span class="chip amber">biestável</span>' : '<span class="chip green">temporizado</span>';
-    return `<div class="card zone">
-      <div class="zrow">
-        <div class="zinfo">
+    const pending = bistable && gpoPendingId === num(z.id);
+    const confirmBlock = pending
+      ? `<div class="card redbox gpo-confirm">
+          <div class="qtext">GPO biestável: fica ligada até ser desligada manualmente. Confirma?</div>
+          <div class="btnrow">
+            <button class="btn ghost sm" data-gpocancel="${num(z.id)}">Cancelar</button>
+            <button class="btn danger sm" data-gpoconfirm="${num(z.id)}" data-bistable="1">Confirmar</button>
+          </div>
+        </div>`
+      : '';
+    return `<div class="card gpo-card">
+      <div class="gpo-top">
+        <div class="gpo-info">
           <div class="name">${esc(z.name)}</div>
           <div class="sub">${meta}</div>
-          <div class="mt6">${tag}</div>
         </div>
-        <div class="zbtns">
-          <button class="btn outline sm" data-gpoopen="${num(z.id)}" data-bistable="${bistable ? 1 : 0}">Ligar</button>
-          <button class="btn solid sm" data-gpoclose="${num(z.id)}">Desligar</button>
-        </div>
+        ${tag}
       </div>
+      <div class="gpo-btns">
+        <button class="btn outline sm" data-gpoopen="${num(z.id)}" data-bistable="${bistable ? 1 : 0}">Ligar</button>
+        <button class="btn solid sm" data-gpoclose="${num(z.id)}">Desligar</button>
+      </div>
+      ${confirmBlock}
     </div>`;
   }).join('');
-
   view.innerHTML = cards;
+  gpoWire();
+}
 
+function gpoWire() {
+  const { gpos } = gpoData;
   view.querySelectorAll('[data-gpoopen]').forEach((b) => {
-    b.addEventListener('click', async () => {
+    b.addEventListener('click', () => {
       const bistable = b.dataset.bistable === '1';
-      if (bistable && !confirm('Esta GPO é biestável e permanecerá ligada até ser desligada manualmente. Confirma?')) return;
-      const z = gpos.find((x) => x && num(x.id) === num(b.dataset.gpoopen));
-      const durationS = bistable ? 0 : Math.min(7200, Math.max(1, num(z && z.padraoMin) * 60 || 60));
-      const r = await postJson('/command', { kind: 'open', zoneId: num(b.dataset.gpoopen), durationS });
+      const id = num(b.dataset.gpoopen);
+      if (bistable) { gpoPendingId = id; gpoRender(); return; }
+      const z = gpos.find((x) => x && num(x.id) === id);
+      const durationS = Math.min(7200, Math.max(1, num(z && z.padraoMin) * 60 || 60));
+      postJson('/command', { kind: 'open', zoneId: id, durationS }).then((r) => {
+        if (!r.ok) alert('Falha: ' + (Array.isArray(r.body && r.body.errors) ? r.body.errors.join(', ') : 'erro'));
+        renderGpo().catch(() => {});
+      });
+    });
+  });
+  view.querySelectorAll('[data-gpoconfirm]').forEach((b) => {
+    b.addEventListener('click', async () => {
+      const id = num(b.dataset.gpoconfirm);
+      gpoPendingId = 0;
+      const r = await postJson('/command', { kind: 'open', zoneId: id, durationS: 0 });
       if (!r.ok) alert('Falha: ' + (Array.isArray(r.body && r.body.errors) ? r.body.errors.join(', ') : 'erro'));
       renderGpo().catch(() => {});
     });
   });
-
+  view.querySelectorAll('[data-gpocancel]').forEach((b) => {
+    b.addEventListener('click', () => { gpoPendingId = 0; gpoRender(); });
+  });
   view.querySelectorAll('[data-gpoclose]').forEach((b) => {
     b.addEventListener('click', async () => {
       const r = await postJson('/command', { kind: 'close', zoneId: num(b.dataset.gpoclose) });
@@ -1300,6 +1327,14 @@ async function renderGpo() {
       renderGpo().catch(() => {});
     });
   });
+}
+
+async function renderGpo() {
+  const [zones, stations] = await Promise.all([getJson('/zones'), getJson('/stations').catch(() => [])]);
+  const rows = Array.isArray(zones) ? zones : [];
+  gpoData = { gpos: rows.filter((z) => z && num(z.tipo) === 1), stations: stations || [] };
+  gpoPendingId = 0;
+  gpoRender();
 }
 
 // ===== Intertravamentos =====
@@ -1603,21 +1638,23 @@ async function renderTamper() {
     st = st || {};
     const nome = st.nome ? esc(st.nome) : nodeHex(st.node);
     const tamperBadge = st.tamper
-      ? `<span class="chip red">tamper ativo</span>`
-      : `<span class="chip green">normal</span>`;
+      ? `<span class="chip red">Tamper</span>`
+      : `<span class="chip green">Normal</span>`;
     return `<div class="card">
       <div class="sens-hdr">
-        <span class="name">${nome}</span>
+        <div>
+          <div class="name">${nome}</div>
+          <div class="sub maint-sub">${nodeHex(st.node)}</div>
+        </div>
         ${tamperBadge}
       </div>
-      <div class="sub maint-sub">${nodeHex(st.node)}</div>
       <div class="maint-row">
-        <label class="fld maint-fld">
+        <label class="maint-fld">
           <span class="flbl">Janela (min)</span>
           <input class="finput maint-min" type="number" min="1" max="60" value="10" data-node="${num(st.node)}">
         </label>
         <button class="btn outline sm maint-open" data-node="${num(st.node)}">Abrir janela</button>
-        <button class="btn ghost sm maint-close" data-node="${num(st.node)}">Fechar agora</button>
+        <button class="btn outline sm maint-close" data-node="${num(st.node)}">Fechar agora</button>
       </div>
     </div>`;
   }).join('');
@@ -1932,23 +1969,24 @@ function nvDigitalSensors(sensors, node) {
   const st = (Array.isArray(sensors) ? sensors : []).find((x) => x && num(x.node) === num(node));
   return st && Array.isArray(st.sensores) ? st.sensores.filter((s) => s && num(s.tipo) === 0) : [];
 }
-// Card de uma regra na lista (mini-tanque + resumo). Puro.
+// Card de uma regra na lista (layout padrão tappable com ›). Puro.
 function nvCardHtml(r, stations, zones, sensors) {
   r = r || {};
   const est = stationName(stations, r.sensorNode);
   const sen = sensorName(sensors, r.sensorNode, r.sensorIdx);
   const zon = zoneName(zones, r.targetZoneId);
+  const polLabel = r.ligaQuandoAtivo ? 'ativa' : 'inativa';
   return `<div class="lvl-card" data-nedit="${num(r.id)}">
-    <div class="lvl-tank"></div>
     <div class="lvl-cardbody">
       <div class="lvl-hdr">${est} · boia "${sen}"</div>
-      <div class="lvl-line">liga bomba ▸ ${zon}</div>
-      <div class="lvl-pol">quando boia ${polarityText(r.ligaQuandoAtivo)}</div>
+      <div class="lvl-line">Liga bomba ▸ ${zon}</div>
+      <div class="lvl-pol">Quando a boia está ${polLabel}</div>
       <div class="lvl-chips">
         <span class="lvl-pill-chip">min ${fmtDur(r.minOnS)}/${fmtDur(r.minOffS)}</span>
         <span class="lvl-pill-chip warn">sem sinal ${fmtDur(r.staleTimeoutS)} ⚠</span>
       </div>
     </div>
+    <span class="chev">›</span>
   </div>`;
 }
 // Tela-lista. `data` cai para nvData em produção; explícito nos testes. Puro.
@@ -1963,7 +2001,7 @@ function nvListHtml(data) {
     : `<div class="lvl-empty">Nenhuma regra de nível.</div>`;
   return `<div class="lvl-wrap">
     <div class="lvl-title">Controle de nível</div>
-    <div class="lvl-sub">Liga/desliga a bomba conforme a boia do reservatório</div>
+    <div class="lvl-sub">Liga e desliga a bomba conforme a boia do reservatório.</div>
     ${limit}${newBtn}
     <div class="lvl-list">${cards}</div>
   </div>`;
@@ -2016,7 +2054,7 @@ function nvEditHtml(draft, data, ui) {
         <div class="lvl-pills">${boiaPills}</div>
       </div>
       <div class="lvl-sec">
-        <div class="lvl-seclbl">Polaridade — quando a bomba liga</div>
+        <div class="lvl-seclbl">Polaridade: quando a bomba liga</div>
         <div class="lvl-pol2">
           <button class="lvl-polbtn${d.ligaQuandoAtivo ? ' sel' : ''}" data-nvpol="1">Boia ativa</button>
           <button class="lvl-polbtn${d.ligaQuandoAtivo ? '' : ' sel'}" data-nvpol="0">Boia inativa</button>
@@ -2306,7 +2344,7 @@ function mtListHtml() {
   const ruleCards = rules.map((r) => {
     r = r || {};
     const activeBadge = r.triggered
-      ? `<span class="mt-badge">Suprimindo</span>`
+      ? `<span class="chip blue">Suprimindo</span>`
       : '';
     const limiarMm = (num(r.limiarMmCenti) / 100).toFixed(1);
     const detalhe = `Chuva prevista (12h) > ${limiarMm}mm E probabilidade > ${num(r.limiarPct)}%`;
@@ -2342,7 +2380,7 @@ function mtListHtml() {
 
   return `
     <div class="lvl-title">Meteorologia</div>
-    <div class="lvl-sub">Dados da Open-Meteo — suprime programas de zonas e grupos quando a chuva prevista e a probabilidade ultrapassam os limiares da regra</div>
+    <div class="lvl-sub">Dados da Open-Meteo. Suprime programas de zonas e grupos quando a chuva prevista e a probabilidade passam dos limiares da regra.</div>
 
     <div class="card mt-card">
       <div class="mt-cardhdr">
@@ -2364,9 +2402,7 @@ function mtListHtml() {
 
     <div id="mt-refresh-msg" class="mt-refmsg hidden"></div>
 
-    <div class="mt-status${anySuppressed ? ' on' : ''}">
-      <div class="mt-statuslbl">${esc(statusLabel)}</div>
-    </div>
+    ${anySuppressed ? `<div class="callout blue">${esc(statusLabel)}</div>` : ''}
 
     <div class="mt-sechdr">
       <div class="lvl-seclbl">Regras</div>
@@ -2431,11 +2467,11 @@ function mtEditHtml() {
       </div>
       <div class="mt-frow">
         <div class="fld mt-fld">
-          <div class="lvl-seclbl">Chuva prevista em 12h &gt; (mm)</div>
+          <div class="lvl-seclbl">Chuva em 12h acima de (mm)</div>
           <input id="mt-chuva" class="lvl-input" type="number" value="${esc(String(d.limiarMm != null ? d.limiarMm : ''))}">
         </div>
         <div class="fld mt-fld">
-          <div class="lvl-seclbl">Probabilidade de chuva &gt; (%)</div>
+          <div class="lvl-seclbl">Probabilidade acima de (%)</div>
           <input id="mt-prob" class="lvl-input" type="number" value="${esc(String(d.limiarPct != null ? d.limiarPct : ''))}">
         </div>
       </div>
