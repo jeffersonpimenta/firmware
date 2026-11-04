@@ -199,6 +199,8 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     // OTA local por contato (BLE) — §3.3/§9. ESP32/webserver-only.
     bool portalOtaArm(const IrrigationWeb::OtaArmReq &r);
     void portalFillOtaStatus(IrrigationWeb::OtaStatusCtx &c);
+    void portalReboot();
+    void portalFactoryReset();
     PortalSession &portalSession() { return portal; }
     // Acesso de leitura ao mini-log de auditoria (Task 10: portal de campo). §8.9
     const AuditLog &auditLogRef() const { return audit; }

@@ -332,6 +332,22 @@ static void hNodeRestore(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, out);
 }
 
+static void hNodeReboot(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!irrigationModule) { res->setStatusCode(404); return; }
+    sendJson(res, "{\"ok\":true,\"reboot\":true}"); // responde antes do reboot
+    irrigationModule->portalReboot();
+}
+
+static void hNodeReset(HTTPRequest *req, HTTPResponse *res)
+{
+    (void)req;
+    if (!irrigationModule) { res->setStatusCode(404); return; }
+    sendJson(res, "{\"ok\":true,\"reboot\":true}"); // responde antes do reboot
+    irrigationModule->portalFactoryReset();
+}
+
 // ── Wi-Fi management (§7) ────────────────────────────────────────────────────
 // WiFi só existe no gateway (nós são bateria/solar — não provisionam WiFi nem varrem redes).
 // Todos os endpoints WiFi respondem 404 fora do gateway.
@@ -478,6 +494,8 @@ void registerIrrigationPortalHandlers(HTTPServer *server)
     server->registerNode(new ResourceNode("/api/portal/node", "GET", &hNode));
     server->registerNode(new ResourceNode("/api/portal/node/backup", "GET", &hNodeBackup));
     server->registerNode(new ResourceNode("/api/portal/node/restore", "POST", &hNodeRestore));
+    server->registerNode(new ResourceNode("/api/portal/node/reboot", "POST", &hNodeReboot));
+    server->registerNode(new ResourceNode("/api/portal/node/reset", "POST", &hNodeReset));
     server->registerNode(new ResourceNode("/api/portal/node/pulse", "POST", &hNodePulse));
     server->registerNode(new ResourceNode("/api/portal/net/roster", "GET", &hNetRoster));
     server->registerNode(new ResourceNode("/api/portal/net/command", "POST", &hNetCommand));

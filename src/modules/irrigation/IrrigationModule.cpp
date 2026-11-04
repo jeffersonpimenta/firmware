@@ -3358,6 +3358,16 @@ bool IrrigationModule::portalOtaArm(const IrrigationWeb::OtaArmReq &r)
     return true;
 }
 
+void IrrigationModule::portalReboot()
+{
+    rebootAtMsec = millis() + 2000; // reboot limpo, sem apagar config
+}
+
+void IrrigationModule::portalFactoryReset()
+{
+    factoryReset(); // apaga credenciais + agenda reboot; boot seguinte cai no wizard
+}
+
 #endif // defined(ARCH_ESP32) && !MESHTASTIC_EXCLUDE_WEBSERVER
 
 size_t IrrigationModule::gwBuildAlerts(char *buf, size_t cap)
