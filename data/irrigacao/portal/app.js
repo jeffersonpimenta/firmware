@@ -179,8 +179,11 @@ function applyRoleLayout(role) {
   ["sensorsCard", "gposCard", "pulseForm", "logCard"].forEach((id) => {
     const e = document.getElementById(id); if (e) e.classList.toggle("hidden-role", rep);
   });
+  // estação: [node, net, survey, mais]; repetidor: [node, survey, mais]
   document.querySelector('[data-tab="net"]').classList.toggle("hidden", rep);
   document.querySelectorAll(".node-mais").forEach((b) => b.classList.remove("hidden"));
+  // firmware vive dentro de Mais — aba svc-firmware fica escondida p/ estação/repetidor
+  document.querySelectorAll(".svc-firmware").forEach((b) => b.classList.add("hidden"));
 }
 
 // ── Wizard de 1º boot (§6) — escolha de papel, some após provisionar ─────────
@@ -215,14 +218,40 @@ function showWizard() {
   };
 }
 
+// ── Subtelas do "Mais" ───────────────────────────────────────────────────────
+function refreshSistema() {} // stub — Task 7 preenche o corpo
+
+function showMaisSub(key) {
+  document.getElementById('mais-list').classList.add('hidden');
+  const sub = document.getElementById('mais-sub');
+  sub.classList.remove('hidden');
+  sub.querySelectorAll('[data-sub]').forEach((b) => b.classList.toggle('hidden', b.dataset.sub !== key));
+  if (key === 'enlace') refreshEnlace();
+  if (key === 'coords') loadCoords();
+  if (key === 'firmware') refreshFirmware();
+  if (key === 'sistema') refreshSistema();
+}
+
+function backToMais() {
+  document.getElementById('mais-sub').classList.add('hidden');
+  document.getElementById('mais-list').classList.remove('hidden');
+}
+
 document.querySelectorAll("nav.tabs button").forEach((b) =>
   b.addEventListener("click", () => {
     document.querySelectorAll("nav.tabs button").forEach((x) => x.classList.remove("active"));
     b.classList.add("active");
     document.querySelectorAll(".panel").forEach((t) => t.classList.add("hidden"));
     document.getElementById("tab-" + b.dataset.tab).classList.remove("hidden");
-    if (b.dataset.tab === "mais") { refreshEnlace(); loadCoords(); }
-    if (b.dataset.tab === "firmware") refreshFirmware();
+    if (b.dataset.tab === "mais") {
+      if (b.classList.contains("svc-firmware")) {
+        // Aba Firmware do device Serviço: abre direto na subtela firmware
+        showMaisSub("firmware");
+      } else {
+        // Aba Mais normal: volta para a lista
+        backToMais();
+      }
+    }
   })
 );
 
@@ -279,8 +308,9 @@ setInterval(refresh, 3000);
 function initService() {
   svcInit = true;
   document.querySelectorAll(".svc-only").forEach((b) => b.classList.remove("hidden"));
-  // Esconde as abas de nó/rede-local; o device SERVICO usa Clientes/Rede(cliente)/Log.
-  document.querySelectorAll('nav.tabs button:not(.svc-only):not(.survey-tab):not(.firmware-tab)').forEach((b) => b.classList.add("hidden"));
+  document.querySelectorAll(".svc-firmware").forEach((b) => b.classList.remove("hidden"));
+  // serviço usa [svcclients, svcnet, survey, svclog, firmware]; esconde abas de nó/rede-local e Mais
+  document.querySelectorAll('nav.tabs button:not(.svc-only):not(.svc-firmware):not(.survey-tab)').forEach((b) => b.classList.add("hidden"));
   document.querySelector('[data-tab="svcclients"]').click();
   document.getElementById("hdrName").textContent = "Dispositivo de Serviço";
   document.getElementById("hdrSub").textContent = "Cofre multi-cliente";

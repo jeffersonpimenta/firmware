@@ -125,44 +125,107 @@
       </div>
     </section>
 
-    <section id="tab-firmware" class="panel hidden">
-      <div class="card stack">
-        <h2>Atualização de firmware</h2>
-        <p>Versão atual: <strong id="fw-version">—</strong></p>
-        <p id="fw-loader" class="muted">Verificando loader…</p>
-        <button type="button" id="fw-arm" disabled>Entrar em modo atualização (BLE)</button>
-        <p class="muted">
-          Após confirmar, o nó reinicia em modo atualização. Abra o app
-          <strong>Meshtastic</strong> oficial, conecte por Bluetooth a este nó e envie
-          o arquivo <code>.bin</code>. O nó fica ~5–15 min atualizando e volta sozinho.
-          <strong>Feche todas as zonas antes de atualizar.</strong>
-        </p>
-      </div>
-    </section>
-
     <section id="tab-mais" class="panel hidden">
-      <!-- Lista principal do "Mais" -->
+      <!-- Lista de navegação do "Mais" -->
       <div id="mais-list">
-        <div class="card">
-          <h2>Qualidade do enlace</h2>
-          <div class="fp-grid">
-            <div class="fp-stat"><div class="lbl">SNR</div><div class="val" id="enlSnr">—</div></div>
-            <div class="fp-stat"><div class="lbl">RSSI</div><div class="val" id="enlRssi">—</div></div>
+        <div class="card navrow" onclick="showMaisSub('enlace')">
+          <div class="navinfo">
+            <div class="name">Enlace e vizinhos</div>
+            <div class="sub">SNR, RSSI e nós da malha</div>
           </div>
-          <div class="fp-spark" id="enlSpark"></div>
-          <div class="muted" style="font-size:11px;margin-top:6px;">SNR nas últimas leituras · atualiza a cada heartbeat</div>
+          <span class="chev">›</span>
         </div>
-        <div class="card">
-          <h2>Vizinhos na malha</h2>
-          <div id="enlNeighbors" class="stack"><span class="muted">—</span></div>
+        <div class="card navrow" onclick="showMaisSub('coords')">
+          <div class="navinfo">
+            <div class="name">Coordenadas locais</div>
+            <div class="sub">Latitude e longitude deste nó</div>
+          </div>
+          <span class="chev">›</span>
         </div>
-        <form id="coordsForm" class="card">
-          <h2>Coordenadas locais</h2>
-          <label>Latitude <input type="number" id="coordLat" step="0.0000001" value="0" /></label>
-          <label>Longitude <input type="number" id="coordLon" step="0.0000001" value="0" /></label>
-          <button type="submit" class="btn solid sm">Salvar</button>
-          <span id="coordMsg" class="muted"></span>
-        </form>
+        <div class="card navrow" onclick="showMaisSub('firmware')">
+          <div class="navinfo">
+            <div class="name">Firmware</div>
+            <div class="sub">Atualização OTA via BLE</div>
+          </div>
+          <span class="chev">›</span>
+        </div>
+        <div class="card navrow" onclick="showMaisSub('sistema')">
+          <div class="navinfo">
+            <div class="name">Sistema</div>
+            <div class="sub">Configurações gerais do dispositivo</div>
+          </div>
+          <span class="chev">›</span>
+        </div>
+      </div>
+
+      <!-- Container de subtelas -->
+      <div id="mais-sub" class="hidden">
+        <!-- Subtela: Enlace e vizinhos -->
+        <div data-sub="enlace" class="hidden">
+          <div class="subbar">
+            <button type="button" class="subback" onclick="backToMais()">‹ Mais</button>
+            <span class="subtitle">Enlace e vizinhos</span>
+          </div>
+          <div class="card">
+            <h2>Qualidade do enlace</h2>
+            <div class="fp-grid">
+              <div class="fp-stat"><div class="lbl">SNR</div><div class="val" id="enlSnr">—</div></div>
+              <div class="fp-stat"><div class="lbl">RSSI</div><div class="val" id="enlRssi">—</div></div>
+            </div>
+            <div class="fp-spark" id="enlSpark"></div>
+            <div class="muted" style="font-size:11px;margin-top:6px;">SNR nas últimas leituras · atualiza a cada heartbeat</div>
+          </div>
+          <div class="card">
+            <h2>Vizinhos na malha</h2>
+            <div id="enlNeighbors" class="stack"><span class="muted">—</span></div>
+          </div>
+        </div>
+
+        <!-- Subtela: Coordenadas -->
+        <div data-sub="coords" class="hidden">
+          <div class="subbar">
+            <button type="button" class="subback" onclick="backToMais()">‹ Mais</button>
+            <span class="subtitle">Coordenadas locais</span>
+          </div>
+          <form id="coordsForm" class="card">
+            <h2>Coordenadas locais</h2>
+            <label>Latitude <input type="number" id="coordLat" step="0.0000001" value="0" /></label>
+            <label>Longitude <input type="number" id="coordLon" step="0.0000001" value="0" /></label>
+            <button type="submit" class="btn solid sm">Salvar</button>
+            <span id="coordMsg" class="muted"></span>
+          </form>
+        </div>
+
+        <!-- Subtela: Firmware (bloco único — reaproveitado por Serviço via showMaisSub) -->
+        <div data-sub="firmware" class="hidden">
+          <div class="subbar">
+            <button type="button" class="subback" onclick="backToMais()">‹ Mais</button>
+            <span class="subtitle">Firmware</span>
+          </div>
+          <div class="card stack">
+            <h2>Atualização de firmware</h2>
+            <p>Versão atual: <strong id="fw-version">—</strong></p>
+            <p id="fw-loader" class="muted">Verificando loader…</p>
+            <button type="button" id="fw-arm" disabled>Entrar em modo atualização (BLE)</button>
+            <p class="muted">
+              Após confirmar, o nó reinicia em modo atualização. Abra o app
+              <strong>Meshtastic</strong> oficial, conecte por Bluetooth a este nó e envie
+              o arquivo <code>.bin</code>. O nó fica ~5–15 min atualizando e volta sozinho.
+              <strong>Feche todas as zonas antes de atualizar.</strong>
+            </p>
+          </div>
+        </div>
+
+        <!-- Subtela: Sistema (preenchida pela Task 7) -->
+        <div data-sub="sistema" class="hidden">
+          <div class="subbar">
+            <button type="button" class="subback" onclick="backToMais()">‹ Mais</button>
+            <span class="subtitle">Sistema</span>
+          </div>
+          <div class="card">
+            <p class="muted">Carregando configurações do sistema…</p>
+          </div>
+        </div>
       </div>
     </section>
   </main>
@@ -172,10 +235,10 @@
     <button data-tab="net" class="tab">Rede</button>
     <button data-tab="survey" class="tab survey-tab">Cobertura</button>
     <button data-tab="mais" class="tab node-mais hidden">Mais</button>
-    <button data-tab="firmware" class="tab firmware-tab">Firmware</button>
     <button data-tab="svcclients" class="tab svc-only hidden">Clientes</button>
     <button data-tab="svcnet" class="tab svc-only hidden">Rede&nbsp;(cli.)</button>
     <button data-tab="svclog" class="tab svc-only hidden">Log</button>
+    <button data-tab="mais" class="tab svc-firmware hidden">Firmware</button>
   </nav>
 
   <script>if(new URLSearchParams(location.search).has('mock')){document.write('<script src="/irrigacao/mock.js"><\/script>');}</script>
