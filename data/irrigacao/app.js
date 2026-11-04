@@ -1225,7 +1225,7 @@ async function renderGpo() {
         <div class="zinfo">
           <div class="name">${esc(z.name)}</div>
           <div class="sub">${meta}</div>
-          <div style="margin-top:6px">${tag}</div>
+          <div class="mt6">${tag}</div>
         </div>
         <div class="zbtns">
           <button class="btn outline sm" data-gpoopen="${num(z.id)}" data-bistable="${bistable ? 1 : 0}">Ligar</button>
@@ -1333,7 +1333,7 @@ function interlockForm(rule, stations, zones, sensors, allRules) {
       body = `
         <div><div class="lvl-seclbl">Estação</div><div class="lvl-pills">${stationPills}</div></div>
         <div><div class="lvl-seclbl">Sensor</div><div class="lvl-pills">${sensorPills}</div></div>
-        <div><div class="lvl-seclbl">Condição</div><div class="lvl-pol2" style="flex-wrap:wrap;">${condBtns}</div></div>
+        <div><div class="lvl-seclbl">Condição</div><div class="lvl-pol2 wrap">${condBtns}</div></div>
         ${valBlock}
         <div><div class="lvl-seclbl">Ação</div><div class="lvl-pol2">${acaoBtns}</div></div>
         <div><div class="lvl-seclbl">Mensagem de alerta</div><input class="lvl-input" id="itl-mensagem" maxlength="40" placeholder="Ex.: Reservatório em nível baixo" value="${esc(st.mensagem)}"></div>`;
@@ -1687,7 +1687,7 @@ async function renderGruposInterlocks() {
       <div class="lvl-list">${groupCards || '<div class="lvl-empty">Nenhum grupo hidráulico.</div>'}</div>
       <button class="lvl-newbtn" data-gnew>+ Novo grupo</button>
 
-      <div class="gi-sechdr" style="margin-top:6px;"><div class="lvl-seclbl">Intertravamentos</div></div>
+      <div class="gi-sechdr mt6"><div class="lvl-seclbl">Intertravamentos</div></div>
       <button class="lvl-newbtn" data-itlnew>+ Novo intertravamento</button>
       <div class="lvl-list">${itlCards || '<div class="lvl-empty">Nenhuma regra de intertravamento.</div>'}</div>
     </div>`;
@@ -2620,7 +2620,7 @@ const AC_MODE_OPTS = [
 
 // Ponto colorido de estado ao vivo.
 function acDotColor(active) {
-  return active ? 'oklch(0.47 0.1 150)' : 'oklch(0.75 0.006 100)';
+  return active ? 'green' : 'neutral';
 }
 
 // HTML puro de uma entrada individual.
@@ -2632,7 +2632,7 @@ function acInputHtml(inp, nodeNum) {
   const dotColor = acDotColor(driving);
   const stateLabel = driving ? 'acionando' : 'inativa';
   const invBadge = invertido
-    ? `<span style="font-size:10px;font-weight:800;padding:2px 6px;border-radius:999px;background:oklch(0.55 0.16 30 / 0.12);color:oklch(0.45 0.16 30);margin-left:4px;">INV</span>`
+    ? `<span class="chip red ac-badge">INV</span>`
     : '';
   const inputLabel = 'Entrada ' + (num(inp.i) + 1);
 
@@ -2652,36 +2652,33 @@ function acInputHtml(inp, nodeNum) {
       return '<option value="' + zid + '"' + sel + '>' + znm + '</option>';
     }).join('');
 
-  const invColor = invertido ? 'oklch(0.47 0.1 150)' : 'oklch(0.85 0.006 100)';
-  const invKnob = invertido ? '16px' : '2px';
-
-  return `<div style="background:oklch(1 0 0);border:1px solid oklch(0.9 0.006 100);box-shadow:0 1px 3px rgba(0,0,0,0.05);border-radius:16px;padding:14px 16px;display:flex;flex-direction:column;gap:10px;">
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-      <div style="display:flex;align-items:center;gap:6px;">
-        <div style="font-size:13.5px;font-weight:700;color:oklch(0.22 0.008 100);">${esc(inputLabel)}</div>
+  return `<div class="card ac-sec">
+    <div class="ac-hdr">
+      <div class="ac-row6">
+        <div class="ac-nm">${esc(inputLabel)}</div>
         ${invBadge}
       </div>
-      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
-        <div style="width:8px;height:8px;border-radius:999px;background:${acDotColor(active)};"></div>
-        <div style="width:8px;height:8px;border-radius:999px;background:${dotColor};"></div>
-        <div style="font-size:11px;color:oklch(0.52 0.006 100);">${stateLabel}</div>
+      <div class="ac-dots">
+        <div class="ac-dot ${acDotColor(active)}"></div>
+        <div class="ac-dot ${dotColor}"></div>
+        <div class="ac-stlbl">${stateLabel}</div>
       </div>
     </div>
-    <div style="display:flex;flex-direction:column;gap:6px;">
-      <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;">Modo</div>
-      <select data-acmode data-node="${num(nodeNum)}" data-i="${num(inp.i)}" data-invertido="${invertido ? '1' : '0'}" data-targetzoneid="${num(inp.targetZoneId)}" style="width:100%;padding:8px 10px;border:1px solid oklch(0.88 0.006 100);border-radius:8px;background:oklch(0.98 0.002 100);font-size:13px;color:oklch(0.22 0.008 100);">${modeOpts}</select>
+    <div class="fld">
+      <div class="flbl">Modo</div>
+      <select class="finput" data-acmode data-node="${num(nodeNum)}" data-i="${num(inp.i)}" data-invertido="${invertido ? '1' : '0'}" data-targetzoneid="${num(inp.targetZoneId)}">${modeOpts}</select>
     </div>
-    <div style="display:flex;flex-direction:column;gap:6px;">
-      <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;">Zona-alvo</div>
-      <select data-aczone data-node="${num(nodeNum)}" data-i="${num(inp.i)}" data-invertido="${invertido ? '1' : '0'}" data-mode="${mode}" style="width:100%;padding:8px 10px;border:1px solid oklch(0.88 0.006 100);border-radius:8px;background:oklch(0.98 0.002 100);font-size:13px;color:oklch(0.22 0.008 100);">${zoneOpts}</select>
+    <div class="fld">
+      <div class="flbl">Zona-alvo</div>
+      <select class="finput" data-aczone data-node="${num(nodeNum)}" data-i="${num(inp.i)}" data-invertido="${invertido ? '1' : '0'}" data-mode="${mode}">${zoneOpts}</select>
     </div>
-    <div style="display:flex;flex-direction:column;gap:6px;">
-      <div style="font-size:11px;font-weight:700;color:oklch(0.52 0.006 100);text-transform:uppercase;letter-spacing:0.04em;">Polaridade</div>
-      <div style="display:flex;align-items:center;gap:10px;">
-        <button data-acinvertido data-node="${num(nodeNum)}" data-i="${num(inp.i)}" data-mode="${mode}" data-targetzoneid="${num(inp.targetZoneId)}" data-invertido="${invertido ? '1' : '0'}" style="cursor:pointer;width:38px;height:22px;border-radius:999px;background:${invColor};border:none;position:relative;flex-shrink:0;">
-          <div style="position:absolute;top:2px;left:${invKnob};width:18px;height:18px;border-radius:999px;background:#fff;"></div>
+    <div class="fld">
+      <div class="flbl">Polaridade</div>
+      <div class="ac-polrow">
+        <button class="switch ac-sw${invertido ? ' on' : ''}" data-acinvertido data-node="${num(nodeNum)}" data-i="${num(inp.i)}" data-mode="${mode}" data-targetzoneid="${num(inp.targetZoneId)}" data-invertido="${invertido ? '1' : '0'}">
+          <div class="knob"></div>
         </button>
-        <div style="font-size:12px;color:oklch(0.52 0.006 100);">${invertido ? 'Invertida (LOW aciona)' : 'Normal (HIGH aciona)'}</div>
+        <div class="ac-poltxt">${invertido ? 'Invertida (LOW aciona)' : 'Normal (HIGH aciona)'}</div>
       </div>
     </div>
   </div>`;
@@ -2690,14 +2687,14 @@ function acInputHtml(inp, nodeNum) {
 // HTML puro de uma secao de no.
 function acNodeSectionHtml(n) {
   const selfTag = n.isSelf
-    ? `<span style="font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:oklch(0.47 0.1 150 / 0.12);color:oklch(0.47 0.1 150);margin-left:6px;">Este no</span>`
+    ? `<span class="chip green ac-selfbadge">Este no</span>`
     : '';
   const inputs = Array.isArray(n.inputs) ? n.inputs : [];
   if (inputs.length === 0) return '';
   const inputCards = inputs.map((inp) => acInputHtml(inp, n.node)).join('');
-  return `<div style="display:flex;flex-direction:column;gap:10px;">
-    <div style="display:flex;align-items:center;gap:4px;padding:0 2px;">
-      <div style="font-size:13px;font-weight:700;color:oklch(0.22 0.008 100);">${esc(n.name || nodeHex(n.node))}</div>
+  return `<div class="ac-sec">
+    <div class="ac-nodesec">
+      <div class="ac-nodenm">${esc(n.name || nodeHex(n.node))}</div>
       ${selfTag}
     </div>
     ${inputCards}
@@ -2711,14 +2708,14 @@ function acListHtml() {
   const sorted = [...nodes].sort((a, b) => (b.isSelf ? 1 : 0) - (a.isSelf ? 1 : 0));
   const sections = sorted.map((n) => acNodeSectionHtml(n)).filter(Boolean);
   if (!sections.length) {
-    return `<div style="font-size:12.5px;color:oklch(0.52 0.006 100);">Nenhuma entrada configurada. Configure entradas nos nos da rede.</div>`;
+    return `<div class="ac-empty">Nenhuma entrada configurada. Configure entradas nos nos da rede.</div>`;
   }
-  return sections.join('<div style="height:20px;"></div>');
+  return sections.join('<div class="ac-gap"></div>');
 }
 
 // Desenha na view e vincula handlers de POST (modo, zona-alvo, polaridade).
 function acRender() {
-  view.innerHTML = `<div style="display:flex;flex-direction:column;gap:10px;">${acListHtml()}</div>`;
+  view.innerHTML = `<div class="ac-sec">${acListHtml()}</div>`;
 
   // Envia POST e re-renderiza; em caso de falha imprime no console (sem alert).
   async function acPost(payload) {
@@ -2884,7 +2881,7 @@ function renderSistema() {
      <div class="card">
        <div class="sens-hdr"><span class="name">Bluetooth (BLE)</span></div>
        <div class="sub maint-sub">Abre uma janela BLE sob demanda para emparelhar via app. <b>O Wi-Fi/portal cai durante a janela</b> e volta sozinho ao fim do tempo.</div>
-       <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:8px">
+       <div class="ble-row">
          <button class="btn solid big syslink" data-ble="5">BLE 5 min</button>
          <button class="btn solid big syslink" data-ble="10">BLE 10 min</button>
          <button class="btn solid big syslink" data-ble="15">BLE 15 min</button>
