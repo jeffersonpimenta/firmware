@@ -316,6 +316,22 @@ static void hNodeBackup(HTTPRequest *req, HTTPResponse *res)
     free(buf);
 }
 
+// POST /api/portal/node/restore — reaplica um backup neste nó; mantém vínculo, sobe epoch, avisa gw.
+static void hNodeRestore(HTTPRequest *req, HTTPResponse *res)
+{
+    if (!irrigationModule) { res->setStatusCode(404); return; }
+    char body[4096];
+    size_t nb = readBody(req, body, sizeof(body));
+    uint32_t epoch = 0;
+    if (!irrigationModule->portalRestoreConfig(body, nb, epoch)) {
+        sendJson(res, "{\"ok\":false,\"errors\":[\"backup invalido\"]}", 400);
+        return;
+    }
+    char out[64];
+    snprintf(out, sizeof(out), "{\"ok\":true,\"epoch\":%u}", (unsigned)epoch);
+    sendJson(res, out);
+}
+
 // ── Wi-Fi management (§7) ────────────────────────────────────────────────────
 // WiFi só existe no gateway (nós são bateria/solar — não provisionam WiFi nem varrem redes).
 // Todos os endpoints WiFi respondem 404 fora do gateway.
@@ -461,6 +477,7 @@ void registerIrrigationPortalHandlers(HTTPServer *server)
     server->registerNode(new ResourceNode("/api/portal/provision", "POST", &hProvision));
     server->registerNode(new ResourceNode("/api/portal/node", "GET", &hNode));
     server->registerNode(new ResourceNode("/api/portal/node/backup", "GET", &hNodeBackup));
+    server->registerNode(new ResourceNode("/api/portal/node/restore", "POST", &hNodeRestore));
     server->registerNode(new ResourceNode("/api/portal/node/pulse", "POST", &hNodePulse));
     server->registerNode(new ResourceNode("/api/portal/net/roster", "GET", &hNetRoster));
     server->registerNode(new ResourceNode("/api/portal/net/command", "POST", &hNetCommand));

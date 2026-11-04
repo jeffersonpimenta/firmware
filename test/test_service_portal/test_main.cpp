@@ -249,6 +249,24 @@ static void test_node_backup_roundtrips_own_settings()
     TEST_ASSERT_EQUAL(-229071000, back.latE7);
 }
 
+// ── Restore preserva vínculo e aceita numValves do backup ────────────────────
+
+static void test_node_restore_preserves_bond_and_bumps_epoch()
+{
+    IrrigationSettings cur{};
+    cur.boundGateway = 0x7c2e04;
+    cur.configEpoch = 14;
+    cur.role = 0; // estação
+    const char *bk = "{\"numValves\":4,\"role\":1,\"boundGateway\":0,\"configEpoch\":99}";
+    IrrigationSettings merged = cur;
+    ParseResult r = parseStationConfig(bk, strlen(bk), merged);
+    TEST_ASSERT_TRUE(r.ok);
+    // parseStationConfig preserva geridos → vínculo e papel intactos
+    TEST_ASSERT_EQUAL(0x7c2e04u, merged.boundGateway);
+    TEST_ASSERT_EQUAL(0, merged.role);
+    TEST_ASSERT_EQUAL(4, merged.numValves);
+}
+
 // ── Aba Log ──────────────────────────────────────────────────────────────────
 
 struct RamLogReader : IServiceLogReader {
@@ -290,6 +308,7 @@ void setup()
     RUN_TEST(test_stationConfig_digitalInMode_roundtrip);
     RUN_TEST(test_parseStationConfig_digitalInMode_clampsInvalid);
     RUN_TEST(test_node_backup_roundtrips_own_settings);
+    RUN_TEST(test_node_restore_preserves_bond_and_bumps_epoch);
     RUN_TEST(test_parseNodeConfigReq);
     RUN_TEST(test_parseNodeAction);
     RUN_TEST(test_buildServiceLog);

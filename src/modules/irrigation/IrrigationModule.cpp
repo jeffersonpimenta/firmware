@@ -3532,6 +3532,22 @@ bool IrrigationModule::portalSetCoords(const IrrigationWeb::PortalCoords &c)
     return saveIrrigationSettings(settings);
 }
 
+bool IrrigationModule::portalRestoreConfig(const char *json, size_t len, uint32_t &newEpochOut)
+{
+    IrrigationSettings merged = settings; // geridos preservados pelo parse
+    ParseResult r = parseStationConfig(json, len, merged);
+    if (!r.ok)
+        return false;
+    newEpochOut = settings.configEpoch + 1;
+    merged = mergeRemoteConfig(merged, newEpochOut); // força role/boundGateway, seta epoch, clampa
+    if (!saveIrrigationSettings(merged))
+        return false;
+    activateSettings(merged);
+    sendHeartbeat(); // reporta o novo epoch ao gateway (= "o gateway é avisado")
+    auditEvent(AuditOrigin::PORTAL_CAMPO, AuditAction::CONFIG_EPOCH, 0, AuditResult::OK);
+    return true;
+}
+
 bool IrrigationModule::routeZoneToGroup(uint8_t zoneId, bool open, uint16_t durationS)
 {
     const HydraulicGroup *hg = gateway.groups.byZone(zoneId);

@@ -191,6 +191,8 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     bool portalGpo(const IrrigationWeb::PortalGpoReq &r); // biestável (durationS==0 ao ligar) exige confirm
     void portalGetCoords(IrrigationWeb::PortalCoords &out) const;
     bool portalSetCoords(const IrrigationWeb::PortalCoords &c); // persiste settings (coordenada é local, não mexe em epoch)
+    // Reaplica um backup JSON neste nó: parse → merge (preserva role/boundGateway) → sobe epoch → avisa gw.
+    bool portalRestoreConfig(const char *json, size_t len, uint32_t &newEpochOut);
     // Wizard de 1º boot (§6): grava o papel escolhido (+ PSK da fazenda se GATEWAY) e reinicia.
     bool portalProvision(const IrrigationWeb::ProvisionReq &r);
     void startBleWindow(uint8_t minutes); // janela BLE sob demanda: grava flag RTC + reboot
