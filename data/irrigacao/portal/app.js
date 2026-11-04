@@ -30,7 +30,7 @@ function renderNode(s) {
   if (s.role === ROLE_REPETIDOR) {
     const solar = s.vpanelCentiV ? `<div class="fp-stat"><div class="lbl">Painel solar</div><div class="val">${fmtV(s.vpanelCentiV)}</div></div>` : '';
     el.innerHTML = `
-      <div class="fp-hd"><span class="ttl">Este nó</span><span class="chip gray">Repetidor</span></div>
+      <div class="fp-hd"><span class="ttl">Este nó</span><span class="chip neutral">Repetidor</span></div>
       <div class="fp-grid mt12">
         <div class="fp-stat"><div class="lbl">Bateria</div><div class="val">${fmtV(s.vbatCentiV)}</div></div>
         ${solar || `<div class="fp-stat"><div class="lbl">Gateway</div><div class="val sm">${gw}</div></div>`}
