@@ -2972,25 +2972,29 @@ async function restoreBackup(btn, fileInput, statusEl) {
 function renderSistema() {
   view.innerHTML =
     `<div class="card">
-       <div class="sens-hdr"><span class="name">Backup</span></div>
+       <span class="name">Backup</span>
        <div class="sub maint-sub">Exporta a configuração completa (§5.5): PSK, estações, zonas, programas, intertravamentos e grupos — para restaurar num gateway substituto ou cadastrar no cofre do device de serviço.</div>
-       <button class="btn solid big syslink" id="dlBackup">⬇ Baixar backup (.json)</button>
+       <button class="btn solid big syslink" id="dlBackup">Baixar backup (.json)</button>
        <div class="sub" id="dlStatus"></div>
      </div>
      <div class="card">
-       <div class="sens-hdr"><span class="name">Restaurar</span></div>
+       <span class="name">Restaurar</span>
        <div class="sub maint-sub">Importa um backup e reaplica as tabelas de configuração (zonas, programas, intertravamentos, grupos). <b>Mantém a chave da rede</b> e não reinicia. As estações não são reconfiguradas (só metadados).</div>
-       <input type="file" id="restoreFile" accept=".json,application/json" class="sub">
-       <button class="btn solid big syslink" id="doRestore">⬆ Restaurar backup (.json)</button>
+       <div class="file-pick-row" id="filePickRow">
+         <span class="file-pick-name" id="filePickName">Nenhum arquivo</span>
+         <span class="file-pick-btn" id="filePickBtn">Escolher .json</span>
+       </div>
+       <input type="file" id="restoreFile" accept=".json,application/json" class="hidden">
+       <button class="btn solid big syslink" id="doRestore">Restaurar backup</button>
        <div class="sub" id="restoreStatus"></div>
      </div>
      <div class="card">
-       <div class="sens-hdr"><span class="name">Bluetooth (BLE)</span></div>
+       <span class="name">Bluetooth (BLE)</span>
        <div class="sub maint-sub">Abre uma janela BLE sob demanda para emparelhar via app. <b>O Wi-Fi/portal cai durante a janela</b> e volta sozinho ao fim do tempo.</div>
        <div class="ble-row">
-         <button class="btn solid big syslink" data-ble="5">BLE 5 min</button>
-         <button class="btn solid big syslink" data-ble="10">BLE 10 min</button>
-         <button class="btn solid big syslink" data-ble="15">BLE 15 min</button>
+         <button class="btn outline syslink" data-ble="5">BLE 5 min</button>
+         <button class="btn outline syslink" data-ble="10">BLE 10 min</button>
+         <button class="btn outline syslink" data-ble="15">BLE 15 min</button>
        </div>
      </div>`;
 
@@ -3001,6 +3005,12 @@ function renderSistema() {
   const rBtn = view.querySelector('#doRestore');
   const rFile = view.querySelector('#restoreFile');
   const rStatus = view.querySelector('#restoreStatus');
+  const filePickBtn = view.querySelector('#filePickBtn');
+  const filePickName = view.querySelector('#filePickName');
+  if (filePickBtn) filePickBtn.addEventListener('click', () => rFile.click());
+  if (rFile) rFile.addEventListener('change', () => {
+    filePickName.textContent = rFile.files[0] ? rFile.files[0].name : 'Nenhum arquivo';
+  });
   rBtn.addEventListener('click', () => restoreBackup(rBtn, rFile, rStatus));
 
   view.querySelectorAll('[data-ble]').forEach((b) =>
@@ -3029,43 +3039,47 @@ function malhaCardsHtml(list) {
       const name = s.name ? esc(s.name) : nodeHex(s.node);
       return `<div class="card">
         <div class="sens-hdr"><span class="name">${name}</span><span class="chip ${q}">${snr}</span></div>
-        <div class="row3">
-          <div class="card stat"><div class="lbl">SNR</div><div class="val">${snr}</div></div>
-          <div class="card stat"><div class="lbl">RSSI</div><div class="val">${rssi}</div></div>
-          <div class="card stat"><div class="lbl">Bateria</div><div class="val">${vbat}</div></div>
+        <div class="stat-grid">
+          <div class="stat-cell"><div class="lbl">SNR</div><div class="val">${snr}</div></div>
+          <div class="stat-cell"><div class="lbl">RSSI</div><div class="val">${rssi}</div></div>
+          <div class="stat-cell"><div class="lbl">Bateria</div><div class="val">${vbat}</div></div>
         </div>
       </div>`;
     })
     .join('');
 }
 
-// Tabela de beacons de site survey (fonte /survey) + botão Limpar.
+// Lista de beacons de site survey (fonte /survey) + botão Limpar.
 function coberturaTableHtml(rows) {
   const COV_ROLES = ['Estação', 'Gateway', 'Repetidor', 'Serviço'];
   const list = Array.isArray(rows) ? rows : [];
-  const clearRow = `<div class="log-export-row"><button class="btn ghost sm" id="cov-clear">Limpar</button></div>`;
+  const beaconN = list.length;
+  const beaconTxt = beaconN + ' beacon' + (beaconN !== 1 ? 's' : '') + ' recebido' + (beaconN !== 1 ? 's' : '');
+  const clearRow = `<div class="cov-hdr"><span class="sub">${beaconTxt}</span><button class="btn ghost sm" id="cov-clear">Limpar</button></div>`;
   const body = list.length
     ? list
         .map((r) => {
           r = r || {};
-          const coord = r.coord ? `${(num(r.lat) / 1e7).toFixed(5)}, ${(num(r.lon) / 1e7).toFixed(5)}` : '—';
-          return `<tr>
-          <td class="mono">${esc(nodeHex(r.no))}</td>
-          <td>${esc(COV_ROLES[num(r.role)] || ('papel ' + num(r.role)))}</td>
-          <td class="mono">${esc(coord)}</td>
-          <td>${esc((num(r.snr) / 4).toFixed(0))}</td>
-          <td>${esc(String(num(r.rssi)))}</td>
-          <td>${esc(fmtSince(r.idadeS))}</td>
-        </tr>`;
+          const role = esc(COV_ROLES[num(r.role)] || ('papel ' + num(r.role)));
+          const coord = r.coord ? `${(num(r.lat) / 1e7).toFixed(5)}, ${(num(r.lon) / 1e7).toFixed(5)}` : null;
+          const snrVal = esc((num(r.snr) / 4).toFixed(0));
+          const rssiVal = esc(String(num(r.rssi)));
+          const age = esc(fmtSince(r.idadeS));
+          const mainSub = coord ? `<div class="cov-sub">${esc(coord)}</div>` : '';
+          return `<div class="cov-row">
+            <div class="cov-main">
+              <div class="cov-name"><span class="mono">${esc(nodeHex(r.no))}</span> · ${role}</div>
+              ${mainSub}
+            </div>
+            <div class="cov-right">
+              <div class="cov-metric">SNR ${snrVal} · RSSI ${rssiVal}</div>
+              <div class="cov-age">${age}</div>
+            </div>
+          </div>`;
         })
         .join('')
-    : '<tr><td colspan="6" class="empty">Sem beacons recebidos.</td></tr>';
-  return (
-    clearRow +
-    `<div class="log-table-wrap"><table class="log-table">
-    <thead><tr><th>Nó</th><th>Papel</th><th>Coordenada</th><th>SNR</th><th>RSSI</th><th>Idade</th></tr></thead>
-    <tbody>${body}</tbody></table></div>`
-  );
+    : '<div class="cov-empty">Sem beacons recebidos.</div>';
+  return clearRow + `<div class="list cov-list">${body}</div>`;
 }
 
 // Toggle segmentado Enlace|Cobertura. seg: 'enlace' | 'cobertura'.
@@ -3191,16 +3205,20 @@ function wfClearTimers() {
 }
 
 // Renderiza toda a tela Wi-Fi no #view (padrão sub-screen do painel: re-render em cada transição).
-// vista: 'list' | 'password' | 'connecting' | 'success' | 'error'
+// vista: 'list' | 'connecting' | 'success' | 'error'
 function wfRender(vista, extra) {
   extra = extra || {};
-  // Barra de cabeçalho do toggle (comum ao estado 'list')
+
+  // WF-1: toggle card row — tappable card com título/sub + switch padrão .switch/.knob
+  const connSsidForToggle = (extra.connectedSsid) || null;
+  const wfSubText = wfEnabled && connSsidForToggle ? esc(connSsidForToggle) : 'desativado';
   const toggleHtml = `
-    <div class="wf-hdr">
-      <div class="wf-title">Rede Wi-Fi</div>
-      <div id="wfToggle" class="wf-toggle${wfEnabled ? ' on' : ''}">
-        <div class="wf-knob"></div>
+    <div id="wfToggle" class="card wf-toggle-card${wfEnabled ? ' on' : ''}">
+      <div class="wf-toggle-info">
+        <div class="wf-title">Wi-Fi do gateway</div>
+        <div class="sub">${wfSubText}</div>
       </div>
+      <div class="switch${wfEnabled ? ' on' : ''}"><span class="knob"></span></div>
     </div>`;
 
   let body = '';
@@ -3214,6 +3232,7 @@ function wfRender(vista, extra) {
       const nets = extra.networks || [];
       const connSsid = extra.connectedSsid || null;
       const scanning = !!extra.scanning;
+      const expandSsid = wfSelectedNet ? wfSelectedNet.ssid : null;
 
       let networksHtml = '';
       if (scanning) {
@@ -3230,12 +3249,10 @@ function wfRender(vista, extra) {
             <button id="wfRescan" class="btn ghost sm wf-rescan">Buscar novamente</button>
           </div>`;
       } else {
-        const hasConn = nets.some((n) => n.ssid === connSsid);
-        const hint = hasConn
-          ? `<div class="wf-hint">Toque em uma rede conectada para esquecê-la.</div>`
-          : '';
+        // WF-4: inline password expansion under selected network row
         const rows = nets.map((net) => {
           const connected = net.ssid === connSsid;
+          const expanded = expandSsid === net.ssid;
           const sig = net.rssi >= -65 ? 3 : net.rssi >= -80 ? 2 : 1;
           const bars = `<div class="wf-bars">
             <div class="wf-bar b1${sig >= 1 ? ' on' : ''}"></div>
@@ -3245,44 +3262,48 @@ function wfRender(vista, extra) {
           const badge = connected
             ? `<span class="chip green wf-connbadge">Conectado</span>`
             : '';
+          const pskPanel = expanded
+            ? `<div class="wf-psk-inline">
+                <input type="password" id="wfPskInput" placeholder="Senha (mín. 8 caracteres)" class="finput" />
+                <div class="wf-psk-btns">
+                  <button id="wfPskCancel" class="btn ghost">Cancelar</button>
+                  <button id="wfPskConnect" class="btn solid">Conectar</button>
+                </div>
+              </div>`
+            : '';
           return `<div data-wfssid="${esc(net.ssid)}" data-wfsec="${net.secure ? 1 : 0}" data-wfconn="${connected ? 1 : 0}"
-            class="wf-net${connected ? ' conn' : ''}">
-            <div class="wf-net-left">
-              ${bars}
-              <div class="wf-netname">${esc(net.ssid)}</div>
+            class="wf-net${connected ? ' conn' : ''}${expanded ? ' expanded' : ''}">
+            <div class="wf-net-row">
+              <div class="wf-net-left">
+                ${bars}
+                <div class="wf-netname">${esc(net.ssid)}</div>
+              </div>
+              ${badge}
             </div>
-            ${badge}
+            ${pskPanel}
           </div>`;
         }).join('');
+        // WF-3: always show hint when networks listed
+        const hint = `<div class="wf-hint">Toque numa rede para conectar. Toque na rede conectada para esquecê-la.</div>`;
         networksHtml = `<div class="wf-netlist">${rows}</div>${hint}`;
       }
 
+      // WF-2: "Redes disponíveis" header — bold title + <button> Atualizar
       body = toggleHtml + `
         <div class="wf-sechdr">
-          <div class="wf-seclbl">Redes disponíveis</div>
-          <span id="wfRefresh" class="wf-refresh">Atualizar</span>
+          <span class="wf-seclbl">Redes disponíveis</span>
+          <button id="wfRefresh" class="btn ghost sm">Atualizar</button>
         </div>
         ${networksHtml}`;
     }
-  } else if (vista === 'password') {
-    body = `
-      <div class="wf-psktitle">${esc((wfSelectedNet || {}).ssid || '')}</div>
-      <div class="wf-psksub">Digite a senha da rede para conectar o gateway</div>
-      <div class="card wf-pskcard">
-        <input type="password" id="wfPskInput" placeholder="Senha (mín. 8 caracteres)" class="finput" />
-        <div class="wf-btnrow">
-          <button id="wfPskCancel" class="btn ghost wf-btn">Cancelar</button>
-          <button id="wfPskConnect" class="btn solid wf-btn">Conectar</button>
-        </div>
-      </div>`;
   } else if (vista === 'connecting') {
-    body = `
+    body = toggleHtml + `
       <div class="card wf-ctr conn">
         <div class="wf-spin lg"></div>
         <div class="wf-conn-title">Conectando a ${esc((wfSelectedNet || {}).ssid || '')}…</div>
       </div>`;
   } else if (vista === 'success') {
-    body = `
+    body = toggleHtml + `
       <div class="card wf-ctr succ">
         <div class="wf-succ-icon">
           <span class="wf-succ-mark">✓</span>
@@ -3293,7 +3314,7 @@ function wfRender(vista, extra) {
       </div>`;
   } else if (vista === 'error') {
     const msg = esc(extra.msg || 'Falha ao conectar. Verifique a senha e tente novamente.');
-    body = `
+    body = toggleHtml + `
       <div class="card redbox wf-errbox">
         <div class="wf-err-title">Falha ao conectar</div>
         <div class="wf-err-msg">${msg}</div>
@@ -3312,31 +3333,46 @@ function wfWire(vista, extra) {
   extra = extra || {};
   const q = (id) => view.querySelector('#' + id);
 
+  // WF-1: toggle is now a card row; wire click on the card
+  const toggleCard = q('wfToggle');
+  if (toggleCard) toggleCard.addEventListener('click', () => wfDoToggle());
+
   if (vista === 'list') {
-    const toggle = q('wfToggle');
-    if (toggle) toggle.addEventListener('click', () => wfDoToggle());
     const refresh = q('wfRefresh');
-    if (refresh) refresh.addEventListener('click', () => wfStartScan());
+    if (refresh) refresh.addEventListener('click', (e) => { e.stopPropagation(); wfStartScan(); });
     const rescan = q('wfRescan');
     if (rescan) rescan.addEventListener('click', () => wfStartScan());
     view.querySelectorAll('[data-wfssid]').forEach((el) => {
-      el.addEventListener('click', () => {
+      // clicks on the row itself (not the inline psk panel buttons)
+      el.querySelector('.wf-net-row').addEventListener('click', () => {
         if (+el.dataset.wfconn) { wfDoForget(); return; }
         const ssid = el.dataset.wfssid;
         const secure = +el.dataset.wfsec;
-        wfSelectedNet = (extra.networks || []).find((n) => n.ssid === ssid) || { ssid, rssi: 0, secure: !!secure };
+        const net = (extra.networks || []).find((n) => n.ssid === ssid) || { ssid, rssi: 0, secure: !!secure };
         if (!secure) {
+          wfSelectedNet = net;
           wfDoConnect('');
         } else {
-          wfRender('password');
+          // toggle inline expansion
+          if (wfSelectedNet && wfSelectedNet.ssid === ssid) {
+            wfSelectedNet = null;
+          } else {
+            wfSelectedNet = net;
+          }
+          wfRender('list', extra);
         }
       });
     });
-  } else if (vista === 'password') {
-    const cancel = q('wfPskCancel');
-    if (cancel) cancel.addEventListener('click', () => { wfSelectedNet = null; wfStartScan(); });
-    const connect = q('wfPskConnect');
-    if (connect) connect.addEventListener('click', () => {
+    // WF-4: wire inline psk panel buttons
+    const pskCancel = q('wfPskCancel');
+    if (pskCancel) pskCancel.addEventListener('click', (e) => {
+      e.stopPropagation();
+      wfSelectedNet = null;
+      wfRender('list', extra);
+    });
+    const pskConnect = q('wfPskConnect');
+    if (pskConnect) pskConnect.addEventListener('click', (e) => {
+      e.stopPropagation();
       const psk = (q('wfPskInput') || {}).value || '';
       wfDoConnect(psk);
     });
@@ -3347,7 +3383,7 @@ function wfWire(vista, extra) {
     const cancel = q('wfErrCancel');
     if (cancel) cancel.addEventListener('click', () => { wfSelectedNet = null; wfStartScan(); });
     const retry = q('wfErrRetry');
-    if (retry) retry.addEventListener('click', () => wfRender('password'));
+    if (retry) retry.addEventListener('click', () => { wfSelectedNet = null; wfStartScan(); });
   }
 }
 
@@ -3540,7 +3576,7 @@ async function renderHorario() {
     </div>
     <div class="card">
       <div class="sens-hdr"><span class="name">Sincronização por dispositivo</span></div>
-      <div class="sub hr-sync-note">Epoch de config de cada estação — reflete se recebeu o horário/config mais recente.</div>
+      <div class="sub hr-sync-note">Epoch de config de cada estação: mostra se recebeu o horário e a config mais recentes.</div>
       <div class="hr-devs">${devRows}</div>
     </div>`;
 
