@@ -24,24 +24,30 @@ let lastRole = 0; // Fase 8d: última role vista, escolhe endpoint de survey
 function renderNode(s) {
   setHeader(s);
   const el = document.getElementById("nodeState");
-  const sync = s.boundGateway ? `Epoch ${s.configEpoch} · sincronizado` : "Não pareado";
-  const gw = s.boundGateway ? "0x" + (s.boundGateway >>> 0).toString(16) : "—";
   const tamper = s.flags & 1 ? '<div class="tamper"><b>⚠ VIOLAÇÃO (tamper)</b></div>' : '';
+  const gwHex = s.boundGateway ? "0x" + (s.boundGateway >>> 0).toString(16) : null;
+  const syncLeft = gwHex
+    ? `Gateway <span class="fp-mono">${gwHex}</span>`
+    : "Gateway";
+  const syncDot = s.boundGateway ? "green" : "amber";
+  const syncLabel = s.boundGateway ? "Sincronizado" : "Não pareado";
+  const safeMode = s.safeMode ? " · modo seguro" : "";
+  const syncLine = `
+    <div class="fp-sync mt12">
+      <span>${syncLeft}</span>
+      <span class="syn ${syncDot}"><span class="dot ${syncDot}"></span>${syncLabel}${safeMode}</span>
+    </div>`;
   if (s.role === ROLE_REPETIDOR) {
-    const solar = s.vpanelCentiV ? `<div class="fp-stat"><div class="lbl">Painel solar</div><div class="val">${fmtV(s.vpanelCentiV)}</div></div>` : '';
+    const panelVal = s.vpanelCentiV ? fmtV(s.vpanelCentiV) : "—";
     el.innerHTML = `
+      ${tamper}
       <div class="fp-hd"><span class="ttl">Este nó</span><span class="chip neutral">Repetidor</span></div>
-      <div class="fp-grid mt12">
+      <div class="fp-grid3 mt12">
         <div class="fp-stat"><div class="lbl">Bateria</div><div class="val">${fmtV(s.vbatCentiV)}</div></div>
-        ${solar || `<div class="fp-stat"><div class="lbl">Gateway</div><div class="val sm">${gw}</div></div>`}
+        <div class="fp-stat"><div class="lbl">Painel solar</div><div class="val">${panelVal}</div></div>
+        <div class="fp-stat"><div class="lbl">Uptime</div><div class="val">${fmtUptime(s.uptimeS || 0)}</div></div>
       </div>
-      <div class="fp-grid mt8">
-        ${solar ? `<div class="fp-stat"><div class="lbl">Gateway</div><div class="val sm">${gw}</div></div>` : ''}
-        <div class="fp-stat"><div class="lbl">Uptime</div><div class="val sm">${fmtUptime(s.uptimeS || 0)}</div></div>
-      </div>
-      <div class="fp-stat mt8"><div class="lbl">Relógio</div><div class="val sm">${fmtClock(s.nowEpoch, s.hasTime)}</div></div>
-      <div class="fp-sync mt12">${sync}</div>
-      ${tamper}`;
+      ${syncLine}`;
     return;
   }
   const valves = [];
@@ -50,15 +56,15 @@ function renderNode(s) {
     valves.push(`<span class="fp-pill ${on ? "on" : ""}">Válvula ${i + 1} · ${on ? "Aberta" : "Fechada"}</span>`);
   }
   el.innerHTML = `
+    ${tamper}
     <div class="fp-hd"><span class="ttl">Este nó</span><span class="chip green">${ROLES[s.role] || s.role}</span></div>
-    <div class="fp-grid mt12">
+    <div class="fp-grid3 mt12">
       <div class="fp-stat"><div class="lbl">Bateria</div><div class="val">${fmtV(s.vbatCentiV)}</div></div>
-      <div class="fp-stat"><div class="lbl">Gateway</div><div class="val sm">${gw}</div></div>
+      <div class="fp-stat"><div class="lbl">Relógio</div><div class="val">${fmtClock(s.nowEpoch, s.hasTime)}</div></div>
+      <div class="fp-stat"><div class="lbl">Uptime</div><div class="val">${fmtUptime(s.uptimeS || 0)}</div></div>
     </div>
-    <div class="fp-sync">${sync}${s.safeMode ? " · <b>modo seguro</b>" : ""}</div>
-    <div class="fp-stat mt8"><div class="lbl">Relógio</div><div class="val sm">${fmtClock(s.nowEpoch, s.hasTime)}</div></div>
-    <div class="mt6"><div class="fp-lbl">Válvulas</div><div class="fp-pills">${valves.join("") || "<span class='muted'>—</span>"}</div></div>
-    ${tamper}`;
+    ${syncLine}
+    <div class="mt8"><div class="fp-lbl">Válvulas</div><div class="fp-pills">${valves.join("") || "<span class='muted'>—</span>"}</div></div>`;
   renderPulsePills(s.numValves);
 }
 
