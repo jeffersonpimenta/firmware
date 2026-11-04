@@ -2274,7 +2274,7 @@ function mtListHtml() {
     <div class="lvl-title">Meteorologia</div>
     <div class="lvl-sub">Dados da Open-Meteo — suprime programas de zonas e grupos quando a chuva prevista e a probabilidade ultrapassam os limiares da regra</div>
 
-    <div class="mt-card">
+    <div class="card mt-card">
       <div class="mt-cardhdr">
         <div class="mt-loc">
           <div class="mt-locname">${location}</div>
@@ -2354,17 +2354,17 @@ function mtEditHtml() {
 
     ${errBox}
 
-    <div class="mt-panel">
-      <div class="mt-fld">
+    <div class="card mt-panel">
+      <div class="fld mt-fld">
         <div class="lvl-seclbl">Nome da regra</div>
         <input id="mt-nome" class="lvl-input" value="${esc(d.nome || '')}" placeholder="Ex.: Chuva forte prevista">
       </div>
       <div class="mt-frow">
-        <div class="mt-fld">
+        <div class="fld mt-fld">
           <div class="lvl-seclbl">Chuva prevista em 12h &gt; (mm)</div>
           <input id="mt-chuva" class="lvl-input" type="number" value="${esc(String(d.limiarMm != null ? d.limiarMm : ''))}">
         </div>
-        <div class="mt-fld">
+        <div class="fld mt-fld">
           <div class="lvl-seclbl">Probabilidade de chuva &gt; (%)</div>
           <input id="mt-prob" class="lvl-input" type="number" value="${esc(String(d.limiarPct != null ? d.limiarPct : ''))}">
         </div>
@@ -2414,7 +2414,7 @@ function mtWire() {
         renderMeteo().catch(() => {});
       } else {
         const msg = q('#mt-refresh-msg');
-        if (msg) { msg.textContent = 'Falha: ' + (r.body && r.body.reason ? r.body.reason : 'sem WiFi'); msg.style.display = ''; }
+        if (msg) { msg.textContent = 'Falha: ' + (r.body && r.body.reason ? r.body.reason : 'sem WiFi'); msg.classList.remove('hidden'); }
       }
     });
 
