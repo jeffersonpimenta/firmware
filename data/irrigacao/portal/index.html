@@ -216,14 +216,50 @@
           </div>
         </div>
 
-        <!-- Subtela: Sistema (preenchida pela Task 7) -->
+        <!-- Subtela: Sistema (BLE, backup, restaurar, reiniciar/reset) -->
         <div data-sub="sistema" class="hidden">
           <div class="subbar">
             <button type="button" class="subback" onclick="backToMais()">‹ Mais</button>
             <span class="subtitle">Sistema</span>
           </div>
-          <div class="card">
-            <p class="muted">Carregando configurações do sistema…</p>
+
+          <!-- Card: Bluetooth (BLE) -->
+          <div class="card stack" id="sis-ble-card">
+            <h2>Bluetooth (BLE)</h2>
+            <p>Abre uma janela BLE para emparelhar este nó pelo app. <b>O Wi-Fi do portal cai durante a janela</b> e volta sozinho ao fim do tempo.</p>
+            <div id="sis-ble-btns" class="fp-pills">
+              <button type="button" class="btn outline sm" data-blemin="5">BLE 5 min</button>
+              <button type="button" class="btn outline sm" data-blemin="10">BLE 10 min</button>
+              <button type="button" class="btn outline sm" data-blemin="15">BLE 15 min</button>
+            </div>
+            <div id="sis-ble-confirm" class="hidden"></div>
+            <div id="sis-ble-active" class="hidden"></div>
+          </div>
+
+          <!-- Card: Backup -->
+          <div class="card stack" id="sis-backup-card">
+            <h2>Backup</h2>
+            <p>Baixa a configuração deste nó: válvulas, sensores, pinos, intertravamentos locais e coordenadas. <b>Não inclui a chave da rede.</b></p>
+            <button type="button" id="sis-backup-btn" class="btn solid big">Baixar backup (.json)</button>
+            <span id="sis-backup-msg" class="muted"></span>
+          </div>
+
+          <!-- Card: Restaurar -->
+          <div class="card stack" id="sis-restore-card">
+            <h2>Restaurar</h2>
+            <p>Reaplica um backup neste nó. Mantém o vínculo com o gateway; a config sobe de epoch e o gateway é avisado.</p>
+            <input type="file" id="sis-restore-file" accept="application/json" />
+            <button type="button" id="sis-restore-btn" class="btn outline big">Restaurar backup</button>
+            <div id="sis-restore-msg" class="hidden fp-pulseopen"></div>
+          </div>
+
+          <!-- Card: Reiniciar e resetar -->
+          <div class="card stack" id="sis-reboot-card">
+            <h2>Reiniciar e resetar</h2>
+            <button type="button" id="sis-reboot-btn" class="btn ghost">Reiniciar nó</button>
+            <span id="sis-reboot-msg" class="muted hidden"></span>
+            <div id="sis-reset-confirm" class="hidden"></div>
+            <button type="button" id="sis-reset-btn" class="btn dangerline">Reset de fábrica</button>
           </div>
         </div>
       </div>

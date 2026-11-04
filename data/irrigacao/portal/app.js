@@ -219,7 +219,151 @@ function showWizard() {
 }
 
 // ── Subtelas do "Mais" ───────────────────────────────────────────────────────
-function refreshSistema() {} // stub — Task 7 preenche o corpo
+
+// ── Sistema: estado local ────────────────────────────────────────────────────
+let sisBleActive = false;    // janela BLE aberta
+let sisBleMinutes = 0;       // minutos da janela activa
+let sisBleConfirmMin = 0;    // minutos pendentes de confirmação
+
+function refreshSistema() {
+  // Reset visual ao abrir a subtela: fecha callout BLE, oculta msgs
+  sisBleActive = false;
+  sisBleMinutes = 0;
+  sisBleConfirmMin = 0;
+  renderBleState();
+  const restoreMsg = document.getElementById("sis-restore-msg");
+  if (restoreMsg) { restoreMsg.textContent = ""; restoreMsg.classList.add("hidden"); }
+  const rebootMsg = document.getElementById("sis-reboot-msg");
+  if (rebootMsg) { rebootMsg.textContent = ""; rebootMsg.classList.add("hidden"); }
+  const resetConfirm = document.getElementById("sis-reset-confirm");
+  if (resetConfirm) { resetConfirm.classList.add("hidden"); resetConfirm.innerHTML = ""; }
+}
+
+function renderBleState() {
+  const btns = document.getElementById("sis-ble-btns");
+  const confirmEl = document.getElementById("sis-ble-confirm");
+  const activeEl = document.getElementById("sis-ble-active");
+  if (!btns) return;
+
+  if (sisBleActive) {
+    btns.classList.add("hidden");
+    confirmEl.classList.add("hidden");
+    activeEl.innerHTML = `<button type="button" id="sis-ble-stop" class="fp-active"><span class="dot"></span>Janela BLE aberta · ${sisBleMinutes} min. Toque para encerrar.</button>`;
+    activeEl.classList.remove("hidden");
+    document.getElementById("sis-ble-stop").addEventListener("click", doBleFechamento);
+  } else if (sisBleConfirmMin > 0) {
+    btns.classList.add("hidden");
+    activeEl.classList.add("hidden");
+    confirmEl.innerHTML = `<div class="fp-confirm amber"><div class="msg">O portal vai ficar fora do ar por ${sisBleConfirmMin} min enquanto a janela BLE estiver aberta. Continuar?</div>
+      <div class="btns"><button class="btn ghost sm" id="sis-ble-cancel">Cancelar</button>
+      <button class="btn solid sm" id="sis-ble-ok">Abrir janela</button></div></div>`;
+    confirmEl.classList.remove("hidden");
+    document.getElementById("sis-ble-cancel").addEventListener("click", () => {
+      sisBleConfirmMin = 0;
+      renderBleState();
+    });
+    document.getElementById("sis-ble-ok").addEventListener("click", () => doBleAbrir(sisBleConfirmMin));
+  } else {
+    btns.classList.remove("hidden");
+    confirmEl.classList.add("hidden");
+    confirmEl.innerHTML = "";
+    activeEl.classList.add("hidden");
+    activeEl.innerHTML = "";
+  }
+}
+
+async function doBleAbrir(minutes) {
+  sisBleConfirmMin = 0;
+  const { ok, body } = await j("/api/portal/ble", { method: "POST", body: JSON.stringify({ minutes }) });
+  if (ok) {
+    sisBleActive = true;
+    sisBleMinutes = body.minutes || minutes;
+  }
+  renderBleState();
+}
+
+async function doBleFechamento() {
+  sisBleActive = false;
+  sisBleMinutes = 0;
+  renderBleState();
+}
+
+// Listeners BLE: injetar após DOM pronto (index.html já existe ao carregar app.js)
+document.querySelectorAll("[data-blemin]").forEach((b) =>
+  b.addEventListener("click", () => {
+    sisBleConfirmMin = +b.dataset.blemin;
+    renderBleState();
+  })
+);
+
+// Listener Backup
+document.getElementById("sis-backup-btn").addEventListener("click", async () => {
+  const btn = document.getElementById("sis-backup-btn");
+  const msg = document.getElementById("sis-backup-msg");
+  btn.disabled = true;
+  msg.textContent = "Gerando backup…";
+  try {
+    const r = await rawFetch("/api/portal/node/backup");
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const text = await r.text();
+    if (!text || text[0] !== "{") throw new Error("resposta vazia/inválida");
+    const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "node-backup.json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    msg.textContent = "Backup baixado (" + text.length + " bytes).";
+  } catch (e) {
+    msg.textContent = "Falha ao gerar backup (" + e.message + ").";
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// Listener Restaurar
+document.getElementById("sis-restore-btn").addEventListener("click", async () => {
+  const file = document.getElementById("sis-restore-file").files[0];
+  const msg = document.getElementById("sis-restore-msg");
+  if (!file) { msg.textContent = "Escolha um arquivo .json primeiro."; msg.classList.remove("hidden"); return; }
+  const t = await file.text();
+  const { ok, body } = await j("/api/portal/node/restore", { method: "POST", body: t });
+  if (ok) {
+    msg.textContent = "Backup aplicado · epoch " + body.epoch + ". O gateway foi avisado.";
+    msg.classList.remove("hidden");
+  } else {
+    msg.textContent = (body.errors || ["erro"]).join("; ");
+    msg.classList.remove("hidden");
+  }
+});
+
+// Listener Reiniciar
+document.getElementById("sis-reboot-btn").addEventListener("click", async () => {
+  await j("/api/portal/node/reboot", { method: "POST" });
+  const msg = document.getElementById("sis-reboot-msg");
+  msg.textContent = "Reiniciando. Reconecte ao portal em ~10 s.";
+  msg.classList.remove("hidden");
+});
+
+// Listener Reset de fábrica
+document.getElementById("sis-reset-btn").addEventListener("click", () => {
+  const confirmEl = document.getElementById("sis-reset-confirm");
+  confirmEl.innerHTML = `<div class="fp-confirm"><div class="msg">Apaga a chave da rede, o vínculo com o gateway e toda a configuração. O nó volta ao assistente de 1º acesso.</div>
+    <div class="btns"><button class="btn ghost sm" id="sis-reset-cancel">Cancelar</button>
+    <button class="btn danger sm" id="sis-reset-ok">Apagar tudo</button></div></div>`;
+  confirmEl.classList.remove("hidden");
+  document.getElementById("sis-reset-cancel").addEventListener("click", () => {
+    confirmEl.classList.add("hidden");
+    confirmEl.innerHTML = "";
+  });
+  document.getElementById("sis-reset-ok").addEventListener("click", async () => {
+    await j("/api/portal/node/reset", { method: "POST" });
+    confirmEl.classList.add("hidden");
+    confirmEl.innerHTML = "";
+  });
+});
 
 function showMaisSub(key) {
   document.getElementById('mais-list').classList.add('hidden');
