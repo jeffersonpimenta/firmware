@@ -3089,13 +3089,11 @@ function wfClearTimers() {
 function wfRender(vista, extra) {
   extra = extra || {};
   // Barra de cabeçalho do toggle (comum ao estado 'list')
-  const trackBg = wfEnabled ? 'var(--green)' : 'oklch(0.85 0.006 100)';
-  const knobLeft = wfEnabled ? '18px' : '2px';
   const toggleHtml = `
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px;">
-      <div style="font-size:18px;font-weight:700;color:var(--text);">Rede Wi-Fi</div>
-      <div id="wfToggle" style="cursor:pointer;width:44px;height:26px;border-radius:999px;background:${trackBg};position:relative;flex-shrink:0;">
-        <div style="position:absolute;top:2px;left:${knobLeft};width:22px;height:22px;border-radius:999px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,0.25);transition:left 0.15s;"></div>
+    <div class="wf-hdr">
+      <div class="wf-title">Rede Wi-Fi</div>
+      <div id="wfToggle" class="wf-toggle${wfEnabled ? ' on' : ''}">
+        <div class="wf-knob"></div>
       </div>
     </div>`;
 
@@ -3103,8 +3101,8 @@ function wfRender(vista, extra) {
   if (vista === 'list') {
     if (!wfEnabled) {
       body = toggleHtml + `
-        <div class="card" style="padding:28px 16px;text-align:center;margin-top:4px;">
-          <div style="font-size:13px;color:var(--muted);">Wi-Fi desativado. Ative para buscar redes próximas.</div>
+        <div class="card wf-ctr">
+          <div class="wf-msg">Wi-Fi desativado. Ative para buscar redes próximas.</div>
         </div>`;
     } else {
       const nets = extra.networks || [];
@@ -3114,96 +3112,93 @@ function wfRender(vista, extra) {
       let networksHtml = '';
       if (scanning) {
         networksHtml = `
-          <div class="card" style="padding:24px 16px;text-align:center;margin-top:4px;">
-            <div style="width:22px;height:22px;border-radius:999px;border:2.5px solid var(--border);border-top-color:var(--green);margin:0 auto 10px;animation:wifiSpin 0.8s linear infinite;"></div>
-            <div style="font-size:12.5px;color:var(--muted);">Buscando redes próximas…</div>
+          <div class="card wf-ctr sm">
+            <div class="wf-spin"></div>
+            <div class="wf-msg">Buscando redes próximas…</div>
           </div>`;
       } else if (!nets.length) {
         networksHtml = `
-          <div class="card" style="padding:24px 16px;text-align:center;margin-top:4px;">
-            <div style="font-size:13px;font-weight:600;color:var(--text);">Nenhuma rede encontrada</div>
-            <div style="font-size:12px;color:var(--muted);margin-top:4px;">Aproxime o gateway do roteador e tente novamente.</div>
-            <button id="wfRescan" style="margin-top:12px;border:1px solid var(--border);padding:9px 14px;border-radius:8px;background:transparent;color:var(--text);font-size:12.5px;font-weight:600;">Buscar novamente</button>
+          <div class="card wf-ctr sm">
+            <div class="wf-empty-title">Nenhuma rede encontrada</div>
+            <div class="wf-empty-sub">Aproxime o gateway do roteador e tente novamente.</div>
+            <button id="wfRescan" class="btn ghost sm wf-rescan">Buscar novamente</button>
           </div>`;
       } else {
         const hasConn = nets.some((n) => n.ssid === connSsid);
         const hint = hasConn
-          ? `<div style="font-size:11px;color:var(--muted);padding:4px 2px 0;">Toque em uma rede conectada para esquecê-la.</div>`
+          ? `<div class="wf-hint">Toque em uma rede conectada para esquecê-la.</div>`
           : '';
         const rows = nets.map((net) => {
           const connected = net.ssid === connSsid;
-          const border = connected ? 'oklch(0.47 0.1 150 / 0.35)' : 'var(--border)';
           const sig = net.rssi >= -65 ? 3 : net.rssi >= -80 ? 2 : 1;
-          const lit = 'var(--green)', dim = 'oklch(0.85 0.006 100)';
-          const bars = `<div style="display:flex;align-items:flex-end;gap:2px;height:14px;flex-shrink:0;">
-            <div style="width:3px;height:5px;border-radius:1px;background:${sig >= 1 ? lit : dim};"></div>
-            <div style="width:3px;height:9px;border-radius:1px;background:${sig >= 2 ? lit : dim};"></div>
-            <div style="width:3px;height:14px;border-radius:1px;background:${sig >= 3 ? lit : dim};"></div>
+          const bars = `<div class="wf-bars">
+            <div class="wf-bar b1${sig >= 1 ? ' on' : ''}"></div>
+            <div class="wf-bar b2${sig >= 2 ? ' on' : ''}"></div>
+            <div class="wf-bar b3${sig >= 3 ? ' on' : ''}"></div>
           </div>`;
           const badge = connected
-            ? `<span style="font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:999px;background:oklch(0.47 0.1 150 / 0.12);color:var(--green);white-space:nowrap;flex-shrink:0;">Conectado</span>`
+            ? `<span class="chip green wf-connbadge">Conectado</span>`
             : '';
           return `<div data-wfssid="${esc(net.ssid)}" data-wfsec="${net.secure ? 1 : 0}" data-wfconn="${connected ? 1 : 0}"
-            style="cursor:pointer;background:var(--card);border:1px solid ${border};box-shadow:var(--shadow-card);border-radius:14px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;">
-            <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+            class="wf-net${connected ? ' conn' : ''}">
+            <div class="wf-net-left">
               ${bars}
-              <div style="font-size:14px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(net.ssid)}</div>
+              <div class="wf-netname">${esc(net.ssid)}</div>
             </div>
             ${badge}
           </div>`;
         }).join('');
-        networksHtml = `<div style="display:flex;flex-direction:column;gap:8px;margin-top:4px;">${rows}</div>${hint}`;
+        networksHtml = `<div class="wf-netlist">${rows}</div>${hint}`;
       }
 
       body = toggleHtml + `
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px;">
-          <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.04em;">Redes disponíveis</div>
-          <span id="wfRefresh" style="cursor:pointer;font-size:11px;font-weight:600;color:var(--green);">Atualizar</span>
+        <div class="wf-sechdr">
+          <div class="wf-seclbl">Redes disponíveis</div>
+          <span id="wfRefresh" class="wf-refresh">Atualizar</span>
         </div>
         ${networksHtml}`;
     }
   } else if (vista === 'password') {
     body = `
-      <div style="font-size:18px;font-weight:700;color:var(--text);margin-bottom:2px;">${esc((wfSelectedNet || {}).ssid || '')}</div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">Digite a senha da rede para conectar o gateway</div>
-      <div class="card" style="padding:14px 16px;display:flex;flex-direction:column;gap:10px;">
-        <input type="password" id="wfPskInput" placeholder="Senha (mín. 8 caracteres)"
-          style="border:1px solid var(--border);border-radius:8px;padding:10px 11px;font-size:14px;background:oklch(0.97 0.003 100);color:var(--text);font-family:inherit;width:100%;box-sizing:border-box;" />
-        <div style="display:flex;gap:8px;">
-          <button id="wfPskCancel" style="flex:1;border:1px solid var(--border);padding:10px;border-radius:8px;background:transparent;color:var(--muted);font-size:13px;font-weight:600;">Cancelar</button>
-          <button id="wfPskConnect" style="flex:1;border:none;padding:10px;border-radius:8px;background:var(--green);color:#fff;font-size:13px;font-weight:700;">Conectar</button>
+      <div class="wf-psktitle">${esc((wfSelectedNet || {}).ssid || '')}</div>
+      <div class="wf-psksub">Digite a senha da rede para conectar o gateway</div>
+      <div class="card wf-pskcard">
+        <input type="password" id="wfPskInput" placeholder="Senha (mín. 8 caracteres)" class="finput" />
+        <div class="wf-btnrow">
+          <button id="wfPskCancel" class="btn ghost wf-btn">Cancelar</button>
+          <button id="wfPskConnect" class="btn solid wf-btn">Conectar</button>
         </div>
       </div>`;
   } else if (vista === 'connecting') {
     body = `
-      <div class="card" style="padding:40px 16px;text-align:center;margin-top:40px;">
-        <div style="width:28px;height:28px;border-radius:999px;border:3px solid var(--border);border-top-color:var(--green);margin:0 auto 14px;animation:wifiSpin 0.8s linear infinite;"></div>
-        <div style="font-size:14px;font-weight:600;color:var(--text);">Conectando a ${esc((wfSelectedNet || {}).ssid || '')}…</div>
+      <div class="card wf-ctr conn">
+        <div class="wf-spin lg"></div>
+        <div class="wf-conn-title">Conectando a ${esc((wfSelectedNet || {}).ssid || '')}…</div>
       </div>`;
   } else if (vista === 'success') {
     body = `
-      <div class="card" style="border-color:oklch(0.47 0.1 150 / 0.35);padding:32px 20px;text-align:center;margin-top:24px;">
-        <div style="width:44px;height:44px;border-radius:999px;background:oklch(0.47 0.1 150 / 0.12);display:flex;align-items:center;justify-content:center;margin:0 auto 14px;">
-          <span style="color:var(--green);font-size:22px;font-weight:700;">✓</span>
+      <div class="card wf-ctr succ">
+        <div class="wf-succ-icon">
+          <span class="wf-succ-mark">✓</span>
         </div>
-        <div style="font-size:15px;font-weight:700;color:var(--text);">Conectado a ${esc(extra.ssid || '')}</div>
-        <div style="font-size:12px;color:var(--muted);margin-top:4px;">O gateway já está na rede local.</div>
-        <button id="wfSuccessBtn" style="margin-top:18px;border:none;padding:11px 20px;border-radius:8px;background:var(--green);color:#fff;font-size:13px;font-weight:700;">Concluído</button>
+        <div class="wf-conn-title">Conectado a ${esc(extra.ssid || '')}</div>
+        <div class="wf-empty-sub">O gateway já está na rede local.</div>
+        <button id="wfSuccessBtn" class="btn solid sm wf-succ-btn">Concluído</button>
       </div>`;
   } else if (vista === 'error') {
     const msg = esc(extra.msg || 'Falha ao conectar. Verifique a senha e tente novamente.');
     body = `
-      <div class="card redbox" style="margin-top:16px;">
-        <div style="font-size:14px;font-weight:700;color:var(--red);">Falha ao conectar</div>
-        <div style="font-size:12.5px;color:var(--text);margin-top:4px;">${msg}</div>
-        <div style="display:flex;gap:8px;margin-top:14px;">
-          <button id="wfErrCancel" style="flex:1;border:1px solid var(--border);padding:10px;border-radius:8px;background:transparent;color:var(--muted);font-size:13px;font-weight:600;">Cancelar</button>
-          <button id="wfErrRetry" style="flex:1;border:none;padding:10px;border-radius:8px;background:var(--red);color:#fff;font-size:13px;font-weight:700;">Tentar novamente</button>
+      <div class="card redbox wf-errbox">
+        <div class="wf-err-title">Falha ao conectar</div>
+        <div class="wf-err-msg">${msg}</div>
+        <div class="btnrow">
+          <button id="wfErrCancel" class="btn ghost">Cancelar</button>
+          <button id="wfErrRetry" class="btn danger">Tentar novamente</button>
         </div>
       </div>`;
   }
 
-  view.innerHTML = `<div style="display:flex;flex-direction:column;gap:12px;">${body}</div>`;
+  view.innerHTML = `<div class="wf-stack">${body}</div>`;
   wfWire(vista, extra);
 }
 
