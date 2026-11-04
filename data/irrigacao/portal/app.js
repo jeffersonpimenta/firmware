@@ -31,16 +31,16 @@ function renderNode(s) {
     const solar = s.vpanelCentiV ? `<div class="fp-stat"><div class="lbl">Painel solar</div><div class="val">${fmtV(s.vpanelCentiV)}</div></div>` : '';
     el.innerHTML = `
       <div class="fp-hd"><span class="ttl">Este nó</span><span class="chip gray">Repetidor</span></div>
-      <div class="fp-grid" style="margin-top:12px;">
+      <div class="fp-grid mt12">
         <div class="fp-stat"><div class="lbl">Bateria</div><div class="val">${fmtV(s.vbatCentiV)}</div></div>
         ${solar || `<div class="fp-stat"><div class="lbl">Gateway</div><div class="val sm">${gw}</div></div>`}
       </div>
-      <div class="fp-grid" style="margin-top:8px;">
+      <div class="fp-grid mt8">
         ${solar ? `<div class="fp-stat"><div class="lbl">Gateway</div><div class="val sm">${gw}</div></div>` : ''}
         <div class="fp-stat"><div class="lbl">Uptime</div><div class="val sm">${fmtUptime(s.uptimeS || 0)}</div></div>
       </div>
-      <div class="fp-stat" style="margin-top:8px;"><div class="lbl">Relógio</div><div class="val sm">${fmtClock(s.nowEpoch, s.hasTime)}</div></div>
-      <div class="muted" style="font-size:12px;margin-top:12px;">${sync}</div>
+      <div class="fp-stat mt8"><div class="lbl">Relógio</div><div class="val sm">${fmtClock(s.nowEpoch, s.hasTime)}</div></div>
+      <div class="fp-sync mt12">${sync}</div>
       ${tamper}`;
     return;
   }
@@ -51,13 +51,13 @@ function renderNode(s) {
   }
   el.innerHTML = `
     <div class="fp-hd"><span class="ttl">Este nó</span><span class="chip green">${ROLES[s.role] || s.role}</span></div>
-    <div class="fp-grid" style="margin-top:12px;">
+    <div class="fp-grid mt12">
       <div class="fp-stat"><div class="lbl">Bateria</div><div class="val">${fmtV(s.vbatCentiV)}</div></div>
       <div class="fp-stat"><div class="lbl">Gateway</div><div class="val sm">${gw}</div></div>
     </div>
-    <div class="muted" style="font-size:12px;margin-top:10px;">${sync}${s.safeMode ? " · <b>modo seguro</b>" : ""}</div>
-    <div class="fp-stat" style="margin-top:8px;"><div class="lbl">Relógio</div><div class="val sm">${fmtClock(s.nowEpoch, s.hasTime)}</div></div>
-    <div style="margin-top:6px;"><div class="fp-lbl">Válvulas</div><div class="fp-pills">${valves.join("") || "<span class='muted'>—</span>"}</div></div>
+    <div class="fp-sync">${sync}${s.safeMode ? " · <b>modo seguro</b>" : ""}</div>
+    <div class="fp-stat mt8"><div class="lbl">Relógio</div><div class="val sm">${fmtClock(s.nowEpoch, s.hasTime)}</div></div>
+    <div class="mt6"><div class="fp-lbl">Válvulas</div><div class="fp-pills">${valves.join("") || "<span class='muted'>—</span>"}</div></div>
     ${tamper}`;
   renderPulsePills(s.numValves);
 }
@@ -71,8 +71,8 @@ function renderGpos(s) {
   let html = "";
   for (let i = 0; i < s.numGpos; i++) {
     const on = (s.gpoStates >> i) & 1;
-    html += `<div class="fp-kv" style="align-items:center;">
-      <span class="k">GPO ${i} · <b style="color:var(--text)">${on ? "Ligado" : "Desligado"}</b></span>
+    html += `<div class="fp-kv center">
+      <span class="k">GPO ${i} · <b>${on ? "Ligado" : "Desligado"}</b></span>
       <button data-gpo="${i}" data-act="${on ? 0 : 1}">${on ? "Desligar" : "Ligar"}</button></div>`;
     if (gpoPending === i) {
       html += `<div class="fp-confirm"><div class="msg">GPO biestável — não desliga sozinho. Confirma o acionamento?</div>
@@ -129,8 +129,8 @@ async function refreshEnlace() {
   const ns = body.neighbors || [];
   document.getElementById("enlNeighbors").innerHTML = ns.length ? ns.map((n) => {
     const snr = (n.snrQuarterDb / 4).toFixed(1).replace('.', ',');
-    const q = n.snrQuarterDb >= 24 ? "var(--green)" : n.snrQuarterDb >= 8 ? "var(--amber)" : "var(--red)";
-    return `<div class="fp-node"><div class="hd"><span class="id">${nodeHex(n.node)}</span><span style="font-size:11px;font-weight:700;color:${q};">${snr} dB</span></div>
+    const qc = n.snrQuarterDb >= 24 ? "green" : n.snrQuarterDb >= 8 ? "amber" : "red";
+    return `<div class="fp-node"><div class="hd"><span class="id">${nodeHex(n.node)}</span><span class="fp-snr ${qc}">${snr} dB</span></div>
       <div class="meta">${n.name || "—"} · ${n.hops} ${n.hops === 1 ? "salto" : "saltos"}</div></div>`;
   }).join("") : "<span class='muted'>nenhum vizinho ouvido</span>";
 }
@@ -295,11 +295,11 @@ async function loadClients() {
   const el = document.getElementById("clientsList");
   if (!ok || !body.clients) { el.textContent = "—"; return; }
   el.innerHTML = `<div class="stack">` + (body.clients.map((c) => {
-    const badge = c.active ? `<span style="font-size:11px;font-weight:700;color:var(--green);">▶ ativo</span>`
+    const badge = c.active ? `<span class="fp-badge-green">▶ ativo</span>`
       : `<button data-sel="${c.id}">Selecionar</button>`;
     const confirm = svcConfirmClient === c.id ? `<div class="fp-confirm"><div class="msg">Re-tunar no canal deste cliente? O dispositivo reinicia (~3 s).</div>
       <div class="btns"><button class="btn ghost sm" data-cxl="1">Cancelar</button><button class="btn danger sm" data-cok="${c.id}">Confirmar</button></div></div>` : "";
-    return `<div class="fp-node"><div class="hd"><div><div style="font-weight:600;color:var(--text);font-size:14px;">${c.nome || c.id}</div>
+    return `<div class="fp-node"><div class="hd"><div><div class="fp-nm">${c.nome || c.id}</div>
       <div class="meta">canal ${c.canal} · ${c.estacoes} nós</div></div>${badge}</div>${confirm}</div>`;
   }).join("") || "nenhum cliente no cofre") + `</div>`;
   el.querySelectorAll("button[data-sel]").forEach((b) => b.onclick = () => { svcConfirmClient = b.dataset.sel; loadClients(); });
@@ -337,13 +337,13 @@ async function pollScanSvc() {
   if (!ok || !body.nodes || !body.nodes.length) { el.textContent = "nenhum respondente ainda"; return; }
   el.innerHTML = `<div class="stack">` + body.nodes.map((n) => {
     const hx = nodeHex(n.node);
-    return `<div class="fp-node"><div class="hd"><span class="id">${hx}</span><span style="font-size:11px;font-weight:600;color:var(--green);">${ROLES[n.role] || n.role}</span></div>
+    return `<div class="fp-node"><div class="hd"><span class="id">${hx}</span><span class="fp-badge-green">${ROLES[n.role] || n.role}</span></div>
       <div class="meta">epoch ${n.epoch} · ${(n.vbat / 100).toFixed(1).replace('.', ',')} V · fw 0x${(n.fw || 0).toString(16)} · snr ${(n.snr / 4).toFixed(0)}</div>
       <div class="acts">
         <button class="fp-pill" data-rd="${hx}">Ler cfg</button>
         <button class="fp-pill" data-pulse="${hx}">Pulso</button>
         <button class="fp-pill" data-zone="${hx}">Zona</button>
-        <button class="fp-pill" style="color:var(--red);border-color:oklch(0.55 0.16 30 / 0.4);" data-rs="${hx}">RESYNC</button>
+        <button class="fp-pill danger" data-rs="${hx}">RESYNC</button>
       </div></div>`;
   }).join("") + `</div>`;
   el.querySelectorAll("button[data-rd]").forEach((b) => b.onclick = () => readConfig(b.dataset.rd));
