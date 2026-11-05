@@ -383,16 +383,17 @@ if platform.name == "espressif32":
     mtjson_deps = ["$BUILD_DIR/${PROGNAME}.bin"]
     # Build littlefs image as part of mtjson target
     # Equivalent to `pio run -t buildfs`
-    # Staging do FS sem artefatos de dev (mock/test) — evita ~52 KB de peso morto no LittleFS.
     _fs_src = env.subst("$PROJECT_DATA_DIR")
     _fs_stage = join(env.subst("$BUILD_DIR"), "fs_stage")
-    _DEV_ONLY = {"mock.js", "test_mock.js", "test_niveis.js", "test_radio.js"}
+    # Staging do FS sem artefatos de dev — exclui a pasta dev/ inteira
+    # (mock.js + testes) para não levar peso morto ao LittleFS do device.
+    _DEV_DIRS = {"dev"}
 
     def _stage_fs(source, target, env):
         if os.path.isdir(_fs_stage):
             shutil.rmtree(_fs_stage)
         shutil.copytree(_fs_src, _fs_stage,
-                        ignore=lambda d, names: [n for n in names if n in _DEV_ONLY])
+                        ignore=lambda d, names: [n for n in names if n in _DEV_DIRS])
 
     target_lfs = env.DataToBin(
         join("$BUILD_DIR", "${ESP32_FS_IMAGE_NAME}"), _fs_stage

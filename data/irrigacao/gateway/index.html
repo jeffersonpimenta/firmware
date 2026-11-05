@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Irrigação — Gateway</title>
+    <link rel="stylesheet" href="/irrigacao/shared/style.css" />
+  </head>
+  <body>
+    <header class="top">
+      <div>
+        <div class="farm">Gateway</div>
+        <div class="sub">canal privado</div>
+      </div>
+      <div class="hdr-right">
+        <span id="timeBadge" class="chip amber timebadge hidden" role="button" tabindex="0">—</span>
+      </div>
+    </header>
+    <div id="subbar" class="subbar hidden">
+      <button class="subback" id="subBack">‹ Mais</button>
+      <span class="subtitle" id="subTitle"></span>
+    </div>
+    <main id="view" class="view"></main>
+    <nav class="tabs">
+      <button data-tab="overview" class="tab active">Visão&nbsp;Geral</button>
+      <button data-tab="stations" class="tab">Estações</button>
+      <button data-tab="zones" class="tab">Zonas</button>
+      <button data-tab="programs" class="tab">Programas</button>
+      <button data-tab="mais" class="tab">Mais</button>
+    </nav>
+    <script>if(new URLSearchParams(location.search).has('mock')){document.write('<script src="/irrigacao/dev/mock.js"><\/script>');}</script>
+    <script src="/irrigacao/shared/api.js"></script>
+    <script src="/irrigacao/gateway/app.js"></script>
+  </body>
+</html>

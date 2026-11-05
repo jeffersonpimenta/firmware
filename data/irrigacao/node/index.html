@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Portal de Irrigação</title>
-  <link rel="stylesheet" href="/irrigacao/style.css" />
+  <link rel="stylesheet" href="/irrigacao/shared/style.css" />
 </head>
 <body class="field-portal">
   <!-- Wizard de 1º boot (§6): revelado por app.js quando node-state reporta provisioned=false.
@@ -277,9 +277,8 @@
     <button data-tab="mais" class="tab svc-firmware hidden">Firmware</button>
   </nav>
 
-  <script>if(new URLSearchParams(location.search).has('mock')){document.write('<script src="/irrigacao/mock.js"><\/script>');}</script>
-  <script src="/irrigacao/api.js"></script>
-  <script src="/irrigacao/route.js"></script>
-  <script src="/irrigacao/portal/app.js"></script>
+  <script>if(new URLSearchParams(location.search).has('mock')){document.write('<script src="/irrigacao/dev/mock.js"><\/script>');}</script>
+  <script src="/irrigacao/shared/api.js"></script>
+  <script src="/irrigacao/node/app.js"></script>
 </body>
 </html>

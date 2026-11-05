@@ -3,7 +3,7 @@
 const fs = require('fs');
 const vm = require('vm');
 
-const code = fs.readFileSync('route.js', 'utf-8');
+const code = fs.readFileSync('../shared/route.js', 'utf-8');
 const sandbox = { module: { exports: {} }, window: {}, location: {}, fetch: () => {} };
 vm.createContext(sandbox);
 vm.runInContext(code, sandbox);

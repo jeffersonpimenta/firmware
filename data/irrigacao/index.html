@@ -3,34 +3,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Irrigação — Gateway</title>
-    <link rel="stylesheet" href="style.css" />
+    <title>Irrigação</title>
+    <link rel="stylesheet" href="/irrigacao/shared/style.css" />
   </head>
   <body>
-    <header class="top">
-      <div>
-        <div class="farm">Gateway</div>
-        <div class="sub">canal privado</div>
-      </div>
-      <div class="hdr-right">
-        <span id="timeBadge" class="chip amber timebadge hidden" role="button" tabindex="0">—</span>
-      </div>
-    </header>
-    <div id="subbar" class="subbar hidden">
-      <button class="subback" id="subBack">‹ Mais</button>
-      <span class="subtitle" id="subTitle"></span>
-    </div>
-    <main id="view" class="view"></main>
-    <nav class="tabs">
-      <button data-tab="overview" class="tab active">Visão&nbsp;Geral</button>
-      <button data-tab="stations" class="tab">Estações</button>
-      <button data-tab="zones" class="tab">Zonas</button>
-      <button data-tab="programs" class="tab">Programas</button>
-      <button data-tab="mais" class="tab">Mais</button>
-    </nav>
-    <script>if(new URLSearchParams(location.search).has('mock')){document.write('<script src="mock.js"><\/script>');}</script>
-    <script src="api.js"></script>
-    <script src="route.js"></script>
-    <script src="app.js"></script>
+    <!-- Bootstrap: consulta o papel do device e redireciona para a SPA certa.
+         Nenhuma SPA pesada carrega aqui. route.js preserva a query string. -->
+    <main class="view"><p class="muted" style="padding:1rem">A carregar…</p></main>
+    <script>if(new URLSearchParams(location.search).has('mock')){document.write('<script src="/irrigacao/dev/mock.js"><\/script>');}</script>
+    <script src="/irrigacao/shared/route.js"></script>
   </body>
 </html>

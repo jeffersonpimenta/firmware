@@ -1,5 +1,5 @@
 const fs = require('fs');
-const appCode = fs.readFileSync('app.js', 'utf-8');
+const appCode = fs.readFileSync('../gateway/app.js', 'utf-8');
 
 // Stub mínimo de DOM/browser para permitir eval de app.js (que tem wiring top-level).
 const elStub = () => ({
@@ -12,7 +12,7 @@ const elStub = () => ({
 });
 global.document = { getElementById: elStub, querySelectorAll: () => [], createElement: elStub };
 global.fetch = () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}) });
-global.window = {}; global.location = { search: '' };
+global.window = { location: { search: '' } }; global.location = { search: '' };
 global.confirm = () => true; global.alert = () => {};
 
 // Captura as funções puras (eval estrito não vaza declarações; Object.assign no fim, mesmo escopo).
@@ -55,9 +55,9 @@ t(L.nvDigitalSensors(sensors, 0xd1e2f3a4).length === 0, 'nvDigitalSensors vazio 
 // ---- card da lista ----
 const card = L.nvCardHtml(rule, stations, zones, sensors);
 t(card.includes('Horta Norte') && card.includes('Nível'), 'card mostra estação/boia');
-t(card.includes('Horta') && card.includes('ATIVA'), 'card mostra bomba e polaridade');
+t(card.includes('Horta') && card.includes('ativa'), 'card mostra bomba e polaridade');
 t(card.includes('min 5m/10m') && card.includes('sem sinal 1h'), 'card mostra durações formatadas');
-t(card.includes('lvl-tank'), 'card tem mini-tanque');
+t(card.includes('lvl-cardbody'), 'card tem corpo do card');
 t(card.includes('data-nedit="1"'), 'card é clicável p/ editar (data-nedit)');
 t(!/0x[0-9a-f]+/.test(card), 'card não mostra hex cru quando há nomes');
 

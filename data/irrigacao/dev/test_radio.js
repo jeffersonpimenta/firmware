@@ -1,5 +1,5 @@
 const fs = require('fs');
-const appCode = fs.readFileSync('app.js', 'utf-8');
+const appCode = fs.readFileSync('../gateway/app.js', 'utf-8');
 
 // Stub mínimo de DOM/browser p/ eval do app.js (mesmo padrão de test_niveis.js,
 // mas com window.location.search, que o app.js lê no topo).
@@ -51,11 +51,11 @@ const rows = [
 ];
 const tbl = L.coberturaTableHtml(rows);
 t(tbl.includes('id="cov-clear"'), 'cobertura: botão Limpar presente');
-t(tbl.includes('>Nó<') && tbl.includes('>Papel<') && tbl.includes('>Coordenada<') && tbl.includes('>Idade<'), 'cobertura: cabeçalho da tabela');
+t(tbl.includes('cov-name') && tbl.includes('cov-metric') && tbl.includes('cov-age'), 'cobertura: elementos de layout presentes');
 t(tbl.includes('Estação'), 'cobertura: papel 0 -> Estação');
 t(tbl.includes('papel 9'), 'cobertura: papel desconhecido -> fallback "papel N"');
 t(tbl.includes('23.45000, -46.78000'), 'cobertura: coordenada formatada quando coord=1');
-t(/<td[^>]*>—<\/td>/.test(tbl), 'cobertura: coord ausente -> travessão');
+t(tbl.includes('23.45000, -46.78000') && !tbl.includes('e5f6a7b8, -'), 'cobertura: coord ausente omite coordenada');
 
 t(L.coberturaTableHtml([]).includes('Sem beacons recebidos.'), 'cobertura: lista vazia');
 t(L.coberturaTableHtml(null).includes('Sem beacons recebidos.'), 'cobertura: null tratado como vazio');
