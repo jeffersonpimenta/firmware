@@ -3545,7 +3545,7 @@ bool IrrigationModule::portalSetCoords(const IrrigationWeb::PortalCoords &c)
 bool IrrigationModule::portalRestoreConfig(const char *json, size_t len, uint32_t &newEpochOut)
 {
     IrrigationSettings merged = settings; // geridos preservados pelo parse
-    IrrigationWeb::ParseResult r = parseStationConfig(json, len, merged);
+    IrrigationWeb::ParseResult r = IrrigationWeb::parseStationConfig(json, len, merged);
     if (!r.ok)
         return false;
     newEpochOut = settings.configEpoch + 1;
