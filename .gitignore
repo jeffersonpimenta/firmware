@@ -74,3 +74,6 @@ build/wasm/
 build/wasm-obj/
 build/wasm-*.log
 .emsdk/
+
+# Bancada local de teste de UI (ESP8266) — ferramenta de dev, não versionada
+/tools/ui-rig-esp8266/
