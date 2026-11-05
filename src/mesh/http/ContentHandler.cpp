@@ -499,6 +499,11 @@ void handleStatic(HTTPRequest *req, HTTPResponse *res)
         if (parameter1.rfind("irrigacao", 0) == 0)
             res->setHeader("Cache-Control", "no-cache");
 
+        // Caminho de diretório sob irrigacao (ex.: "irrigacao/" ou "irrigacao/gateway/")
+        // resolve para o index.html daquela pasta — ESP8266/ESP32 não fazem index-de-diretório.
+        if (parameter1.rfind("irrigacao", 0) == 0 && !parameter1.empty() && parameter1.back() == '/')
+            parameter1 += "index.html";
+
 #if !MESHTASTIC_EXCLUDE_IRRIGATION
         // Portal cativo de irrigação: quando o softAP do portal está no ar, qualquer navegação que
         // NÃO seja um arquivo existente (raiz "/", sondas de captive-portal tipo /generate_204 e
@@ -516,9 +521,9 @@ void handleStatic(HTTPRequest *req, HTTPResponse *res)
                 res->setStatusCode(302);
                 res->setStatusText("Found");
 #if HAS_WIFI
-                std::string loc = "http://" + std::string(WiFi.softAPIP().toString().c_str()) + "/irrigacao/portal/index.html";
+                std::string loc = "http://" + std::string(WiFi.softAPIP().toString().c_str()) + "/irrigacao/index.html";
 #else
-                std::string loc = "http://192.168.4.1/irrigacao/portal/index.html";
+                std::string loc = "http://192.168.4.1/irrigacao/index.html";
 #endif
                 res->setHeader("Location", loc);
                 res->setHeader("Content-Length", "0");
