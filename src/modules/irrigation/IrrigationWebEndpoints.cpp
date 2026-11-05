@@ -143,7 +143,7 @@ static void hStations(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, buf);
 }
 
-// POST /api/irrigation/stations/config — edita heartbeat/limiares/coords + re-push §5.4
+// POST /api/gateway/stations/config — edita heartbeat/limiares/coords + re-push §5.4
 static void hStationsConfig(HTTPRequest *req, HTTPResponse *res)
 {
     if (!gwReady()) {
@@ -165,7 +165,7 @@ static void hStationsConfig(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, "{\"ok\":true}");
 }
 
-// POST /api/irrigation/stations/delete — remove estação (trava se há zonas vinculadas)
+// POST /api/gateway/stations/delete — remove estação (trava se há zonas vinculadas)
 static void hStationsDelete(HTTPRequest *req, HTTPResponse *res)
 {
     if (!gwReady()) {
@@ -194,7 +194,7 @@ static void hStationsDelete(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, "{\"ok\":true}");
 }
 
-// POST /api/irrigation/stations/pulse — teste de pulso por saída física
+// POST /api/gateway/stations/pulse — teste de pulso por saída física
 static void hStationsPulse(HTTPRequest *req, HTTPResponse *res)
 {
     if (!gwReady()) {
@@ -410,7 +410,7 @@ static void hCommand(HTTPRequest *req, HTTPResponse *res)
 // são CI-only e não exercitadas pelo native test suite.
 // ---------------------------------------------------------------------------
 
-// GET /api/irrigation/interlocks — lista regras de intertravamento
+// GET /api/gateway/interlocks — lista regras de intertravamento
 static void hInterlocksGet(HTTPRequest *req, HTTPResponse *res)
 {
     (void)req;
@@ -427,7 +427,7 @@ static void hInterlocksGet(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, buf);
 }
 
-// POST /api/irrigation/interlocks — upsert de uma regra
+// POST /api/gateway/interlocks — upsert de uma regra
 static void hInterlocksPost(HTTPRequest *req, HTTPResponse *res)
 {
     if (!gwReady()) {
@@ -455,7 +455,7 @@ static void hInterlocksPost(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, out);
 }
 
-// POST /api/irrigation/interlocks/delete — remove uma regra por id
+// POST /api/gateway/interlocks/delete — remove uma regra por id
 static void hInterlocksDelete(HTTPRequest *req, HTTPResponse *res)
 {
     if (!gwReady()) {
@@ -483,7 +483,7 @@ static void hInterlocksDelete(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, out);
 }
 
-// GET /api/irrigation/sensors — leitura de sensores de todas as estações
+// GET /api/gateway/sensors — leitura de sensores de todas as estações
 static void hSensorsGet(HTTPRequest *req, HTTPResponse *res)
 {
     (void)req;
@@ -530,7 +530,7 @@ static void hSensorsGet(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, buf);
 }
 
-// POST /api/irrigation/sensors/name — define nome de um sensor de uma estação
+// POST /api/gateway/sensors/name — define nome de um sensor de uma estação
 static void hSensorsName(HTTPRequest *req, HTTPResponse *res)
 {
     if (!gwReady()) {
@@ -554,7 +554,7 @@ static void hSensorsName(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, "{\"ok\":true}");
 }
 
-// GET /api/irrigation/audit — log de auditoria flash do gateway (JSON ou CSV)
+// GET /api/gateway/audit — log de auditoria flash do gateway (JSON ou CSV)
 // Parâmetros de query: fmt=json|csv  n=<maxRecords> (padrão 500)
 static void hAudit(HTTPRequest *req, HTTPResponse *res)
 {
@@ -610,7 +610,7 @@ static void hAudit(HTTPRequest *req, HTTPResponse *res)
     free(buf);
 }
 
-// POST /api/irrigation/system/ble-window — janela BLE sob demanda (5/10/15 min): WiFi off,
+// POST /api/gateway/system/ble-window — janela BLE sob demanda (5/10/15 min): WiFi off,
 // BLE on por N min; device reboota e volta sozinho ao normal. Ver spec 2026-09-27.
 static void hBleWindow(HTTPRequest *req, HTTPResponse *res)
 {
@@ -629,7 +629,7 @@ static void hBleWindow(HTTPRequest *req, HTTPResponse *res)
     irrigationModule->startBleWindow((uint8_t)minutes);
 }
 
-// POST /api/irrigation/maint — abre/fecha janela de manutenção de tamper numa estação
+// POST /api/gateway/maint — abre/fecha janela de manutenção de tamper numa estação
 static void hMaint(HTTPRequest *req, HTTPResponse *res)
 {
     if (!gwReady()) {
@@ -653,7 +653,7 @@ static void hMaint(HTTPRequest *req, HTTPResponse *res)
 // Fase 7b: grupos hidráulicos
 // ---------------------------------------------------------------------------
 
-// GET /api/irrigation/groups — lista de config dos grupos
+// GET /api/gateway/groups — lista de config dos grupos
 static void hGroupsGet(HTTPRequest *req, HTTPResponse *res)
 {
     (void)req;
@@ -664,7 +664,7 @@ static void hGroupsGet(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, buf);
 }
 
-// GET /api/irrigation/groups/status — status ao vivo por grupo
+// GET /api/gateway/groups/status — status ao vivo por grupo
 static void hGroupsStatus(HTTPRequest *req, HTTPResponse *res)
 {
     (void)req;
@@ -690,7 +690,7 @@ static void hGroupsStatus(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, buf);
 }
 
-// POST /api/irrigation/groups — upsert (id=0 => servidor aloca)
+// POST /api/gateway/groups — upsert (id=0 => servidor aloca)
 static void hGroupsPost(HTTPRequest *req, HTTPResponse *res)
 {
     if (!gwReady()) { res->setStatusCode(404); return; }
@@ -714,7 +714,7 @@ static void hGroupsPost(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, out);
 }
 
-// POST /api/irrigation/groups/delete — remove por id
+// POST /api/gateway/groups/delete — remove por id
 static void hGroupsDelete(HTTPRequest *req, HTTPResponse *res)
 {
     if (!gwReady()) { res->setStatusCode(404); return; }
@@ -733,7 +733,7 @@ static void hGroupsDelete(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, out);
 }
 
-// POST /api/irrigation/groups/command — controle manual do grupo
+// POST /api/gateway/groups/command — controle manual do grupo
 static void hGroupsCommand(HTTPRequest *req, HTTPResponse *res)
 {
     if (!gwReady()) { res->setStatusCode(404); return; }
@@ -753,7 +753,7 @@ static void hGroupsCommand(HTTPRequest *req, HTTPResponse *res)
 // Fase 8b (Task 7): controle de nível por boia
 // ---------------------------------------------------------------------------
 
-// GET /api/irrigation/levels — lista de regras de controle de nível
+// GET /api/gateway/levels — lista de regras de controle de nível
 static void hLevelsGet(HTTPRequest *req, HTTPResponse *res)
 {
     (void)req;
@@ -764,7 +764,7 @@ static void hLevelsGet(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, buf);
 }
 
-// POST /api/irrigation/levels — upsert (id=0 => servidor aloca)
+// POST /api/gateway/levels — upsert (id=0 => servidor aloca)
 static void hLevelsPost(HTTPRequest *req, HTTPResponse *res)
 {
     if (!gwReady()) { res->setStatusCode(404); return; }
@@ -788,7 +788,7 @@ static void hLevelsPost(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, out);
 }
 
-// POST /api/irrigation/levels/delete — remove por id
+// POST /api/gateway/levels/delete — remove por id
 static void hLevelsDelete(HTTPRequest *req, HTTPResponse *res)
 {
     if (!gwReady()) { res->setStatusCode(404); return; }
@@ -812,7 +812,7 @@ static void hLevelsDelete(HTTPRequest *req, HTTPResponse *res)
 // Gateados por gwReady() (role==GATEWAY verificado internamente pelo módulo).
 // ---------------------------------------------------------------------------
 
-// GET /api/irrigation/remote — estado ao vivo das saídas remotas (dedup por targetZoneId)
+// GET /api/gateway/remote — estado ao vivo das saídas remotas (dedup por targetZoneId)
 static void hRemote(HTTPRequest *req, HTTPResponse *res)
 {
     (void)req;
@@ -829,7 +829,7 @@ static void hRemote(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, buf);
 }
 
-// POST /api/irrigation/remote — upsert de associação botoeira→saída  {id?,enabled?,targetZoneId,triggers:[...]}
+// POST /api/gateway/remote — upsert de associação botoeira→saída  {id?,enabled?,targetZoneId,triggers:[...]}
 static void hRemoteUpsert(HTTPRequest *req, HTTPResponse *res)
 {
     if (!gwReady()) {
@@ -851,7 +851,7 @@ static void hRemoteUpsert(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, buf);
 }
 
-// POST /api/irrigation/remote/delete — remove associação por id  {id:1..255}
+// POST /api/gateway/remote/delete — remove associação por id  {id:1..255}
 static void hRemoteDelete(HTTPRequest *req, HTTPResponse *res)
 {
     if (!gwReady()) {
@@ -873,7 +873,7 @@ static void hRemoteDelete(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, buf);
 }
 
-// POST /api/irrigation/remote/command — toggle manual da saída  {targetZoneId:1..255}
+// POST /api/gateway/remote/command — toggle manual da saída  {targetZoneId:1..255}
 static void hRemoteCommand(HTTPRequest *req, HTTPResponse *res)
 {
     if (!gwReady()) {
@@ -889,7 +889,7 @@ static void hRemoteCommand(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, "{\"ok\":true}");
 }
 
-// POST /api/irrigation/import — restaura as 4 tabelas de config de um envelope de backup (§5.5).
+// POST /api/gateway/import — restaura as 4 tabelas de config de um envelope de backup (§5.5).
 // NÃO toca PSK/canal; NÃO reinicializa; NÃO bumpa epoch das estações. CI-only.
 static void hImport(HTTPRequest *req, HTTPResponse *res)
 {
@@ -910,7 +910,7 @@ static void hImport(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, resp, ok ? 200 : 400);
 }
 
-// GET /api/irrigation/export — backup §5.5 completo (PSK + tabelas) num envelope
+// GET /api/gateway/export — backup §5.5 completo (PSK + tabelas) num envelope
 // multi-cliente, para o cofre do device SERVICO (Fase 8b §11.7).
 static void hExport(HTTPRequest *req, HTTPResponse *res)
 {
@@ -940,7 +940,7 @@ static void hExport(HTTPRequest *req, HTTPResponse *res)
     free(buf);
 }
 
-// GET /api/irrigation/survey — pontos de cobertura registrados (§8.5). GATEWAY-only.
+// GET /api/gateway/survey — pontos de cobertura registrados (§8.5). GATEWAY-only.
 static void hSurvey(HTTPRequest *req, HTTPResponse *res)
 {
     (void)req;
@@ -964,7 +964,7 @@ static void hSurvey(HTTPRequest *req, HTTPResponse *res)
     free(buf);
 }
 
-// POST /api/irrigation/survey/clear — zera o log de cobertura.
+// POST /api/gateway/survey/clear — zera o log de cobertura.
 static void hSurveyClear(HTTPRequest *req, HTTPResponse *res)
 {
     (void)req;
@@ -980,7 +980,7 @@ static void hSurveyClear(HTTPRequest *req, HTTPResponse *res)
 // Fase 8b: Horário (relógio do gateway)
 // ---------------------------------------------------------------------------
 
-// GET /api/irrigation/time — estado do relógio do gateway
+// GET /api/gateway/time — estado do relógio do gateway
 static void hTime(HTTPRequest *req, HTTPResponse *res)
 {
     (void)req;
@@ -996,7 +996,7 @@ static void hTime(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, buf);
 }
 
-// POST /api/irrigation/time — set manual { epoch }
+// POST /api/gateway/time — set manual { epoch }
 static void hTimeSet(HTTPRequest *req, HTTPResponse *res)
 {
     if (!gwReady()) {
@@ -1020,7 +1020,7 @@ static void hTimeSet(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, buf);
 }
 
-// POST /api/irrigation/timezone — { tz } (preset POSIX)
+// POST /api/gateway/timezone — { tz } (preset POSIX)
 static void hTimezone(HTTPRequest *req, HTTPResponse *res)
 {
     if (!gwReady()) {
@@ -1042,7 +1042,7 @@ static void hTimezone(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, "{\"ok\":true}");
 }
 
-// POST /api/irrigation/time/sync — dispara NTP agora (só com WiFi STA)
+// POST /api/gateway/time/sync — dispara NTP agora (só com WiFi STA)
 static void hTimeSync(HTTPRequest *req, HTTPResponse *res)
 {
     (void)req;
@@ -1061,7 +1061,7 @@ static void hTimeSync(HTTPRequest *req, HTTPResponse *res)
 // Supressão meteorológica (Task 12)
 // ---------------------------------------------------------------------------
 
-// GET /api/irrigation/weather — status completo (config + cache + regras)
+// GET /api/gateway/weather — status completo (config + cache + regras)
 static void hWeatherGet(HTTPRequest *req, HTTPResponse *res)
 {
     (void)req;
@@ -1078,7 +1078,7 @@ static void hWeatherGet(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, buf);
 }
 
-// POST /api/irrigation/weather/config — habilita/desabilita + coordenadas
+// POST /api/gateway/weather/config — habilita/desabilita + coordenadas
 static void hWeatherConfigPost(HTTPRequest *req, HTTPResponse *res)
 {
     if (!gwReady()) { res->setStatusCode(404); return; }
@@ -1090,7 +1090,7 @@ static void hWeatherConfigPost(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, ok ? "{\"ok\":true}" : "{\"ok\":false}");
 }
 
-// POST /api/irrigation/weather/rule — upsert de regra de supressão
+// POST /api/gateway/weather/rule — upsert de regra de supressão
 static void hWeatherRulePost(HTTPRequest *req, HTTPResponse *res)
 {
     if (!gwReady()) { res->setStatusCode(404); return; }
@@ -1110,7 +1110,7 @@ static void hWeatherRulePost(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, out);
 }
 
-// POST /api/irrigation/weather/rule/delete — remove regra por id
+// POST /api/gateway/weather/rule/delete — remove regra por id
 static void hWeatherRuleDelete(HTTPRequest *req, HTTPResponse *res)
 {
     if (!gwReady()) { res->setStatusCode(404); return; }
@@ -1124,7 +1124,7 @@ static void hWeatherRuleDelete(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, ok ? "{\"ok\":true}" : "{\"ok\":false}");
 }
 
-// POST /api/irrigation/weather/refresh — dispara poll imediato Open-Meteo
+// POST /api/gateway/weather/refresh — dispara poll imediato Open-Meteo
 static void hWeatherRefresh(HTTPRequest *req, HTTPResponse *res)
 {
     (void)req;
@@ -1133,7 +1133,7 @@ static void hWeatherRefresh(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, ok ? "{\"ok\":true,\"staUp\":true}" : "{\"ok\":false,\"reason\":\"sem WiFi\"}");
 }
 
-// GET /api/irrigation/acionamento — grid agregado por nó (UI-Task 1)
+// GET /api/gateway/acionamento — grid agregado por nó (UI-Task 1)
 static void hAcionamento(HTTPRequest *req, HTTPResponse *res)
 {
     (void)req;
@@ -1160,7 +1160,7 @@ static void hAcionamento(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, buf);
 }
 
-// POST /api/irrigation/acionamento/entrada — upsert de entrada de acionamento
+// POST /api/gateway/acionamento/entrada — upsert de entrada de acionamento
 // Body: {node, i, mode, invertido, targetZoneId}
 static void hAcionamentoEntradaPost(HTTPRequest *req, HTTPResponse *res)
 {
@@ -1198,7 +1198,7 @@ static void hAcionamentoEntradaPost(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, "{\"ok\":true}");
 }
 
-// POST /api/irrigation/acionamento/entrada/delete — remove entrada de acionamento
+// POST /api/gateway/acionamento/entrada/delete — remove entrada de acionamento
 // Body: {node, i}
 static void hAcionamentoEntradaDelete(HTTPRequest *req, HTTPResponse *res)
 {
@@ -1226,67 +1226,67 @@ static void hAcionamentoEntradaDelete(HTTPRequest *req, HTTPResponse *res)
 
 void registerIrrigationHandlers(HTTPServer *server)
 {
-    server->registerNode(new ResourceNode("/api/irrigation/overview", "GET", &hOverview));
-    server->registerNode(new ResourceNode("/api/irrigation/alerts", "GET", &hAlerts));
-    server->registerNode(new ResourceNode("/api/irrigation/stations", "GET", &hStations));
-    server->registerNode(new ResourceNode("/api/irrigation/stations/config", "POST", &hStationsConfig));
-    server->registerNode(new ResourceNode("/api/irrigation/stations/delete", "POST", &hStationsDelete));
-    server->registerNode(new ResourceNode("/api/irrigation/stations/pulse", "POST", &hStationsPulse));
-    server->registerNode(new ResourceNode("/api/irrigation/zones", "GET", &hZonesGet));
-    server->registerNode(new ResourceNode("/api/irrigation/zones", "POST", &hZonesPost));
-    server->registerNode(new ResourceNode("/api/irrigation/zones/delete", "POST", &hZonesDelete));
-    server->registerNode(new ResourceNode("/api/irrigation/programs", "GET", &hProgramsGet));
-    server->registerNode(new ResourceNode("/api/irrigation/programs", "POST", &hProgramsPost));
-    server->registerNode(new ResourceNode("/api/irrigation/programs/toggle", "POST", &hProgramsToggle));
-    server->registerNode(new ResourceNode("/api/irrigation/programs/delete", "POST", &hProgramsDelete));
-    server->registerNode(new ResourceNode("/api/irrigation/command", "POST", &hCommand));
+    server->registerNode(new ResourceNode("/api/gateway/overview", "GET", &hOverview));
+    server->registerNode(new ResourceNode("/api/gateway/alerts", "GET", &hAlerts));
+    server->registerNode(new ResourceNode("/api/gateway/stations", "GET", &hStations));
+    server->registerNode(new ResourceNode("/api/gateway/stations/config", "POST", &hStationsConfig));
+    server->registerNode(new ResourceNode("/api/gateway/stations/delete", "POST", &hStationsDelete));
+    server->registerNode(new ResourceNode("/api/gateway/stations/pulse", "POST", &hStationsPulse));
+    server->registerNode(new ResourceNode("/api/gateway/zones", "GET", &hZonesGet));
+    server->registerNode(new ResourceNode("/api/gateway/zones", "POST", &hZonesPost));
+    server->registerNode(new ResourceNode("/api/gateway/zones/delete", "POST", &hZonesDelete));
+    server->registerNode(new ResourceNode("/api/gateway/programs", "GET", &hProgramsGet));
+    server->registerNode(new ResourceNode("/api/gateway/programs", "POST", &hProgramsPost));
+    server->registerNode(new ResourceNode("/api/gateway/programs/toggle", "POST", &hProgramsToggle));
+    server->registerNode(new ResourceNode("/api/gateway/programs/delete", "POST", &hProgramsDelete));
+    server->registerNode(new ResourceNode("/api/gateway/command", "POST", &hCommand));
     // Fase 6b Task 18: intertravamentos, sensores, log de auditoria, manutenção
-    server->registerNode(new ResourceNode("/api/irrigation/interlocks", "GET", &hInterlocksGet));
-    server->registerNode(new ResourceNode("/api/irrigation/interlocks", "POST", &hInterlocksPost));
-    server->registerNode(new ResourceNode("/api/irrigation/interlocks/delete", "POST", &hInterlocksDelete));
-    server->registerNode(new ResourceNode("/api/irrigation/sensors", "GET", &hSensorsGet));
-    server->registerNode(new ResourceNode("/api/irrigation/sensors/name", "POST", &hSensorsName));
-    server->registerNode(new ResourceNode("/api/irrigation/audit", "GET", &hAudit));
-    server->registerNode(new ResourceNode("/api/irrigation/maint", "POST", &hMaint));
-    server->registerNode(new ResourceNode("/api/irrigation/system/ble-window", "POST", &hBleWindow));
+    server->registerNode(new ResourceNode("/api/gateway/interlocks", "GET", &hInterlocksGet));
+    server->registerNode(new ResourceNode("/api/gateway/interlocks", "POST", &hInterlocksPost));
+    server->registerNode(new ResourceNode("/api/gateway/interlocks/delete", "POST", &hInterlocksDelete));
+    server->registerNode(new ResourceNode("/api/gateway/sensors", "GET", &hSensorsGet));
+    server->registerNode(new ResourceNode("/api/gateway/sensors/name", "POST", &hSensorsName));
+    server->registerNode(new ResourceNode("/api/gateway/audit", "GET", &hAudit));
+    server->registerNode(new ResourceNode("/api/gateway/maint", "POST", &hMaint));
+    server->registerNode(new ResourceNode("/api/gateway/system/ble-window", "POST", &hBleWindow));
     // Fase 7b: grupos hidráulicos
-    server->registerNode(new ResourceNode("/api/irrigation/groups", "GET", &hGroupsGet));
-    server->registerNode(new ResourceNode("/api/irrigation/groups/status", "GET", &hGroupsStatus));
-    server->registerNode(new ResourceNode("/api/irrigation/groups", "POST", &hGroupsPost));
-    server->registerNode(new ResourceNode("/api/irrigation/groups/delete", "POST", &hGroupsDelete));
-    server->registerNode(new ResourceNode("/api/irrigation/groups/command", "POST", &hGroupsCommand));
+    server->registerNode(new ResourceNode("/api/gateway/groups", "GET", &hGroupsGet));
+    server->registerNode(new ResourceNode("/api/gateway/groups/status", "GET", &hGroupsStatus));
+    server->registerNode(new ResourceNode("/api/gateway/groups", "POST", &hGroupsPost));
+    server->registerNode(new ResourceNode("/api/gateway/groups/delete", "POST", &hGroupsDelete));
+    server->registerNode(new ResourceNode("/api/gateway/groups/command", "POST", &hGroupsCommand));
     // Fase 8b (Task 7): controle de nível por boia
-    server->registerNode(new ResourceNode("/api/irrigation/levels", "GET", &hLevelsGet));
-    server->registerNode(new ResourceNode("/api/irrigation/levels", "POST", &hLevelsPost));
-    server->registerNode(new ResourceNode("/api/irrigation/levels/delete", "POST", &hLevelsDelete));
+    server->registerNode(new ResourceNode("/api/gateway/levels", "GET", &hLevelsGet));
+    server->registerNode(new ResourceNode("/api/gateway/levels", "POST", &hLevelsPost));
+    server->registerNode(new ResourceNode("/api/gateway/levels/delete", "POST", &hLevelsDelete));
     // Modo Remoto (Task 8): estado ao vivo / upsert / delete / comando manual. CI-only.
-    server->registerNode(new ResourceNode("/api/irrigation/remote", "GET", &hRemote));
-    server->registerNode(new ResourceNode("/api/irrigation/remote", "POST", &hRemoteUpsert));
-    server->registerNode(new ResourceNode("/api/irrigation/remote/delete", "POST", &hRemoteDelete));
-    server->registerNode(new ResourceNode("/api/irrigation/remote/command", "POST", &hRemoteCommand));
+    server->registerNode(new ResourceNode("/api/gateway/remote", "GET", &hRemote));
+    server->registerNode(new ResourceNode("/api/gateway/remote", "POST", &hRemoteUpsert));
+    server->registerNode(new ResourceNode("/api/gateway/remote/delete", "POST", &hRemoteDelete));
+    server->registerNode(new ResourceNode("/api/gateway/remote/command", "POST", &hRemoteCommand));
     // Sistema restore: importa tabelas de config de um envelope de backup (NÃO toca PSK). CI-only.
-    server->registerNode(new ResourceNode("/api/irrigation/import", "POST", &hImport));
+    server->registerNode(new ResourceNode("/api/gateway/import", "POST", &hImport));
     // Fase 8b: export §5.5 completo (PSK + tabelas) p/ o cofre do device SERVICO
-    server->registerNode(new ResourceNode("/api/irrigation/export", "GET", &hExport));
+    server->registerNode(new ResourceNode("/api/gateway/export", "GET", &hExport));
     // Fase 8d: site survey (§8.5)
-    server->registerNode(new ResourceNode("/api/irrigation/survey", "GET", &hSurvey));
-    server->registerNode(new ResourceNode("/api/irrigation/survey/clear", "POST", &hSurveyClear));
+    server->registerNode(new ResourceNode("/api/gateway/survey", "GET", &hSurvey));
+    server->registerNode(new ResourceNode("/api/gateway/survey/clear", "POST", &hSurveyClear));
     // Fase 8b: Horário (relógio do gateway)
-    server->registerNode(new ResourceNode("/api/irrigation/time", "GET", &hTime));
-    server->registerNode(new ResourceNode("/api/irrigation/time", "POST", &hTimeSet));
-    server->registerNode(new ResourceNode("/api/irrigation/timezone", "POST", &hTimezone));
-    server->registerNode(new ResourceNode("/api/irrigation/time/sync", "POST", &hTimeSync));
+    server->registerNode(new ResourceNode("/api/gateway/time", "GET", &hTime));
+    server->registerNode(new ResourceNode("/api/gateway/time", "POST", &hTimeSet));
+    server->registerNode(new ResourceNode("/api/gateway/timezone", "POST", &hTimezone));
+    server->registerNode(new ResourceNode("/api/gateway/time/sync", "POST", &hTimeSync));
     // Supressão meteorológica (Task 12)
-    server->registerNode(new ResourceNode("/api/irrigation/weather", "GET", &hWeatherGet));
-    server->registerNode(new ResourceNode("/api/irrigation/weather/config", "POST", &hWeatherConfigPost));
-    server->registerNode(new ResourceNode("/api/irrigation/weather/rule", "POST", &hWeatherRulePost));
-    server->registerNode(new ResourceNode("/api/irrigation/weather/rule/delete", "POST", &hWeatherRuleDelete));
-    server->registerNode(new ResourceNode("/api/irrigation/weather/refresh", "POST", &hWeatherRefresh));
+    server->registerNode(new ResourceNode("/api/gateway/weather", "GET", &hWeatherGet));
+    server->registerNode(new ResourceNode("/api/gateway/weather/config", "POST", &hWeatherConfigPost));
+    server->registerNode(new ResourceNode("/api/gateway/weather/rule", "POST", &hWeatherRulePost));
+    server->registerNode(new ResourceNode("/api/gateway/weather/rule/delete", "POST", &hWeatherRuleDelete));
+    server->registerNode(new ResourceNode("/api/gateway/weather/refresh", "POST", &hWeatherRefresh));
     // UI-Task 1: grid de acionamento agregado por nó
-    server->registerNode(new ResourceNode("/api/irrigation/acionamento", "GET", &hAcionamento));
+    server->registerNode(new ResourceNode("/api/gateway/acionamento", "GET", &hAcionamento));
     // UI-Task 2: upsert/delete de entrada de acionamento
-    server->registerNode(new ResourceNode("/api/irrigation/acionamento/entrada", "POST", &hAcionamentoEntradaPost));
-    server->registerNode(new ResourceNode("/api/irrigation/acionamento/entrada/delete", "POST", &hAcionamentoEntradaDelete));
+    server->registerNode(new ResourceNode("/api/gateway/acionamento/entrada", "POST", &hAcionamentoEntradaPost));
+    server->registerNode(new ResourceNode("/api/gateway/acionamento/entrada/delete", "POST", &hAcionamentoEntradaDelete));
 }
 
 #endif

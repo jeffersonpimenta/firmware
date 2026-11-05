@@ -491,7 +491,7 @@ if (new URLSearchParams(location.search).has('mock')) {
 const origFetch = window.fetch;
 window.fetch = async function (url, opts) {
   const method = (opts && opts.method) || 'GET';
-  const path = url.replace(/.*\/api\/irrigation/, '');
+  const path = url.replace(/.*\/api\/gateway/, '');
 
   // Latência artificial
   await new Promise(r => setTimeout(r, Math.random() * 300 + 100));

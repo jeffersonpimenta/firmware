@@ -156,7 +156,7 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     bool gwApplyRemoteUpsert(const IrrigationWeb::RemoteUpsertReq &u); // upsert + save + push LED
     bool gwApplyRemoteDelete(uint8_t id);                              // removeById + save + recompute cfg
     bool gwRunRemoteCommand(uint8_t targetZoneId);                     // toggle manual (botão "Acionar" da UI)
-    // Modo Remoto (Task 8): acessores públicos chamados pelos endpoints CI-only /api/irrigation/remote/*.
+    // Modo Remoto (Task 8): acessores públicos chamados pelos endpoints CI-only /api/gateway/remote/*.
     size_t remoteBuildStatus(char *buf, size_t cap);           // estado ao vivo (dedup por targetZoneId)
     bool   remoteApplyUpsert(const char *json, size_t n);     // parse → gwApplyRemoteUpsert
     bool   remoteApplyDelete(const char *json, size_t n);     // parse → gwApplyRemoteDelete

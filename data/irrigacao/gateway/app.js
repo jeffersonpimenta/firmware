@@ -3,7 +3,7 @@
 // Zonas/Programas adicionados nas Tasks 12/13 estendendo o mapa RENDER.
 'use strict';
 
-var API = '/api/irrigation'; // var (não const) para ficar visível como window.API ao api.js
+var API = '/api/gateway'; // var (não const) para ficar visível como window.API ao api.js
 const view = document.getElementById('view');
 let current = 'overview';
 let timer = null;
@@ -3132,7 +3132,7 @@ const WF_MOCK_NETWORKS = [
 ];
 let wfUseMock = false;
 
-// Fetch helpers exclusivos (não usam API = /api/irrigation).
+// Fetch helpers exclusivos (não usam API = /api/gateway).
 async function wfGet(path) {
   if (wfUseMock) return wfMockGet(path);
   const r = await rawFetch(path);
@@ -3497,7 +3497,7 @@ async function renderWifi() {
   }
 }
 
-// ===== Horário (relógio do gateway) — endpoints /api/irrigation/time* =====
+// ===== Horário (relógio do gateway) — endpoints /api/gateway/time* =====
 const TZ_PRESETS = [
   ['America/Sao_Paulo', '<-03>3'],
   ['America/Manaus', '<-04>4'],
