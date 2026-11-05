@@ -296,7 +296,7 @@ static void hOtaArm(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, "{\"ok\":true,\"reboot\":true}");
 }
 
-// GET /api/portal/node/backup — baixa a config deste nó (sem PSK), p/ restaurar depois.
+// GET /api/node/node/backup — baixa a config deste nó (sem PSK), p/ restaurar depois.
 static void hNodeBackup(HTTPRequest *req, HTTPResponse *res)
 {
     (void)req;
@@ -317,7 +317,7 @@ static void hNodeBackup(HTTPRequest *req, HTTPResponse *res)
     free(buf);
 }
 
-// POST /api/portal/node/restore — reaplica um backup neste nó; mantém vínculo, sobe epoch, avisa gw.
+// POST /api/node/node/restore — reaplica um backup neste nó; mantém vínculo, sobe epoch, avisa gw.
 static void hNodeRestore(HTTPRequest *req, HTTPResponse *res)
 {
     if (!irrigationModule) { res->setStatusCode(404); return; }
@@ -489,7 +489,7 @@ static void hWifiToggle(HTTPRequest *req, HTTPResponse *res)
     sendJson(res, "{\"ok\":true}");
 }
 
-// POST /api/portal/ble — janela BLE sob demanda (5/10/15 min): WiFi do portal cai, BLE on por N min,
+// POST /api/node/ble — janela BLE sob demanda (5/10/15 min): WiFi do portal cai, BLE on por N min,
 // device reboota e volta sozinho. Espelha hBleWindow do gateway.
 static void hPortalBle(HTTPRequest *req, HTTPResponse *res)
 {
@@ -510,33 +510,33 @@ static void hPortalBle(HTTPRequest *req, HTTPResponse *res)
 
 void registerIrrigationPortalHandlers(HTTPServer *server)
 {
-    server->registerNode(new ResourceNode("/api/portal/provision", "POST", &hProvision));
-    server->registerNode(new ResourceNode("/api/portal/node", "GET", &hNode));
-    server->registerNode(new ResourceNode("/api/portal/node/backup", "GET", &hNodeBackup));
-    server->registerNode(new ResourceNode("/api/portal/node/restore", "POST", &hNodeRestore));
-    server->registerNode(new ResourceNode("/api/portal/node/reboot", "POST", &hNodeReboot));
-    server->registerNode(new ResourceNode("/api/portal/node/reset", "POST", &hNodeReset));
-    server->registerNode(new ResourceNode("/api/portal/ble", "POST", &hPortalBle));
-    server->registerNode(new ResourceNode("/api/portal/node/pulse", "POST", &hNodePulse));
-    server->registerNode(new ResourceNode("/api/portal/net/roster", "GET", &hNetRoster));
-    server->registerNode(new ResourceNode("/api/portal/net/command", "POST", &hNetCommand));
-    server->registerNode(new ResourceNode("/api/portal/sensors", "GET", &hSensors));
-    server->registerNode(new ResourceNode("/api/portal/log", "GET", &hLog));
-    server->registerNode(new ResourceNode("/api/portal/gpo", "POST", &hGpo));
-    server->registerNode(new ResourceNode("/api/portal/coords", "GET", &hCoordsGet));
-    server->registerNode(new ResourceNode("/api/portal/coords", "POST", &hCoordsSet));
-    server->registerNode(new ResourceNode("/api/portal/survey/start", "POST", &hSurveyStart));
-    server->registerNode(new ResourceNode("/api/portal/survey/stop", "POST", &hSurveyStop));
-    server->registerNode(new ResourceNode("/api/portal/link", "GET", &hLink));
-    server->registerNode(new ResourceNode("/api/portal/ota/status", "GET", &hOtaStatus));
-    server->registerNode(new ResourceNode("/api/portal/ota", "POST", &hOtaArm));
-    server->registerNode(new ResourceNode("/api/portal/wifi", "GET", &hWifiStatus));
-    server->registerNode(new ResourceNode("/api/portal/wifi/scan", "POST", &hWifiScanStart));
-    server->registerNode(new ResourceNode("/api/portal/wifi/scan", "GET", &hWifiScanResult));
-    server->registerNode(new ResourceNode("/api/portal/wifi/connect", "POST", &hWifiConnectStart));
-    server->registerNode(new ResourceNode("/api/portal/wifi/connect", "GET", &hWifiConnectProgress));
-    server->registerNode(new ResourceNode("/api/portal/wifi/forget", "POST", &hWifiForget));
-    server->registerNode(new ResourceNode("/api/portal/wifi/toggle", "POST", &hWifiToggle));
+    server->registerNode(new ResourceNode("/api/node/provision", "POST", &hProvision));
+    server->registerNode(new ResourceNode("/api/node/node", "GET", &hNode));
+    server->registerNode(new ResourceNode("/api/node/node/backup", "GET", &hNodeBackup));
+    server->registerNode(new ResourceNode("/api/node/node/restore", "POST", &hNodeRestore));
+    server->registerNode(new ResourceNode("/api/node/node/reboot", "POST", &hNodeReboot));
+    server->registerNode(new ResourceNode("/api/node/node/reset", "POST", &hNodeReset));
+    server->registerNode(new ResourceNode("/api/node/ble", "POST", &hPortalBle));
+    server->registerNode(new ResourceNode("/api/node/node/pulse", "POST", &hNodePulse));
+    server->registerNode(new ResourceNode("/api/node/net/roster", "GET", &hNetRoster));
+    server->registerNode(new ResourceNode("/api/node/net/command", "POST", &hNetCommand));
+    server->registerNode(new ResourceNode("/api/node/sensors", "GET", &hSensors));
+    server->registerNode(new ResourceNode("/api/node/log", "GET", &hLog));
+    server->registerNode(new ResourceNode("/api/node/gpo", "POST", &hGpo));
+    server->registerNode(new ResourceNode("/api/node/coords", "GET", &hCoordsGet));
+    server->registerNode(new ResourceNode("/api/node/coords", "POST", &hCoordsSet));
+    server->registerNode(new ResourceNode("/api/node/survey/start", "POST", &hSurveyStart));
+    server->registerNode(new ResourceNode("/api/node/survey/stop", "POST", &hSurveyStop));
+    server->registerNode(new ResourceNode("/api/node/link", "GET", &hLink));
+    server->registerNode(new ResourceNode("/api/node/ota/status", "GET", &hOtaStatus));
+    server->registerNode(new ResourceNode("/api/node/ota", "POST", &hOtaArm));
+    server->registerNode(new ResourceNode("/api/node/wifi", "GET", &hWifiStatus));
+    server->registerNode(new ResourceNode("/api/node/wifi/scan", "POST", &hWifiScanStart));
+    server->registerNode(new ResourceNode("/api/node/wifi/scan", "GET", &hWifiScanResult));
+    server->registerNode(new ResourceNode("/api/node/wifi/connect", "POST", &hWifiConnectStart));
+    server->registerNode(new ResourceNode("/api/node/wifi/connect", "GET", &hWifiConnectProgress));
+    server->registerNode(new ResourceNode("/api/node/wifi/forget", "POST", &hWifiForget));
+    server->registerNode(new ResourceNode("/api/node/wifi/toggle", "POST", &hWifiToggle));
 }
 
 #endif

@@ -97,13 +97,13 @@ function onGpoClick(gpo, action) {
 }
 async function doGpo(gpo, action, confirmFlag) {
   gpoPending = null;
-  const { ok, body } = await j("/api/portal/gpo", { method: "POST", body: JSON.stringify({ gpo, action, durationS: 0, confirm: confirmFlag }) });
+  const { ok, body } = await j("/api/node/gpo", { method: "POST", body: JSON.stringify({ gpo, action, durationS: 0, confirm: confirmFlag }) });
   document.getElementById("gpoMsg").textContent = ok ? "OK" : (body.errors || ["erro"]).join("; ");
   refresh();
 }
 
 async function refreshSensors() {
-  const { ok, body } = await j("/api/portal/sensors");
+  const { ok, body } = await j("/api/node/sensors");
   const el = document.getElementById("sensorsList");
   if (!ok || !body.sensors || !body.sensors.length) { el.textContent = "nenhum sensor configurado"; return; }
   el.innerHTML = body.sensors.map((s) => {
@@ -113,7 +113,7 @@ async function refreshSensors() {
 }
 
 async function refreshLog() {
-  const { ok, body } = await j("/api/portal/log");
+  const { ok, body } = await j("/api/node/log");
   const el = document.getElementById("logList");
   if (!ok || !body.log || !body.log.length) { el.textContent = "log vazio"; return; }
   el.innerHTML = `<div class="fp-log">` + body.log.map((r) => {
@@ -125,7 +125,7 @@ document.getElementById("logRefresh").addEventListener("click", refreshLog);
 
 async function refreshEnlace() {
   if (lastRole === ROLE_SERVICO || lastRole === ROLE_GATEWAY) return;
-  const { ok, body } = await j("/api/portal/link");
+  const { ok, body } = await j("/api/node/link");
   if (!ok) return;
   document.getElementById("enlSnr").textContent = (body.snrQuarterDb / 4).toFixed(2).replace('.', ',') + " dB";
   document.getElementById("enlRssi").textContent = body.rssiDbm + " dBm";
@@ -142,7 +142,7 @@ async function refreshEnlace() {
 }
 
 async function loadCoords() {
-  const { ok, body } = await j("/api/portal/coords");
+  const { ok, body } = await j("/api/node/coords");
   if (ok) {
     document.getElementById("coordLat").value = (body.latE7 || 0) / 1e7;
     document.getElementById("coordLon").value = (body.lonE7 || 0) / 1e7;
@@ -152,12 +152,12 @@ document.getElementById("coordsForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const latE7 = Math.round(+document.getElementById("coordLat").value * 1e7);
   const lonE7 = Math.round(+document.getElementById("coordLon").value * 1e7);
-  const { ok, body } = await j("/api/portal/coords", { method: "POST", body: JSON.stringify({ latE7, lonE7 }) });
+  const { ok, body } = await j("/api/node/coords", { method: "POST", body: JSON.stringify({ latE7, lonE7 }) });
   document.getElementById("coordMsg").textContent = ok ? "Salvo" : (body.errors || ["erro"]).join("; ");
 });
 
 async function refresh() {
-  const { ok, body } = await j("/api/portal/node");
+  const { ok, body } = await j("/api/node/node");
   if (ok) {
     if (body.provisioned === false) { showWizard(); return; }
     lastRole = body.role;
@@ -217,7 +217,7 @@ function showWizard() {
     const farm = document.getElementById("wz-farm").value.trim();
     if (selRole === 1 && farm) payload.farmName = farm;
     document.getElementById("wz-msg").textContent = "Gravando…";
-    const { ok, body } = await j("/api/portal/provision", { method: "POST", body: JSON.stringify(payload) });
+    const { ok, body } = await j("/api/node/provision", { method: "POST", body: JSON.stringify(payload) });
     document.getElementById("wz-msg").textContent = ok
       ? "✓ Configurado! O dispositivo reinicia em ~3 s. Reconecte ao portal depois."
       : "Erro: " + ((body.errors || ["falha"]).join("; "));
@@ -280,7 +280,7 @@ function renderBleState() {
 
 async function doBleAbrir(minutes) {
   sisBleConfirmMin = 0;
-  const { ok, body } = await j("/api/portal/ble", { method: "POST", body: JSON.stringify({ minutes }) });
+  const { ok, body } = await j("/api/node/ble", { method: "POST", body: JSON.stringify({ minutes }) });
   if (ok) {
     sisBleActive = true;
     sisBleMinutes = body.minutes || minutes;
@@ -309,7 +309,7 @@ document.getElementById("sis-backup-btn").addEventListener("click", async () => 
   btn.disabled = true;
   msg.textContent = "Gerando backup…";
   try {
-    const r = await rawFetch("/api/portal/node/backup");
+    const r = await rawFetch("/api/node/node/backup");
     if (!r.ok) throw new Error("HTTP " + r.status);
     const text = await r.text();
     if (!text || text[0] !== "{") throw new Error("resposta vazia/inválida");
@@ -335,7 +335,7 @@ document.getElementById("sis-restore-btn").addEventListener("click", async () =>
   const msg = document.getElementById("sis-restore-msg");
   if (!file) { msg.textContent = "Escolha um arquivo .json primeiro."; msg.classList.remove("hidden"); return; }
   const t = await file.text();
-  const { ok, body } = await j("/api/portal/node/restore", { method: "POST", body: t });
+  const { ok, body } = await j("/api/node/node/restore", { method: "POST", body: t });
   if (ok) {
     msg.textContent = "Backup aplicado · epoch " + body.epoch + ". O gateway foi avisado.";
     msg.classList.remove("hidden");
@@ -347,7 +347,7 @@ document.getElementById("sis-restore-btn").addEventListener("click", async () =>
 
 // Listener Reiniciar
 document.getElementById("sis-reboot-btn").addEventListener("click", async () => {
-  await j("/api/portal/node/reboot", { method: "POST" });
+  await j("/api/node/node/reboot", { method: "POST" });
   const msg = document.getElementById("sis-reboot-msg");
   msg.textContent = "Reiniciando. Reconecte ao portal em ~10 s.";
   msg.classList.remove("hidden");
@@ -365,7 +365,7 @@ document.getElementById("sis-reset-btn").addEventListener("click", () => {
     confirmEl.innerHTML = "";
   });
   document.getElementById("sis-reset-ok").addEventListener("click", async () => {
-    await j("/api/portal/node/reset", { method: "POST" });
+    await j("/api/node/node/reset", { method: "POST" });
     confirmEl.classList.add("hidden");
     confirmEl.innerHTML = "";
   });
@@ -422,7 +422,7 @@ document.getElementById("pulseGo").addEventListener("click", async () => {
   const durationS = +document.getElementById("pulseDur").value;
   const n = document.querySelectorAll("#pulsePills [data-pv]").length;
   if (pulseOpen) { pulseOpen = false; document.getElementById("pulseMsg").textContent = "Fechado"; renderPulsePills(n); return; }
-  const { ok, body } = await j("/api/portal/node/pulse", { method: "POST", body: JSON.stringify({ valveId: pulseValve, durationS }) });
+  const { ok, body } = await j("/api/node/node/pulse", { method: "POST", body: JSON.stringify({ valveId: pulseValve, durationS }) });
   document.getElementById("pulseMsg").textContent = ok ? "OK" : (body.errors || ["erro"]).join("; ");
   pulseOpen = ok; renderPulsePills(n);
   refresh();
@@ -430,7 +430,7 @@ document.getElementById("pulseGo").addEventListener("click", async () => {
 
 let netZone = 0, netAction = "open";
 async function loadRoster() {
-  const { ok, body } = await j("/api/portal/net/roster");
+  const { ok, body } = await j("/api/node/net/roster");
   const wrap = document.getElementById("netPills");
   let items = (ok && Array.isArray(body) && body.length) ? body : Array.from({ length: 24 }, (_, i) => ({ id: i + 1, name: "Zona " + (i + 1) }));
   if (!netZone && items.length) netZone = items[0].id;
@@ -444,7 +444,7 @@ document.querySelectorAll("#netSeg button").forEach((b) => b.addEventListener("c
 document.getElementById("netGo").addEventListener("click", async () => {
   const durationS = +document.getElementById("netDur").value;
   const payload = netAction === "open" ? { kind: "open", zoneId: netZone, durationS } : { kind: "close", zoneId: netZone };
-  const { ok, body } = await j("/api/portal/net/command", { method: "POST", body: JSON.stringify(payload) });
+  const { ok, body } = await j("/api/node/net/command", { method: "POST", body: JSON.stringify(payload) });
   document.getElementById("netMsg").textContent = ok ? "Enviado" : (body.errors || ["erro"]).join("; ");
 });
 
@@ -471,7 +471,7 @@ function initService() {
 
 let svcConfirmClient = null;
 async function loadClients() {
-  const { ok, body } = await j("/api/portal/service/clients");
+  const { ok, body } = await j("/api/node/service/clients");
   const el = document.getElementById("clientsList");
   if (!ok || !body.clients) { el.textContent = "—"; return; }
   el.innerHTML = `<div class="stack">` + (body.clients.map((c) => {
@@ -488,23 +488,23 @@ async function loadClients() {
 }
 async function doSelectClient(id) {
   svcConfirmClient = null;
-  await j("/api/portal/service/select", { method: "POST", body: JSON.stringify({ id }) });
+  await j("/api/node/service/select", { method: "POST", body: JSON.stringify({ id }) });
   document.getElementById("clientsMsg").textContent = "Re-tunando… reconecte ao portal após o reboot.";
 }
 
-function exportVault() { location.href = "/api/portal/service/export"; }
+function exportVault() { location.href = "/api/node/service/export"; }
 
 async function importVault(replace) {
   const f = document.getElementById("importFile").files[0];
   if (!f) { document.getElementById("clientsMsg").textContent = "escolha um arquivo"; return; }
-  const url = "/api/portal/service/import" + (replace ? "/replace" : "");
+  const url = "/api/node/service/import" + (replace ? "/replace" : "");
   const { ok, body } = await j(url, { method: "POST", body: await f.text() });
   document.getElementById("clientsMsg").textContent = ok ? "Importado" : (body.errors || ["erro"]).join("; ");
   loadClients();
 }
 
 async function startScanSvc() {
-  await j("/api/portal/service/scan", { method: "POST" });
+  await j("/api/node/service/scan", { method: "POST" });
   document.getElementById("svcnetMsg").textContent = "Varredura disparada…";
   setTimeout(pollScanSvc, 1500);
 }
@@ -512,7 +512,7 @@ async function startScanSvc() {
 function nodeHex(n) { return "!" + (n >>> 0).toString(16).padStart(8, "0"); }
 
 async function pollScanSvc() {
-  const { ok, body } = await j("/api/portal/service/scan");
+  const { ok, body } = await j("/api/node/service/scan");
   const el = document.getElementById("svcNodes");
   if (!ok || !body.nodes || !body.nodes.length) { el.textContent = "nenhum respondente ainda"; return; }
   el.innerHTML = `<div class="stack">` + body.nodes.map((n) => {
@@ -541,7 +541,7 @@ async function nodeAction(node, action) {
     const open = confirm("Abrir? (Cancelar = fechar)");
     extra = { zoneId, open: open ? 1 : 0, durationS: open ? +prompt("Duração (s)", "300") : 0 };
   }
-  const { ok, body } = await j("/api/portal/service/node/action",
+  const { ok, body } = await j("/api/node/service/node/action",
     { method: "POST", body: JSON.stringify({ node, action, ...extra }) });
   document.getElementById("svcnetMsg").textContent = ok ? "OK" : (body.errors || ["erro"]).join("; ");
 }
@@ -556,7 +556,7 @@ async function readConfig(node) {
   cfgNode = node;
   document.getElementById("cfgMsg").textContent = "Lendo… (aguardando reply do nó)";
   for (let i = 0; i < 20; i++) {
-    const { ok, body } = await j("/api/portal/service/node/config/read", { method: "POST", body: JSON.stringify({ node }) });
+    const { ok, body } = await j("/api/node/service/node/config/read", { method: "POST", body: JSON.stringify({ node }) });
     if (ok && !body.pending) { fillEditor(body); document.getElementById("cfgMsg").textContent = "Config lida de " + node; return; }
     await new Promise((r) => setTimeout(r, 700));
   }
@@ -597,13 +597,13 @@ async function writeConfig() {
     return;
   }
   const route = window.__cfgRoute || "direct";
-  const { ok, body } = await j("/api/portal/service/node/config/write",
+  const { ok, body } = await j("/api/node/service/node/config/write",
     { method: "POST", body: JSON.stringify({ node: cfgNode, route, config }) });
   document.getElementById("cfgMsg").textContent = ok ? "Config gravada" : (body.errors || ["erro"]).join("; ");
 }
 
 async function loadSvcLog() {
-  const { ok, body } = await j("/api/portal/service/log");
+  const { ok, body } = await j("/api/node/service/log");
   const el = document.getElementById("svcLogList");
   if (!ok || !body.log || !body.log.length) { el.textContent = "log vazio"; return; }
   el.innerHTML = `<div class="fp-log">` + body.log.map((r) => {
@@ -621,7 +621,7 @@ document.getElementById("importReplaceBtn").addEventListener("click", () => impo
 // ── Aba Firmware — status OTA + armar atualização BLE ───────────────────────
 async function refreshFirmware() {
   try {
-    const { ok, body: s } = await j("/api/portal/ota/status");
+    const { ok, body: s } = await j("/api/node/ota/status");
     if (!ok) return;
     document.getElementById("fw-version").textContent = s.fwVersion || "—";
     const loader = document.getElementById("fw-loader");
@@ -639,7 +639,7 @@ document.getElementById("fw-arm").addEventListener("click", async () => {
   const btn = document.getElementById("fw-arm");
   btn.disabled = true;
   try {
-    const { ok, body: j2 } = await j("/api/portal/ota", { method: "POST", body: "{}" });
+    const { ok, body: j2 } = await j("/api/node/ota", { method: "POST", body: "{}" });
     if (ok) {
       document.getElementById("fw-loader").textContent =
         "Modo atualização armado. Use o app Meshtastic (BLE) para enviar o .bin.";
@@ -654,7 +654,7 @@ document.getElementById("fw-arm").addEventListener("click", async () => {
 });
 
 // ── Fase 8d — modo cobertura (site survey §8.5) ─────────────────────────────
-const svBase = () => (lastRole === 3 ? "/api/portal/service/survey" : "/api/portal/survey");
+const svBase = () => (lastRole === 3 ? "/api/node/service/survey" : "/api/node/survey");
 document.getElementById("surveyForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const intervalS = +document.getElementById("svInterval").value;

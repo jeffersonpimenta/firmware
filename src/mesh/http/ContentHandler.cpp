@@ -125,9 +125,9 @@ void registerHandlers(HTTPServer *insecureServer, HTTPSServer *secureServer)
 #if !MESHTASTIC_EXCLUDE_IRRIGATION
     // Rotas do painel de irrigação — antes do catch-all nodeRoot ("/*", GET) para não serem sombreadas.
     registerIrrigationHandlers(secureServer);
-    // Portal de campo (Fase 5b): role-agnóstico — /api/portal/* respondem em qualquer papel (não gateado por gwIsGateway).
+    // Portal de campo (Fase 5b): role-agnóstico — /api/node/* respondem em qualquer papel (não gateado por gwIsGateway).
     registerIrrigationPortalHandlers(secureServer);
-    // Portal do device SERVICO (Fase 8c): /api/portal/service/* respondem só quando role==SERVICO.
+    // Portal do device SERVICO (Fase 8c): /api/node/service/* respondem só quando role==SERVICO.
     registerIrrigationServicePortalHandlers(secureServer);
 #endif
     // Estáticos multi-nível (ex.: /irrigacao/portal/app.js): "*" casa 1 segmento, então
@@ -162,9 +162,9 @@ void registerHandlers(HTTPServer *insecureServer, HTTPSServer *secureServer)
     // Rotas do painel de irrigação — antes do catch-all nodeRoot ("/*", GET) para não serem sombreadas.
     // Os próprios handlers do painel respondem 404 quando irrigationModule->gwIsGateway() é falso.
     registerIrrigationHandlers(insecureServer);
-    // Portal de campo (Fase 5b): role-agnóstico — /api/portal/* respondem em qualquer papel (não gateado por gwIsGateway).
+    // Portal de campo (Fase 5b): role-agnóstico — /api/node/* respondem em qualquer papel (não gateado por gwIsGateway).
     registerIrrigationPortalHandlers(insecureServer);
-    // Portal do device SERVICO (Fase 8c): /api/portal/service/* respondem só quando role==SERVICO.
+    // Portal do device SERVICO (Fase 8c): /api/node/service/* respondem só quando role==SERVICO.
     registerIrrigationServicePortalHandlers(insecureServer);
 #endif
     // Estáticos multi-nível (ex.: /irrigacao/portal/app.js): "*" casa 1 segmento, então

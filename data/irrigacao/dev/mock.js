@@ -296,7 +296,7 @@ const MOCK_DATA = {
     { type: 5, node: 0xe5f6a7b8, arg: 0, atMs: 1000, ageS: 2400 }, // Estação silenciosa
     { type: 1, node: 0xa1b2c3d4, arg: 0, atMs: 2000, ageS: 300 },  // Bateria em aviso
   ],
-  // Portal do nó (/api/portal/*). provisioned é ajustado abaixo por ?wizard=1.
+  // Portal do nó (/api/node/*). provisioned é ajustado abaixo por ?wizard=1.
   portalNode: {
     role: 0, name: 'Horta Norte', boundGateway: 0xa1b2c3d4, configEpoch: 17,
     safeMode: false, provisioned: true, numValves: 2, numGpos: 1,
@@ -496,10 +496,10 @@ window.fetch = async function (url, opts) {
   // Latência artificial
   await new Promise(r => setTimeout(r, Math.random() * 300 + 100));
 
-  // Portal do nó (/api/portal/*) — para preview do portal, inclua este mock em portal/index.html.
+  // Portal do nó (/api/node/*) — para preview do portal, inclua este mock em portal/index.html.
   const clean = url.split('?')[0];
-  if (clean.includes('/api/portal')) {
-    const ppath = clean.replace(/.*\/api\/portal/, '');
+  if (clean.includes('/api/node')) {
+    const ppath = clean.replace(/.*\/api\/node/, '');
     if (method === 'POST') {
       if (ppath === '/provision') { STATE.portalNode.provisioned = true; return mockResponse({ ok: true, reboot: true }); }
       // WiFi toggle

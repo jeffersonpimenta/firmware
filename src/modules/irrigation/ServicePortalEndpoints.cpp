@@ -332,19 +332,19 @@ static void hSvcSurveyStop(HTTPRequest *req, HTTPResponse *res)
 
 void registerIrrigationServicePortalHandlers(HTTPServer *server)
 {
-    server->registerNode(new ResourceNode("/api/portal/service/clients", "GET", &hSvcClients));
-    server->registerNode(new ResourceNode("/api/portal/service/select", "POST", &hSvcSelect));
-    server->registerNode(new ResourceNode("/api/portal/service/scan", "POST", &hSvcScanStart));
-    server->registerNode(new ResourceNode("/api/portal/service/scan", "GET", &hSvcScanGet));
-    server->registerNode(new ResourceNode("/api/portal/service/node/config/read", "POST", &hSvcConfigRead));
-    server->registerNode(new ResourceNode("/api/portal/service/node/config/write", "POST", &hSvcConfigWrite));
-    server->registerNode(new ResourceNode("/api/portal/service/node/action", "POST", &hSvcAction));
-    server->registerNode(new ResourceNode("/api/portal/service/log", "GET", &hSvcLog));
-    server->registerNode(new ResourceNode("/api/portal/service/export", "GET", &hSvcExport));
-    server->registerNode(new ResourceNode("/api/portal/service/import", "POST", &hSvcImport));
-    server->registerNode(new ResourceNode("/api/portal/service/import/replace", "POST", &hSvcImportReplace));
-    server->registerNode(new ResourceNode("/api/portal/service/survey/start", "POST", &hSvcSurveyStart));
-    server->registerNode(new ResourceNode("/api/portal/service/survey/stop", "POST", &hSvcSurveyStop));
+    server->registerNode(new ResourceNode("/api/node/service/clients", "GET", &hSvcClients));
+    server->registerNode(new ResourceNode("/api/node/service/select", "POST", &hSvcSelect));
+    server->registerNode(new ResourceNode("/api/node/service/scan", "POST", &hSvcScanStart));
+    server->registerNode(new ResourceNode("/api/node/service/scan", "GET", &hSvcScanGet));
+    server->registerNode(new ResourceNode("/api/node/service/node/config/read", "POST", &hSvcConfigRead));
+    server->registerNode(new ResourceNode("/api/node/service/node/config/write", "POST", &hSvcConfigWrite));
+    server->registerNode(new ResourceNode("/api/node/service/node/action", "POST", &hSvcAction));
+    server->registerNode(new ResourceNode("/api/node/service/log", "GET", &hSvcLog));
+    server->registerNode(new ResourceNode("/api/node/service/export", "GET", &hSvcExport));
+    server->registerNode(new ResourceNode("/api/node/service/import", "POST", &hSvcImport));
+    server->registerNode(new ResourceNode("/api/node/service/import/replace", "POST", &hSvcImportReplace));
+    server->registerNode(new ResourceNode("/api/node/service/survey/start", "POST", &hSvcSurveyStart));
+    server->registerNode(new ResourceNode("/api/node/service/survey/stop", "POST", &hSvcSurveyStop));
 }
 
 #endif

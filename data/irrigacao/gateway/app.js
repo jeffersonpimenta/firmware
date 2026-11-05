@@ -3122,7 +3122,7 @@ async function renderRadio() {
   }
 }
 
-// ===== Rede Wi-Fi (gateway) — endpoints /api/portal/wifi/* =====
+// ===== Rede Wi-Fi (gateway) — endpoints /api/node/wifi/* =====
 // Mock networks para testes de UI (descomente para ativar).
 const WF_MOCK_NETWORKS = [
   { ssid: 'Casa', rssi: -45, secure: 1 },
@@ -3154,36 +3154,36 @@ async function wfPost(path, body) {
 let wfMockState = { enabled: false, connectedSsid: null, scanInProgress: false, connectState: 'idle' };
 async function wfMockGet(path) {
   await new Promise(r => setTimeout(r, 100)); // simula latência
-  if (path === '/api/portal/wifi') {
+  if (path === '/api/node/wifi') {
     return { ok: true, status: 200, body: { enabled: wfMockState.enabled, connectedSsid: wfMockState.connectedSsid } };
   }
-  if (path === '/api/portal/wifi/scan') {
+  if (path === '/api/node/wifi/scan') {
     return { ok: true, status: 200, body: { scanning: wfMockState.scanInProgress, networks: wfMockState.scanInProgress ? [] : WF_MOCK_NETWORKS } };
   }
-  if (path === '/api/portal/wifi/connect') {
+  if (path === '/api/node/wifi/connect') {
     return { ok: true, status: 200, body: { state: wfMockState.connectState, ssid: wfMockState.connectedSsid, error: null } };
   }
   return { ok: false, status: 404, body: {} };
 }
 async function wfMockPost(path, body) {
   await new Promise(r => setTimeout(r, 100));
-  if (path === '/api/portal/wifi/toggle') {
+  if (path === '/api/node/wifi/toggle') {
     wfMockState.enabled = body.enabled;
     wfMockState.scanInProgress = body.enabled;
     return { ok: true, status: 200, body: {} };
   }
-  if (path === '/api/portal/wifi/scan') {
+  if (path === '/api/node/wifi/scan') {
     wfMockState.scanInProgress = true;
     setTimeout(() => { wfMockState.scanInProgress = false; }, 2000);
     return { ok: true, status: 200, body: {} };
   }
-  if (path === '/api/portal/wifi/connect') {
+  if (path === '/api/node/wifi/connect') {
     wfMockState.connectState = 'connecting';
     wfMockState.connectedSsid = body.ssid;
     setTimeout(() => { wfMockState.connectState = 'success'; }, 2000);
     return { ok: true, status: 200, body: {} };
   }
-  if (path === '/api/portal/wifi/forget') {
+  if (path === '/api/node/wifi/forget') {
     wfMockState.connectedSsid = null;
     return { ok: true, status: 200, body: {} };
   }
@@ -3392,7 +3392,7 @@ async function wfDoToggle() {
   wfEnabled = !wfEnabled;
   // Render optimista imediato antes do POST
   wfRender('list', { scanning: wfEnabled, networks: [], connectedSsid: null });
-  const r = await wfPost('/api/portal/wifi/toggle', { enabled: wfEnabled });
+  const r = await wfPost('/api/node/wifi/toggle', { enabled: wfEnabled });
   if (!r.ok) {
     const msg = r.status === 403
       ? ((r.body.errors || []).join('; ') || 'portal fechado — pressione o botao do gateway')
@@ -3409,7 +3409,7 @@ async function wfDoToggle() {
 }
 
 async function wfDoForget() {
-  const r = await wfPost('/api/portal/wifi/forget', {});
+  const r = await wfPost('/api/node/wifi/forget', {});
   if (!r.ok) {
     const msg = r.status === 403
       ? ((r.body.errors || []).join('; ') || 'portal fechado — pressione o botao do gateway')
@@ -3424,12 +3424,12 @@ async function wfStartScan() {
   wfClearTimers();
   const myGen = wfPollGen;
   wfRender('list', { scanning: true, networks: [], connectedSsid: null });
-  await wfPost('/api/portal/wifi/scan', {});
+  await wfPost('/api/node/wifi/scan', {});
   wfPollScan(myGen);
 }
 
 async function wfPollScan(myGen) {
-  const r = await wfGet('/api/portal/wifi/scan');
+  const r = await wfGet('/api/node/wifi/scan');
   if (myGen !== wfPollGen) return;
   if (!r.ok) { wfRender('list', { networks: [], connectedSsid: null }); return; }
   if (r.body.scanning) {
@@ -3437,7 +3437,7 @@ async function wfPollScan(myGen) {
     return;
   }
   // Scan concluído — busca SSID conectado
-  const st = await wfGet('/api/portal/wifi');
+  const st = await wfGet('/api/node/wifi');
   if (myGen !== wfPollGen) return;
   const connSsid = (st.ok && st.body.connectedSsid) || null;
   wfRender('list', { networks: r.body.networks || [], connectedSsid: connSsid });
@@ -3449,12 +3449,12 @@ async function wfDoConnect(psk) {
   const ssid = (wfSelectedNet || {}).ssid || '';
   const myGen = wfPollGen;
   wfRender('connecting');
-  await wfPost('/api/portal/wifi/connect', { ssid, psk });
+  await wfPost('/api/node/wifi/connect', { ssid, psk });
   wfPollConnect(ssid, myGen);
 }
 
 async function wfPollConnect(ssid, myGen) {
-  const r = await wfGet('/api/portal/wifi/connect');
+  const r = await wfGet('/api/node/wifi/connect');
   if (myGen !== wfPollGen) return;
   if (!r.ok) {
     wfConnectFails++;
@@ -3483,7 +3483,7 @@ async function renderWifi() {
   wfClearTimers();
   wfSelectedNet = null;
   wfConnectFails = 0;
-  const r = await wfGet('/api/portal/wifi');
+  const r = await wfGet('/api/node/wifi');
   if (!r.ok) {
     wfEnabled = false;
     wfRender('list', { networks: [], connectedSsid: null });

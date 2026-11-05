@@ -28,7 +28,7 @@
   // Só executa o fetch/redirect num browser real (não sob Node/teste).
   if (typeof window === "undefined" || typeof fetch !== "function" || !window.location) return;
 
-  fetch("/api/portal/node")
+  fetch("/api/node/node")
     .then(function (r) { if (!r.ok) throw new Error("http " + r.status); return r.json(); })
     .then(function (s) {
       var target = decideTarget({

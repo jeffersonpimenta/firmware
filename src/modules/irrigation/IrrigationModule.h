@@ -205,7 +205,7 @@ class IrrigationModule : public SinglePortModule, private concurrency::OSThread
     // Acesso de leitura ao mini-log de auditoria (Task 10: portal de campo). §8.9
     const AuditLog &auditLogRef() const { return audit; }
 
-    // Fase 8c — portal do device SERVICO (§11.8). Chamados pelos endpoints /api/portal/service/*.
+    // Fase 8c — portal do device SERVICO (§11.8). Chamados pelos endpoints /api/node/service/*.
     bool svcIsService() const;
     size_t svcPortalListClients(char *buf, size_t cap);
     bool svcPortalSelect(const char *id); // planRetune + applyRetune (re-tune + reboot)
