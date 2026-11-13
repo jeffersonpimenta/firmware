@@ -122,8 +122,7 @@ struct IrrigationSettings {
 
     // v9 (Refatoracao Fonte de Acionamento): modo de atuacao por entrada digital.
     // Apendice no FIM - todos os offsets v8 preservados. Magic bumped para IRR2.
-    InputMode digitalInMode[MAX_DIGITAL_IN] = {InputMode::DISABLED, InputMode::DISABLED, InputMode::DISABLED,
-                                               InputMode::DISABLED};
+    InputMode digitalInMode[MAX_DIGITAL_IN] = {InputMode::OFF, InputMode::OFF, InputMode::OFF, InputMode::OFF};
 };
 
 static constexpr size_t IRRIGATION_SETTINGS_V1_SIZE = 40;
@@ -175,7 +174,7 @@ static_assert(offsetof(IrrigationSettings, sensores) == 64, "ABI v4");
 // digitalInBtnMask/digitalInLedIdx: campos ABI v7 preservados (push de config p/ estações).
 inline bool digitalInIsButton(const IrrigationSettings &s, uint8_t i)
 {
-    return i < IrrigationSettings::MAX_DIGITAL_IN && s.digitalInMode[i] != InputMode::DISABLED;
+    return i < IrrigationSettings::MAX_DIGITAL_IN && s.digitalInMode[i] != InputMode::OFF;
 }
 // Retorna 0 ou 1 (slot de LED) ou 3 (nenhum).
 inline uint8_t digitalInLedSlot(const IrrigationSettings &s, uint8_t i)

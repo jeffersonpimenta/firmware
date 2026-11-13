@@ -1166,7 +1166,7 @@ int32_t IrrigationModule::runOnce()
     if (reconfigInputs)
         _inputPolicyEpoch = settings.configEpoch;
     for (uint8_t i = 0; i < IrrigationSettings::MAX_DIGITAL_IN; i++) {
-        if (settings.pinsDigitalIn[i] < 0 || settings.digitalInMode[i] == InputMode::DISABLED)
+        if (settings.pinsDigitalIn[i] < 0 || settings.digitalInMode[i] == InputMode::OFF)
             continue;
 #ifndef ARCH_PORTDUINO
         bool rawHigh = (digitalRead(settings.pinsDigitalIn[i]) == HIGH);
@@ -3770,7 +3770,7 @@ void IrrigationModule::gwTick()
     if (reconfigInputs)
         _inputPolicyEpoch = settings.configEpoch;
     for (uint8_t i = 0; i < IrrigationSettings::MAX_DIGITAL_IN; i++) {
-        if (settings.pinsDigitalIn[i] < 0 || settings.digitalInMode[i] == InputMode::DISABLED)
+        if (settings.pinsDigitalIn[i] < 0 || settings.digitalInMode[i] == InputMode::OFF)
             continue;
 #ifndef ARCH_PORTDUINO
         bool rawHigh = (digitalRead(settings.pinsDigitalIn[i]) == HIGH);

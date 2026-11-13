@@ -26,7 +26,7 @@
 
 #define ADC_MULTIPLIER 3.2 // divisor R12=100k / R10=220k
 #define BATTERY_PIN 13
-#define ADC_CHANNEL ADC2_GPIO13_CHANNEL
+#define ADC_CHANNEL ADC_CHANNEL_4 // GPIO13 = ADC2_CH4 (enum adc_channel_t; framework 3.3.9 rejeita o int de ADC2_GPIO13_CHANNEL)
 #define BAT_MEASURE_ADC_UNIT 2
 
 // ================= MAPA DE IRRIGAÇÃO (seed Heltec V2) =================

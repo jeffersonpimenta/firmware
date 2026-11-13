@@ -1795,7 +1795,7 @@ static void emitInputsArray(JsonWriter &w, uint32_t node, uint8_t inputCount, co
         uint8_t targetZoneId = (nf > 0) ? found[0]->targetZoneId : 0;
         const Zone *z = (targetZoneId != 0) ? zones.byId(targetZoneId) : nullptr;
         // driving = entrada habilitada e ativa (pressionada/assertida)
-        bool driving = (mode != (uint8_t)InputMode::DISABLED) && active;
+        bool driving = (mode != (uint8_t)InputMode::OFF) && active;
         w.beginObject();
         w.keyNum("i", i);
         w.keyNum("mode", mode);

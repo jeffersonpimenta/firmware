@@ -13,7 +13,7 @@ void InputActuationPolicy::configure(InputMode mode, bool activeLow)
 
 InputActuationPolicy::Intent InputActuationPolicy::update(bool rawHigh, uint32_t nowMs)
 {
-    if (_mode == InputMode::DISABLED)
+    if (_mode == InputMode::OFF)
         return Intent::NONE;
 
     const bool pressed = _activeLow ? !rawHigh : rawHigh;
