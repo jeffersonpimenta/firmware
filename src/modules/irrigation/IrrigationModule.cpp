@@ -1026,8 +1026,10 @@ int32_t IrrigationModule::runOnce()
         if (tearNow) {
             LOG_INFO("Irrigation: tearing down BLE (free 2.4GHz for WiFi AP; sticky until reboot)");
             config.bluetooth.enabled = false; // RAM only — flash mantém enabled=true p/ o próximo boot.
+#if !MESHTASTIC_EXCLUDE_BLUETOOTH
             if (nimbleBluetooth)
                 nimbleBluetooth->deinit();
+#endif
             esp32ReleaseBluetoothMemoryIfUnused(); // shouldReleaseBluetoothMemory()==true agora
             bleReleasedThisBoot = true;
         }

@@ -61,7 +61,11 @@ void portalApLoop(unsigned long nowMs)
     PortalSession &s = irrigationModule->portalSession();
     // Renova atividade enquanto houver cliente no AP Wi-Fi OU no BLE (spec 2026-08-11:
     // a janela compartilhada Portal AP + BLE renova por qualquer um dos dois).
-    bool anyClient = (sApUp && WiFi.softAPgetStationNum() > 0) || (nimbleBluetooth && nimbleBluetooth->isConnected());
+    bool bleClient = false;
+#if !MESHTASTIC_EXCLUDE_BLUETOOTH
+    bleClient = (nimbleBluetooth && nimbleBluetooth->isConnected());
+#endif
+    bool anyClient = (sApUp && WiFi.softAPgetStationNum() > 0) || bleClient;
     s.noteClient(nowMs, anyClient);
     s.tick(nowMs);
 

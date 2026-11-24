@@ -59,6 +59,7 @@ static const int32_t ACTIVE_INTERVAL_MS = 50;
 static const int32_t MEDIUM_INTERVAL_MS = 200;
 static const int32_t IDLE_INTERVAL_MS = 1000;
 
+#if !MESHTASTIC_PORTAL_HTTP_ONLY
 // Maximum concurrent HTTPS connections (reduced from default 4 to save memory)
 static const uint8_t MAX_HTTPS_CONNECTIONS = 2;
 
@@ -158,6 +159,7 @@ class MeshHTTPSServer : public HTTPSServer
 
 static SSLCert *cert;
 static MeshHTTPSServer *secureServer;
+#endif // !MESHTASTIC_PORTAL_HTTP_ONLY
 static HTTPServer *insecureServer;
 
 volatile bool isWebServerReady;
@@ -172,6 +174,7 @@ static void handleWebResponse()
     if (isWifiAvailable() || webServerPortalMode) {
 
         if (isWebServerReady) {
+#if !MESHTASTIC_PORTAL_HTTP_ONLY
             // Check heap before HTTPS processing - SSL requires significant memory
             if (secureServer) {
                 // Reap first so the probe sees the heap a finished session just returned. Nowhere to put
@@ -197,11 +200,13 @@ static void handleWebResponse()
                     }
                 }
             }
+#endif // !MESHTASTIC_PORTAL_HTTP_ONLY
             insecureServer->loop();
         }
     }
 }
 
+#if !MESHTASTIC_PORTAL_HTTP_ONLY
 static void taskCreateCert(void *parameter)
 {
     prefs.begin("MeshtasticHTTPS", false);
@@ -254,8 +259,11 @@ static void taskCreateCert(void *parameter)
     vTaskDelete(NULL);
 }
 
+#endif // !MESHTASTIC_PORTAL_HTTP_ONLY
+
 void createSSLCert()
 {
+#if !MESHTASTIC_PORTAL_HTTP_ONLY
     if (isWifiAvailable() && !isCertReady) {
         bool runLoop = false;
 
@@ -292,6 +300,7 @@ void createSSLCert()
         }
         LOG_INFO("SSL Cert Ready");
     }
+#endif // !MESHTASTIC_PORTAL_HTTP_ONLY
 }
 
 WebServerThread *webServerThread;
@@ -352,16 +361,23 @@ void initWebServer()
 
     // We can now use the new certificate to setup our server as usual.
     // cert pode ser null quando iniciado pelo portal AP de irrigação (HTTP-only, sem SSL) — pula HTTPS.
+#if !MESHTASTIC_PORTAL_HTTP_ONLY
     if (cert)
         secureServer = new MeshHTTPSServer(cert, 443, MAX_HTTPS_CONNECTIONS);
+#endif // !MESHTASTIC_PORTAL_HTTP_ONLY
     insecureServer = new HTTPServer();
 
+#if !MESHTASTIC_PORTAL_HTTP_ONLY
     registerHandlers(insecureServer, secureServer);
 
     if (secureServer) {
         LOG_INFO("Start Secure Web Server");
         secureServer->start();
     }
+#else
+    // HTTP-only: nenhum servidor TLS é instanciado (poupa RAM). secureServer = nullptr.
+    registerHandlers(insecureServer, nullptr);
+#endif // !MESHTASTIC_PORTAL_HTTP_ONLY
     LOG_INFO("Start Insecure Web Server");
     insecureServer->start();
     if (insecureServer->isRunning()) {
