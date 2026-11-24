@@ -1233,6 +1233,9 @@ void NodeDB::installDefaultConfig(bool preserveKey = false)
 #else
     config.lora.hop_limit = HOP_RELIABLE;
 #endif
+#ifdef USERPREFS_CONFIG_LORA_HOP_LIMIT
+    config.lora.hop_limit = USERPREFS_CONFIG_LORA_HOP_LIMIT;
+#endif
 #ifdef USERPREFS_CONFIG_LORA_IGNORE_MQTT
     config.lora.ignore_mqtt = USERPREFS_CONFIG_LORA_IGNORE_MQTT;
 #else
