@@ -47,3 +47,30 @@
 // Opcional — sensor analógico 0 no ADC1 (GPIO36, livre sem GPS). Descomentar p/ ativar:
 // #define IRRIGATION_PIN_SENSOR0    36
 // GPO1 e válvulas 2..7: sem pino seguro livre na Heltec V2 — ativar na board real.
+
+// ================= CONFIG MESHTASTIC BAKED (WROOM mesh-core) =================
+// Fatos de fabrica aplicados no 1o boot / factory reset. Admin cortado + sem
+// transporte de escrita externo => imutaveis na pratica. Ver spec
+// docs/superpowers/specs/2026-11-24-irrigacao-wroom-mesh-core-design.md
+#define USERPREFS_CONFIG_LORA_REGION meshtastic_Config_LoRaConfig_RegionCode_ANZ
+#define USERPREFS_LORACONFIG_USE_PRESET true
+#define USERPREFS_LORACONFIG_MODEM_PRESET meshtastic_Config_LoRaConfig_ModemPreset_LONG_FAST
+#define USERPREFS_LORACONFIG_TX_POWER 30
+#define USERPREFS_CONFIG_LORA_HOP_LIMIT 4
+#define USERPREFS_CONFIG_DEVICE_ROLE meshtastic_Config_DeviceConfig_Role_CLIENT
+#define USERPREFS_CONFIG_DEVICE_REBROADCAST_MODE meshtastic_Config_DeviceConfig_RebroadcastMode_ALL
+
+// Canal 0 = malha privada. Definir TODOS os sub-campos: fora do userPrefs.jsonc
+// o auto-fill de bin/platformio-custom.py nao roda, e USERPREFS_APPLY_CHANNEL(0)
+// referencia cada um.
+#define USERPREFS_CHANNELS_TO_WRITE 1
+#define USERPREFS_CHANNEL_0_NAME "irriga"
+#define USERPREFS_CHANNEL_0_PRECISION 0
+#define USERPREFS_CHANNEL_0_IS_MUTED false
+#define USERPREFS_CHANNEL_0_UPLINK_ENABLED false
+#define USERPREFS_CHANNEL_0_DOWNLINK_ENABLED false
+#define USERPREFS_CHANNEL_0_PSK                                                                                                   \
+    {                                                                                                                            \
+        0xa2, 0xec, 0x79, 0x4f, 0xab, 0x3b, 0x6e, 0x73, 0x0a, 0x5c, 0xff, 0xa7, 0xa4, 0xc7, 0xab, 0xed, 0xdd, 0xaf, 0x6e, 0x3e, \
+            0x25, 0x71, 0xba, 0x6d, 0xfb, 0xc5, 0x15, 0xd4, 0x5b, 0x1b, 0x93, 0x14                                              \
+    }
