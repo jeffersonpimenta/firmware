@@ -6400,10 +6400,16 @@
 		(uuid "0d6356e9-5c45-4ebf-b0bb-6ff2f8af7380")
 	)
 	(junction
+		(at 44.45 102.87)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "337dc570-3351-4310-b6b2-fb845e45a9a8")
+	)
+	(junction
 		(at 44.45 105.41)
 		(diameter 0)
 		(color 0 0 0 0)
-		(uuid "4769e573-28bf-4729-91f7-b543193a1094")
+		(uuid "384401c1-fed5-4ac3-ba8f-aab78197d2f0")
 	)
 	(junction
 		(at 64.77 49.53)
@@ -6428,12 +6434,6 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "b29272d9-ace6-4547-af61-0ff655d46d42")
-	)
-	(junction
-		(at 44.45 102.87)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "db578979-a89d-443f-97fa-b0a117272b85")
 	)
 	(no_connect
 		(at 175.26 127)
@@ -6618,16 +6618,6 @@
 			(type default)
 		)
 		(uuid "12b6a25c-418a-471b-bd4a-566bd6c329a4")
-	)
-	(wire
-		(pts
-			(xy 401.32 177.8) (xy 401.32 182.88)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "13522f13-623a-4b59-855b-5233afb50238")
 	)
 	(wire
 		(pts
@@ -6858,16 +6848,6 @@
 			(type default)
 		)
 		(uuid "22a68bd1-c695-4413-9a21-964795813332")
-	)
-	(wire
-		(pts
-			(xy 401.32 128.27) (xy 401.32 123.19)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "244cdd60-f994-4137-acde-585c03b00c20")
 	)
 	(wire
 		(pts
@@ -7121,16 +7101,6 @@
 	)
 	(wire
 		(pts
-			(xy 401.32 135.89) (xy 401.32 143.51)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "36824d5b-0ee7-4b7d-8eb9-925fed414d0a")
-	)
-	(wire
-		(pts
 			(xy 207.01 101.6) (xy 212.09 101.6)
 		)
 		(stroke
@@ -7201,16 +7171,6 @@
 	)
 	(wire
 		(pts
-			(xy 44.45 105.41) (xy 48.26 105.41)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "3e2ab41d-7f5b-40c0-afa2-facebdf2555e")
-	)
-	(wire
-		(pts
 			(xy 128.27 274.32) (xy 128.27 276.86)
 		)
 		(stroke
@@ -7258,6 +7218,16 @@
 			(type default)
 		)
 		(uuid "43a6b24a-8075-4fe1-ac73-6ac8be4e832e")
+	)
+	(wire
+		(pts
+			(xy 44.45 102.87) (xy 48.26 102.87)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "453041b1-5b5d-447a-b82e-a7cb1b28f692")
 	)
 	(wire
 		(pts
@@ -7611,7 +7581,7 @@
 	)
 	(wire
 		(pts
-			(xy 401.32 87.63) (xy 401.32 85.09)
+			(xy 401.32 86.36) (xy 401.32 85.09)
 		)
 		(stroke
 			(width 0)
@@ -7708,16 +7678,6 @@
 			(type default)
 		)
 		(uuid "75438df6-f088-48fe-87c2-44ac47867125")
-	)
-	(wire
-		(pts
-			(xy 401.32 170.18) (xy 401.32 165.1)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "754d9a1c-7faa-4a17-8999-69bcee31636d")
 	)
 	(wire
 		(pts
@@ -8201,16 +8161,6 @@
 	)
 	(wire
 		(pts
-			(xy 403.86 60.96) (xy 403.86 63.5)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "ae21590f-0951-4de2-b995-99346f403d15")
-	)
-	(wire
-		(pts
 			(xy 207.01 109.22) (xy 212.09 109.22)
 		)
 		(stroke
@@ -8298,16 +8248,6 @@
 			(type default)
 		)
 		(uuid "b4d8e018-a532-4622-8bc5-40c25a81f313")
-	)
-	(wire
-		(pts
-			(xy 403.86 53.34) (xy 403.86 49.53)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "b4e3c457-6e71-4213-9c07-326ab191eb86")
 	)
 	(wire
 		(pts
@@ -8551,6 +8491,16 @@
 	)
 	(wire
 		(pts
+			(xy 44.45 105.41) (xy 48.26 105.41)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "c8e8ea2e-d9b6-47e9-95a7-286688e4d965")
+	)
+	(wire
+		(pts
 			(xy 167.64 166.37) (xy 172.72 166.37)
 		)
 		(stroke
@@ -8568,16 +8518,6 @@
 			(type default)
 		)
 		(uuid "cbca2837-9759-4290-ab86-f9f199634a09")
-	)
-	(wire
-		(pts
-			(xy 44.45 102.87) (xy 48.26 102.87)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "cbed0a18-a2c5-4bef-bbc7-9191fcb059db")
 	)
 	(wire
 		(pts
@@ -9148,16 +9088,6 @@
 			(type default)
 		)
 		(uuid "fcd6787c-1b58-4387-b41d-eb6dd6f257f0")
-	)
-	(wire
-		(pts
-			(xy 401.32 95.25) (xy 401.32 102.87)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "fd258e06-e56d-430e-906f-eb503ea4ce3e")
 	)
 	(wire
 		(pts
@@ -9984,29 +9914,6 @@
 			)
 		)
 	)
-	(global_label "LED0_A"
-		(shape bidirectional)
-		(at 403.86 63.5 270)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "1748da59-6739-4191-9436-503e0329157a")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 403.86 63.5 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-	)
 	(global_label "S0_RAW"
 		(shape bidirectional)
 		(at 140.97 248.92 90)
@@ -10178,6 +10085,28 @@
 		(uuid "1d6f48ae-f5c3-4b67-874f-6dfbc899a097")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
 			(at 387.35 172.72 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+	)
+	(global_label "LED3_A"
+		(shape bidirectional)
+		(at 401.32 180.34 270)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "1dfa3b52-d6d5-41f6-8d58-543ab4a62207")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 401.32 180.34 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -10448,28 +10377,6 @@
 		(uuid "2968b3fa-228a-4816-8a3d-2df07e67dda6")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
 			(at 401.32 123.19 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-	)
-	(global_label "LED2_A"
-		(shape bidirectional)
-		(at 401.32 143.51 270)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "2a0a2ac1-a593-4871-8706-cbbd806b1ac0")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 401.32 143.51 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -10999,6 +10906,28 @@
 			)
 		)
 	)
+	(global_label "LED2_A"
+		(shape bidirectional)
+		(at 401.32 138.43 270)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "44f47bfd-713f-4d20-9027-2e288683d51a")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 401.32 138.43 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+	)
 	(global_label "+3V3"
 		(shape bidirectional)
 		(at 240.03 87.63 90)
@@ -11041,28 +10970,6 @@
 					(size 1.27 1.27)
 				)
 				(justify left)
-			)
-		)
-	)
-	(global_label "LED3_A"
-		(shape bidirectional)
-		(at 401.32 182.88 270)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "465f1249-9b0b-4b78-bef9-33f7c4677912")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 401.32 182.88 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
 			)
 		)
 	)
@@ -12711,50 +12618,6 @@
 			)
 		)
 	)
-	(global_label "LED1_A"
-		(shape bidirectional)
-		(at 401.32 102.87 270)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "864f6ede-31dc-445f-8a29-46288ac9a508")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 401.32 102.87 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-	)
-	(global_label "GND"
-		(shape bidirectional)
-		(at 36.83 264.16 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "889b2e61-a5ed-4533-931f-b5dbc3c65110")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 36.83 264.16 90)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-	)
 	(global_label "+5V"
 		(shape bidirectional)
 		(at 93.98 43.18 180)
@@ -14069,29 +13932,6 @@
 			)
 		)
 	)
-	(global_label "GND1"
-		(shape bidirectional)
-		(at 26.67 264.16 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "c0bcf6b0-6d22-4cf5-b162-6d7af3afcdaf")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 26.67 264.16 90)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify right)
-			)
-		)
-	)
 	(global_label "UART_TX"
 		(shape bidirectional)
 		(at 387.35 208.28 90)
@@ -14307,6 +14147,28 @@
 		(uuid "c595e634-3c9d-4e99-bc5d-e59ff61bf55a")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
 			(at 57.15 228.6 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+	)
+	(global_label "LED1_A"
+		(shape bidirectional)
+		(at 401.32 101.6 270)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "c5b28208-a26a-4f2f-97ac-e4dd7a179d86")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 401.32 101.6 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -15269,6 +15131,28 @@
 		(uuid "f3cb59f4-89e4-469c-a674-e8dd4aced959")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
 			(at 304.8 199.39 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+	)
+	(global_label "LED0_A"
+		(shape bidirectional)
+		(at 403.86 64.77 270)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "f585a654-34bc-4ca7-9f00-7ca6495fa8ea")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 403.86 64.77 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -17017,7 +16901,7 @@
 				)
 			)
 		)
-		(property "Value" "10k"
+		(property "Value" "47k"
 			(at 382.27 87.63 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -18303,7 +18187,7 @@
 	)
 	(symbol
 		(lib_id "Device:R")
-		(at 401.32 91.44 0)
+		(at 401.32 90.17 0)
 		(unit 1)
 		(body_style 1)
 		(exclude_from_sim no)
@@ -18313,16 +18197,6 @@
 		(dnp no)
 		(uuid "524d48a8-c00f-47f5-bea6-08f09f4a84ce")
 		(property "Reference" "R14"
-			(at 401.32 83.82 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "2.2k"
 			(at 401.32 82.55 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -18332,8 +18206,18 @@
 				)
 			)
 		)
+		(property "Value" "1.5k"
+			(at 401.32 81.28 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(property "Footprint" "Resistor_SMD:R_0805_2012Metric"
-			(at 399.542 91.44 90)
+			(at 399.542 90.17 90)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -18344,7 +18228,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 401.32 91.44 0)
+			(at 401.32 90.17 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -18355,7 +18239,7 @@
 			)
 		)
 		(property "Description" "Resistor"
-			(at 401.32 91.44 0)
+			(at 401.32 90.17 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -18617,7 +18501,7 @@
 	)
 	(symbol
 		(lib_id "Device:R")
-		(at 401.32 132.08 0)
+		(at 401.32 127 0)
 		(unit 1)
 		(body_style 1)
 		(exclude_from_sim no)
@@ -18627,7 +18511,7 @@
 		(dnp no)
 		(uuid "59959252-a56a-4e20-b14a-75bb505b9e1c")
 		(property "Reference" "R16"
-			(at 401.32 124.46 0)
+			(at 401.32 119.38 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -18636,8 +18520,8 @@
 				)
 			)
 		)
-		(property "Value" "2.2k"
-			(at 401.32 123.19 0)
+		(property "Value" "1.5k"
+			(at 401.32 118.11 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -18647,7 +18531,7 @@
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_0805_2012Metric"
-			(at 399.542 132.08 90)
+			(at 399.542 127 90)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -18658,7 +18542,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 401.32 132.08 0)
+			(at 401.32 127 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -18669,7 +18553,7 @@
 			)
 		)
 		(property "Description" "Resistor"
-			(at 401.32 132.08 0)
+			(at 401.32 127 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -18785,7 +18669,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "5bbc3301-7a81-4994-8790-63cd3a85419f")
-		(property "Reference" "JP10"
+		(property "Reference" "JP9"
 			(at 31.75 267.97 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -18847,7 +18731,7 @@
 		(instances
 			(project "Irrigacao_mesh"
 				(path "/414991c3-385c-41d3-aa68-2e910248dc2f"
-					(reference "JP10")
+					(reference "JP9")
 					(unit 1)
 				)
 			)
@@ -18855,7 +18739,7 @@
 	)
 	(symbol
 		(lib_id "Device:R")
-		(at 401.32 173.99 0)
+		(at 401.32 168.91 0)
 		(unit 1)
 		(body_style 1)
 		(exclude_from_sim no)
@@ -18865,7 +18749,7 @@
 		(dnp no)
 		(uuid "5c2caf93-399c-40c4-ad68-7c60685044a9")
 		(property "Reference" "R18"
-			(at 401.32 166.37 0)
+			(at 401.32 161.29 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -18874,8 +18758,8 @@
 				)
 			)
 		)
-		(property "Value" "2.2k"
-			(at 401.32 165.1 0)
+		(property "Value" "1.5k"
+			(at 401.32 160.02 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -18885,7 +18769,7 @@
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_0805_2012Metric"
-			(at 399.542 173.99 90)
+			(at 399.542 168.91 90)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -18896,7 +18780,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 401.32 173.99 0)
+			(at 401.32 168.91 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -18907,7 +18791,7 @@
 			)
 		)
 		(property "Description" "Resistor"
-			(at 401.32 173.99 0)
+			(at 401.32 168.91 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -19633,7 +19517,7 @@
 				)
 			)
 		)
-		(property "Value" "10k"
+		(property "Value" "47k"
 			(at 382.27 158.75 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -20454,7 +20338,7 @@
 				)
 			)
 		)
-		(property "Value" "10k"
+		(property "Value" "47k"
 			(at 382.27 52.07 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -21005,6 +20889,85 @@
 	)
 	(symbol
 		(lib_id "Device:R")
+		(at 401.32 176.53 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "9464b679-23d6-4025-91a5-c18cd7e9ce62")
+		(property "Reference" "R31"
+			(at 403.352 176.53 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "1.5k"
+			(at 401.32 176.53 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0805_2012Metric"
+			(at 399.542 176.53 90)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 401.32 176.53 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Resistor"
+			(at 401.32 176.53 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "ee4654e9-e6a5-4d15-9bd7-0edb52d6305e")
+		)
+		(pin "2"
+			(uuid "0cfac1a3-791f-4cf9-8631-fef900adac62")
+		)
+		(instances
+			(project "Irrigacao_mesh"
+				(path "/414991c3-385c-41d3-aa68-2e910248dc2f"
+					(reference "R31")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R")
 		(at 140.97 257.81 0)
 		(unit 1)
 		(body_style 1)
@@ -21077,6 +21040,85 @@
 			(project "Irrigacao_mesh"
 				(path "/414991c3-385c-41d3-aa68-2e910248dc2f"
 					(reference "R20")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 401.32 97.79 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "983c615d-8195-4803-bf0f-e82cb9d8d6cf")
+		(property "Reference" "R29"
+			(at 403.352 97.79 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "1.5k"
+			(at 401.32 97.79 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0805_2012Metric"
+			(at 399.542 97.79 90)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 401.32 97.79 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Resistor"
+			(at 401.32 97.79 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "869ae63c-c6c5-4ce3-b568-cea95da1bf7a")
+		)
+		(pin "2"
+			(uuid "b0b7b702-150a-46a4-b7f2-65fe67716cb7")
+		)
+		(instances
+			(project "Irrigacao_mesh"
+				(path "/414991c3-385c-41d3-aa68-2e910248dc2f"
+					(reference "R29")
 					(unit 1)
 				)
 			)
@@ -21508,86 +21550,6 @@
 		)
 	)
 	(symbol
-		(lib_id "Jumper:SolderJumper_2_Bridged")
-		(at 31.75 264.16 0)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom no)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "a2a0decd-e7b3-439c-8d81-e076afbb69a6")
-		(property "Reference" "JP9"
-			(at 31.75 257.81 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "SolderJumper_2_Bridged"
-			(at 31.75 260.35 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" "Jumper:SolderJumper-2_P1.3mm_Bridged_Pad1.0x1.5mm"
-			(at 31.75 264.16 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" ""
-			(at 31.75 270.51 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" "Solder Jumper, 2-pole, closed/bridged"
-			(at 31.75 269.24 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "288b830a-e576-49df-9ff1-67f5f3542e72")
-		)
-		(pin "2"
-			(uuid "0a53e5f0-d124-4b88-ae7a-f005709f9bbf")
-		)
-		(instances
-			(project "Irrigacao_mesh"
-				(path "/414991c3-385c-41d3-aa68-2e910248dc2f"
-					(reference "JP9")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
 		(lib_id "Isolator:LTV-817")
 		(at 354.33 161.29 0)
 		(unit 1)
@@ -21838,7 +21800,7 @@
 	)
 	(symbol
 		(lib_id "Device:R")
-		(at 403.86 57.15 0)
+		(at 403.86 53.34 0)
 		(unit 1)
 		(body_style 1)
 		(exclude_from_sim no)
@@ -21848,7 +21810,7 @@
 		(dnp no)
 		(uuid "a98c9b5b-e9b2-4d87-a1cb-02e93cf5e9b9")
 		(property "Reference" "R12"
-			(at 400.05 57.15 0)
+			(at 400.05 53.34 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -21857,8 +21819,8 @@
 				)
 			)
 		)
-		(property "Value" "2.2k"
-			(at 400.05 58.42 0)
+		(property "Value" "1.5k"
+			(at 400.05 54.61 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -21868,7 +21830,7 @@
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_0805_2012Metric"
-			(at 402.082 57.15 90)
+			(at 402.082 53.34 90)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -21879,7 +21841,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 403.86 57.15 0)
+			(at 403.86 53.34 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -21890,7 +21852,7 @@
 			)
 		)
 		(property "Description" "Resistor"
-			(at 403.86 57.15 0)
+			(at 403.86 53.34 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -22688,6 +22650,85 @@
 			(project "Irrigacao_mesh"
 				(path "/414991c3-385c-41d3-aa68-2e910248dc2f"
 					(reference "Q4")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 401.32 134.62 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "c46526ce-fa9a-4b0c-8133-ac502dac7a63")
+		(property "Reference" "R30"
+			(at 403.352 134.62 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "1.5k"
+			(at 401.32 134.62 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0805_2012Metric"
+			(at 399.542 134.62 90)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 401.32 134.62 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Resistor"
+			(at 401.32 134.62 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "7d22c459-affb-4970-b0fd-0b0374105eb6")
+		)
+		(pin "2"
+			(uuid "181b5acc-6e81-41a5-a6e3-ee3229cb41df")
+		)
+		(instances
+			(project "Irrigacao_mesh"
+				(path "/414991c3-385c-41d3-aa68-2e910248dc2f"
+					(reference "R30")
 					(unit 1)
 				)
 			)
@@ -23493,6 +23534,85 @@
 		)
 	)
 	(symbol
+		(lib_id "Device:R")
+		(at 403.86 60.96 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "e552fdcf-cc7d-4614-a212-91e57db1c84a")
+		(property "Reference" "R28"
+			(at 405.892 60.96 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "1.5k"
+			(at 403.86 60.96 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0805_2012Metric"
+			(at 402.082 60.96 90)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 403.86 60.96 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Resistor"
+			(at 403.86 60.96 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "fb88574a-45fb-49d5-873b-b8944e2e91eb")
+		)
+		(pin "2"
+			(uuid "cbe7e6a2-66e8-42e5-ac0f-56d96eb9d3a2")
+		)
+		(instances
+			(project "Irrigacao_mesh"
+				(path "/414991c3-385c-41d3-aa68-2e910248dc2f"
+					(reference "R28")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "Connector:Screw_Terminal_01x02")
 		(at 321.31 124.46 0)
 		(unit 1)
@@ -23592,7 +23712,7 @@
 				)
 			)
 		)
-		(property "Value" "10k"
+		(property "Value" "47k"
 			(at 378.46 114.3 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -23652,7 +23772,8 @@
 	)
 	(symbol
 		(lib_id "Connector:Screw_Terminal_01x02")
-		(at 53.34 102.87 0)
+		(at 53.34 105.41 0)
+		(mirror x)
 		(unit 1)
 		(body_style 1)
 		(exclude_from_sim no)
@@ -23662,7 +23783,7 @@
 		(dnp no)
 		(uuid "eca85372-41a6-42ec-a2d4-4811c2ed25c8")
 		(property "Reference" "J2"
-			(at 57.15 102.87 0)
+			(at 57.15 105.41 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -23682,7 +23803,7 @@
 			)
 		)
 		(property "Footprint" "TerminalBlock:TerminalBlock_MaiXu_MX126-5.0-02P_1x02_P5.00mm"
-			(at 53.34 102.87 0)
+			(at 53.34 105.41 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -23693,7 +23814,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 53.34 102.87 0)
+			(at 53.34 105.41 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -23704,7 +23825,7 @@
 			)
 		)
 		(property "Description" "Generic screw terminal, single row, 01x02, script generated (kicad-library-utils/schlib/autogen/connector/)"
-			(at 53.34 102.87 0)
+			(at 53.34 105.41 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
