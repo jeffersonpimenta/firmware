@@ -593,379 +593,6 @@
 			)
 			(embedded_fonts no)
 		)
-		(symbol "Connector:USB_B_Micro"
-			(pin_names
-				(offset 1.016)
-				(hide yes)
-			)
-			(exclude_from_sim no)
-			(in_bom yes)
-			(on_board yes)
-			(in_pos_files yes)
-			(duplicate_pin_numbers_are_jumpers no)
-			(property "Reference" "J"
-				(at -5.08 11.43 0)
-				(show_name no)
-				(do_not_autoplace no)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(justify left)
-				)
-			)
-			(property "Value" "USB_B_Micro"
-				(at -5.08 8.89 0)
-				(show_name no)
-				(do_not_autoplace no)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(justify left)
-				)
-			)
-			(property "Footprint" ""
-				(at 3.81 -1.27 0)
-				(show_name no)
-				(do_not_autoplace no)
-				(hide yes)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-				)
-			)
-			(property "Datasheet" ""
-				(at 3.81 -1.27 0)
-				(show_name no)
-				(do_not_autoplace no)
-				(hide yes)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-				)
-			)
-			(property "Description" "USB Micro Type B connector"
-				(at 0 0 0)
-				(show_name no)
-				(do_not_autoplace no)
-				(hide yes)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-				)
-			)
-			(property "ki_keywords" "connector USB micro"
-				(at 0 0 0)
-				(show_name no)
-				(do_not_autoplace no)
-				(hide yes)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-				)
-			)
-			(property "ki_fp_filters" "USB*Micro*B*"
-				(at 0 0 0)
-				(show_name no)
-				(do_not_autoplace no)
-				(hide yes)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-				)
-			)
-			(symbol "USB_B_Micro_0_1"
-				(rectangle
-					(start -5.08 -7.62)
-					(end 5.08 7.62)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type background)
-					)
-				)
-				(polyline
-					(pts
-						(xy -4.699 5.842) (xy -4.699 5.588) (xy -4.445 4.826) (xy -4.445 4.572) (xy -1.651 4.572) (xy -1.651 4.826)
-						(xy -1.397 5.588) (xy -1.397 5.842) (xy -4.699 5.842)
-					)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy -4.318 5.588) (xy -1.778 5.588) (xy -2.032 4.826) (xy -4.064 4.826) (xy -4.318 5.588)
-					)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type outline)
-					)
-				)
-				(circle
-					(center -3.81 2.159)
-					(radius 0.635)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type outline)
-					)
-				)
-				(polyline
-					(pts
-						(xy -3.175 2.159) (xy -2.54 2.159) (xy -1.27 3.429) (xy -0.635 3.429)
-					)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy -2.54 2.159) (xy -1.905 2.159) (xy -1.27 0.889) (xy 0 0.889)
-					)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy -1.905 2.159) (xy 0.635 2.159)
-					)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(circle
-					(center -0.635 3.429)
-					(radius 0.381)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type outline)
-					)
-				)
-				(rectangle
-					(start -0.127 -7.62)
-					(end 0.127 -6.858)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(rectangle
-					(start 0.254 1.27)
-					(end -0.508 0.508)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type outline)
-					)
-				)
-				(polyline
-					(pts
-						(xy 0.635 2.794) (xy 0.635 1.524) (xy 1.905 2.159) (xy 0.635 2.794)
-					)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type outline)
-					)
-				)
-				(rectangle
-					(start 5.08 4.953)
-					(end 4.318 5.207)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(rectangle
-					(start 5.08 -0.127)
-					(end 4.318 0.127)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(rectangle
-					(start 5.08 -2.667)
-					(end 4.318 -2.413)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(rectangle
-					(start 5.08 -5.207)
-					(end 4.318 -4.953)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-			)
-			(symbol "USB_B_Micro_1_1"
-				(pin power_out line
-					(at 7.62 5.08 180)
-					(length 2.54)
-					(name "VBUS"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "1"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin bidirectional line
-					(at 7.62 -2.54 180)
-					(length 2.54)
-					(name "D-"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "2"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin bidirectional line
-					(at 7.62 0 180)
-					(length 2.54)
-					(name "D+"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "3"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin passive line
-					(at 7.62 -5.08 180)
-					(length 2.54)
-					(name "ID"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "4"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin power_out line
-					(at 0 -10.16 90)
-					(length 2.54)
-					(name "GND"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "5"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin passive line
-					(at -2.54 -10.16 90)
-					(length 2.54)
-					(name "Shield"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "SH"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-			)
-			(embedded_fonts no)
-		)
 		(symbol "Connector_Generic:Conn_01x03"
 			(pin_names
 				(offset 1.016)
@@ -6415,7 +6042,7 @@
 		(at 64.77 49.53)
 		(diameter 0)
 		(color 0 0 0 0)
-		(uuid "481ecf37-dbbc-4f85-b925-e4877a6bde25")
+		(uuid "5c83ebc8-213d-4add-b1da-d1ae33fb2917")
 	)
 	(junction
 		(at 50.8 71.12)
@@ -6452,10 +6079,6 @@
 		(uuid "433c3d6d-48ad-46ab-9aac-617449fd7d5c")
 	)
 	(no_connect
-		(at 60.96 54.61)
-		(uuid "4a4baf09-4e73-478f-9225-59e06e223915")
-	)
-	(no_connect
 		(at 175.26 129.54)
 		(uuid "557f7948-2380-49cd-b3c1-3ff3b3e31a0e")
 	)
@@ -6490,14 +6113,6 @@
 	(no_connect
 		(at 266.7 81.28)
 		(uuid "c7dec8a0-7970-4639-a3cb-c0f293be53b6")
-	)
-	(no_connect
-		(at 60.96 57.15)
-		(uuid "d4a5fc0a-3b7b-4ff6-861f-d7217256eecf")
-	)
-	(no_connect
-		(at 60.96 59.69)
-		(uuid "ee4381bd-8bb7-414a-a630-8cc0cc680844")
 	)
 	(wire
 		(pts
@@ -6548,6 +6163,16 @@
 			(type default)
 		)
 		(uuid "06e4e63c-01d4-437d-919f-01ed1d3c345c")
+	)
+	(wire
+		(pts
+			(xy 27.94 74.93) (xy 27.94 80.01)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "06f585a3-1d78-4271-b392-9939b4835bc1")
 	)
 	(wire
 		(pts
@@ -6678,6 +6303,16 @@
 			(type default)
 		)
 		(uuid "16a4ac2f-0451-4c4a-a5d3-e589361a498b")
+	)
+	(wire
+		(pts
+			(xy 27.94 67.31) (xy 27.94 62.23)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "16a54126-ab3c-41a1-bf7a-d3a747b5df77")
 	)
 	(wire
 		(pts
@@ -7541,16 +7176,6 @@
 	)
 	(wire
 		(pts
-			(xy 53.34 64.77) (xy 53.34 76.2)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "6560e07d-ae26-4db9-86b8-62bd4bba6af2")
-	)
-	(wire
-		(pts
 			(xy 106.68 184.15) (xy 106.68 189.23)
 		)
 		(stroke
@@ -7751,6 +7376,16 @@
 	)
 	(wire
 		(pts
+			(xy 48.26 50.8) (xy 50.8 50.8)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "7f99d797-e6cc-4f6b-950d-697dccbb2ae7")
+	)
+	(wire
+		(pts
 			(xy 270.51 110.49) (xy 270.51 105.41)
 		)
 		(stroke
@@ -7808,16 +7443,6 @@
 			(type default)
 		)
 		(uuid "867d0940-67c0-4158-a121-e0a1cf5797d9")
-	)
-	(wire
-		(pts
-			(xy 60.96 49.53) (xy 64.77 49.53)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "879305dc-2e84-490f-bf16-9d21e714ccb0")
 	)
 	(wire
 		(pts
@@ -8198,6 +7823,16 @@
 			(type default)
 		)
 		(uuid "afe800e0-cc2f-41cc-938d-85985e13836d")
+	)
+	(wire
+		(pts
+			(xy 59.69 48.26) (xy 59.69 49.53)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "b0edf440-6e95-4ec2-a215-55af8c089e01")
 	)
 	(wire
 		(pts
@@ -8601,6 +8236,16 @@
 	)
 	(wire
 		(pts
+			(xy 59.69 49.53) (xy 64.77 49.53)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "d27dfffd-2c72-4775-ae7e-6a92e709d0db")
+	)
+	(wire
+		(pts
 			(xy 316.23 88.9) (xy 311.15 88.9)
 		)
 		(stroke
@@ -8638,6 +8283,16 @@
 			(type default)
 		)
 		(uuid "d78ee1b0-0971-4b7a-8bd1-54ba59403423")
+	)
+	(wire
+		(pts
+			(xy 50.8 50.8) (xy 50.8 71.12)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "d8fad8c8-2dce-42a2-b319-5841914d8d66")
 	)
 	(wire
 		(pts
@@ -8831,16 +8486,6 @@
 	)
 	(wire
 		(pts
-			(xy 50.8 64.77) (xy 50.8 71.12)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "eb9ddf29-561a-47ed-ac4d-1740e588bcef")
-	)
-	(wire
-		(pts
 			(xy 346.71 88.9) (xy 341.63 88.9)
 		)
 		(stroke
@@ -8928,6 +8573,16 @@
 			(type default)
 		)
 		(uuid "f03eb820-72bf-4cab-a146-0c1b8490a386")
+	)
+	(wire
+		(pts
+			(xy 48.26 48.26) (xy 59.69 48.26)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "f22eb2a8-f9a0-42a8-9d79-688ca7ded704")
 	)
 	(wire
 		(pts
@@ -9455,6 +9110,28 @@
 					(size 1.27 1.27)
 				)
 				(justify left)
+			)
+		)
+	)
+	(global_label "+5V"
+		(shape bidirectional)
+		(at 27.94 62.23 90)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left)
+		)
+		(uuid "09717622-e29c-45a9-b3eb-d34eec3ef4b8")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 27.94 62.23 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
 			)
 		)
 	)
@@ -14608,28 +14285,6 @@
 	)
 	(global_label "GND"
 		(shape bidirectional)
-		(at 53.34 76.2 270)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "dbb8dac3-5945-4a7d-ac06-8d783eb6f905")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 53.34 76.2 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-	)
-	(global_label "GND"
-		(shape bidirectional)
 		(at 247.65 113.03 270)
 		(effects
 			(font
@@ -15131,6 +14786,28 @@
 		(uuid "f3cb59f4-89e4-469c-a674-e8dd4aced959")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
 			(at 304.8 199.39 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+	)
+	(global_label "GND"
+		(shape bidirectional)
+		(at 27.94 80.01 270)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "f3fffb6c-69b6-450b-a507-33853e5b7333")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 27.94 80.01 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -16732,7 +16409,7 @@
 				)
 			)
 		)
-		(property "Value" "100k"
+		(property "Value" "39k"
 			(at 85.09 110.49 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -16742,7 +16419,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Resistor_SMD:R_0805_2012Metric"
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
 			(at 79.502 109.22 90)
 			(hide yes)
 			(show_name no)
@@ -16765,6 +16442,17 @@
 			)
 		)
 		(property "Description" "Resistor"
+			(at 81.28 109.22 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "LCSC" "C23153"
 			(at 81.28 109.22 0)
 			(hide yes)
 			(show_name no)
@@ -17140,7 +16828,7 @@
 				)
 			)
 		)
-		(property "Value" "220k"
+		(property "Value" "160k"
 			(at 96.52 105.41 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -17150,7 +16838,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Resistor_SMD:R_0805_2012Metric"
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
 			(at 90.932 104.14 90)
 			(hide yes)
 			(show_name no)
@@ -17173,6 +16861,17 @@
 			)
 		)
 		(property "Description" "Resistor"
+			(at 92.71 104.14 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "LCSC" "C22813"
 			(at 92.71 104.14 0)
 			(hide yes)
 			(show_name no)
@@ -17966,7 +17665,7 @@
 				)
 			)
 		)
-		(property "Value" "470"
+		(property "Value" "1k"
 			(at 379.73 214.63 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -18000,6 +17699,17 @@
 		)
 		(property "Description" "Resistor"
 			(at 379.73 212.09 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "LCSC" "C17513"
+			(at 379.73 209.55 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -18441,7 +18151,7 @@
 				)
 			)
 		)
-		(property "Value" "470"
+		(property "Value" "1k"
 			(at 63.5 162.56 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -18475,6 +18185,17 @@
 		)
 		(property "Description" "Resistor"
 			(at 63.5 160.02 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "LCSC" "C17513"
+			(at 63.5 157.48 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -19817,99 +19538,6 @@
 		)
 	)
 	(symbol
-		(lib_id "Connector:USB_B_Micro")
-		(at 53.34 54.61 0)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(uuid "75246c66-7da4-4d44-86de-f80f52b4897a")
-		(property "Reference" "J1"
-			(at 53.34 45.72 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Value" "USB_5V_IN"
-			(at 53.34 44.45 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Footprint" "Connector_USB:USB_Micro-B_Molex-105017-0001"
-			(at 57.15 53.34 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" ""
-			(at 57.15 53.34 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" "USB Micro Type B connector"
-			(at 53.34 54.61 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "b5020193-8de0-421a-9b1c-495c7bac1417")
-		)
-		(pin "2"
-			(uuid "dbccb128-ae0e-4c3f-98bc-511d398bd426")
-		)
-		(pin "3"
-			(uuid "32f93952-1175-4897-bd28-5160d4c547bd")
-		)
-		(pin "4"
-			(uuid "799cf4d2-67ae-4340-918c-6f569489b64e")
-		)
-		(pin "5"
-			(uuid "21e922f0-8921-4c8d-9e48-1912cf64aa6b")
-		)
-		(pin "SH"
-			(uuid "c0510a66-91eb-480c-83e6-c72e66d6b890")
-		)
-		(instances
-			(project "Irrigacao_mesh"
-				(path "/414991c3-385c-41d3-aa68-2e910248dc2f"
-					(reference "J1")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
 		(lib_id "Diode:1N4001")
 		(at 250.19 223.52 0)
 		(unit 1)
@@ -20178,7 +19806,7 @@
 				)
 			)
 		)
-		(property "Value" "4.7k"
+		(property "Value" "10k"
 			(at 260.35 115.57 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -20212,6 +19840,17 @@
 		)
 		(property "Description" "Resistor"
 			(at 264.16 114.3 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "LCSC" "C17414"
+			(at 260.35 114.3 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -20312,6 +19951,109 @@
 			(project "Irrigacao_mesh"
 				(path "/414991c3-385c-41d3-aa68-2e910248dc2f"
 					(reference "C8")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:C_Polarized")
+		(at 27.94 71.12 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "81e4c10f-8727-47fb-bb65-bea163019495")
+		(property "Reference" "C19"
+			(at 19.812 71.12 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "220uF"
+			(at 19.304 72.898 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Capacitor_SMD:CP_Elec_8x10.5"
+			(at 28.905 67.31 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 27.94 71.12 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Polarized capacitor"
+			(at 27.94 71.12 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "LCSC" "C129421"
+			(at 27.94 71.12 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Voltage" "25V"
+			(at 27.94 71.12 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "d66f0c88-f11c-4dc9-aff2-4124815e5168")
+		)
+		(pin "2"
+			(uuid "4167ee0a-a15b-43eb-9625-d49cdb966448")
+		)
+		(instances
+			(project "Irrigacao_mesh"
+				(path "/414991c3-385c-41d3-aa68-2e910248dc2f"
+					(reference "C19")
 					(unit 1)
 				)
 			)
@@ -20641,6 +20383,86 @@
 			(project "Irrigacao_mesh"
 				(path "/414991c3-385c-41d3-aa68-2e910248dc2f"
 					(reference "C18")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Connector:Screw_Terminal_01x02")
+		(at 43.18 48.26 0)
+		(mirror y)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "87297700-6ae3-4565-a50b-c80efbc2e6d7")
+		(property "Reference" "J3"
+			(at 39.37 48.26 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "5V"
+			(at 39.37 51.054 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "TerminalBlock:TerminalBlock_MaiXu_MX126-5.0-02P_1x02_P5.00mm"
+			(at 43.18 48.26 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 43.18 48.26 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Generic screw terminal, single row, 01x02, script generated (kicad-library-utils/schlib/autogen/connector/)"
+			(at 43.18 48.26 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "37bde454-5278-49e0-be53-30e7ab0bc7d8")
+		)
+		(pin "2"
+			(uuid "08d904fe-95bd-4dd1-80da-e2fe94cb0532")
+		)
+		(instances
+			(project "Irrigacao_mesh"
+				(path "/414991c3-385c-41d3-aa68-2e910248dc2f"
+					(reference "J3")
 					(unit 1)
 				)
 			)
@@ -21660,7 +21482,7 @@
 				)
 			)
 		)
-		(property "Value" "470"
+		(property "Value" "1k"
 			(at 236.22 162.56 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -21694,6 +21516,17 @@
 		)
 		(property "Description" "Resistor"
 			(at 232.41 161.29 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "LCSC" "C17513"
+			(at 236.22 161.29 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -24034,7 +23867,7 @@
 				)
 			)
 		)
-		(property "Value" "4.7k"
+		(property "Value" "10k"
 			(at 273.812 113.538 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -24068,6 +23901,17 @@
 		)
 		(property "Description" "Resistor"
 			(at 270.51 114.3 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "LCSC" "C17414"
+			(at 273.812 114.808 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
